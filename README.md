@@ -1,54 +1,78 @@
 # 班级多用教学辅助终端
 
-> 一个基于 PyQt5 的 Windows 课堂抽选与小组积分终端。  
-> 屏幕右侧悬浮球 + 公平加权抽选 + 连抽 + 小组积分 + 系统托盘常驻。
+> 面向课堂教学的 Windows 悬浮式抽选与小组积分工具。  
+> 核心：**不遮挡课件、不抢焦点、无需退出 PPT 全屏课件，就能完成随机点名、连抽和小组加减分。**
 
 ---
 
-## 简介
+## 简介：它有什么作用？
 
-本项目是一个面向教师的课堂辅助工具。它不会抢占 PPT 焦点，默认以悬浮球形式停在屏幕右侧，双击即可抽人，右键可连抽、打开积分面板或管理面板。抽选算法不是纯随机，而是“加权少抽优先”，让一个学期内每个学生被抽中的次数尽量均衡。
+这是一个面向课堂教学的桌面辅助终端，尤其适合 **学习小组模式** 的课堂。
 
-程序常驻系统托盘，关闭主窗口不会退出，只有托盘菜单中的“退出”才会结束进程。
+在小组合作学习、课堂竞赛、随机点名、任务分配等场景中，老师经常需要：
+
+- 随机抽一个人回答问题；
+- 随机抽一个小组或小组代表；
+- 一次抽 2~10 人进行分组活动、任务分配；
+- 给各学习小组加/减分，记录课堂表现；
+- 在 PPT 全屏放映时完成以上操作，不退出课件、不切屏、不打断讲课。
+
+这个程序就是为这些场景设计的。它默认以一个小悬浮球停在屏幕右侧，双击即可抽人，右键可以连抽、打开积分管理或管理面板。所有关键窗口置顶但不抢焦点，结果弹窗会自动关闭，积分面板用完关闭也不会退出程序。老师可以一直停留在 PPT 全屏放映中，像用遥控器一样完成课堂互动。
+
+### 核心卖点
+
+- **不挡课件**：悬浮球只有 50×50，默认贴在屏幕右侧边缘，可拖动到不遮挡 PPT 的位置。
+- **无需退出课件**：悬浮球通过 Qt.Tool + 置顶 + Win32 `SetWindowPos` 强制置顶，可覆盖在 PPT 全屏之上；双击抽人、右键连抽/积分，全程不用退出全屏课件。
+- **不抢焦点**：悬浮球和结果弹窗使用 `Qt.WindowDoesNotAcceptFocus`，不打断键盘输入和 PPT 操作。
+- **学习小组模式**：内置小组积分面板，默认 6 组，可调 1~24 组，支持 `-1 / +1 / +2 / +3`、撤销、重命名、清零、自动保存。
+- **公平抽选**：不是纯随机，采用“加权少抽优先 + 每人冷却”，长期看每人被抽次数更均衡，避免“怎么又是他”。
+- **常驻托盘**：关闭主窗口或积分面板不会退出程序，只有托盘菜单“退出”才会结束进程。
+
+---
+
+## 适用场景
+
+- **学习小组课堂**：小组竞赛、合作学习、课堂表现积分。
+- **随机点名**：公平抽人回答问题，避免总抽同一人。
+- **分组活动**：连抽 2~10 人，快速组队或分配任务。
+- **PPT 全屏授课**：不退出课件即可抽人和加分。
+- **多班级 / 多名单**：支持 txt 名单、数字学号、`stats.ini` 长期公平记录。
 
 ---
 
 ## 功能特性
 
-### 抽选
+### 不挡课件、无需退出课件的课堂操作
 
-- 屏幕右侧 50×50 悬浮球，始终置顶，可拖动，尽量不遮挡 PPT。
+- 悬浮球 50×50，默认在屏幕右侧，可拖动。
+- 始终置顶，可覆盖在 PPT 全屏之上。
 - 双击悬浮球：抽 1 个人。
-- 右键悬浮球：
-  - 连抽 2~10 人；
-  - 打开积分管理；
-  - 打开管理面板。
-- 揭晓前有约 1.8 秒滚动动画。
-- 结果弹窗居中显示，带 `✕` 关闭按钮，揭晓 5 秒后自动关闭。
+- 右键悬浮球：连抽 2~10 人 / 积分管理 / 打开管理面板。
+- 结果弹窗居中显示，带 `✕`，5 秒后自动关闭。
 - 连抽只弹一个窗口，多个名字同时滚动、一起揭晓。
-- 每人默认 10 分钟冷却，冷却中的人不可被抽中。
-- 连抽时如果可用人数不足，会返回实际能抽到的人数并给出提示。
+- 悬浮球和弹窗不抢焦点，不打断输入。
+- 积分面板可独立打开，关闭后程序继续运行，PPT 不受影响。
 
-### 公平加权
+### 学习小组积分模式
+
+- 默认 6 个小组，可调 1~24 组。
+- 每组一张卡片：
+  - 单击展开操作按钮：`-1 / +1 / +2 / +3`；
+  - 双击组名重命名；
+  - 右键可清零本组；
+  - 支持 `Ctrl+Z` 撤销；
+  - 快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
+- 分数自动保存到 `config.ini`，重启不丢。
+- 小组数量变化会重置组名和分数，避免旧分数挂错组。
+- 卡片网格可滚动，24 组也能正常使用。
+
+### 公平抽选
 
 - 使用“加权少抽优先”算法，而不是 `random.choice`。
 - 历史累计抽取次数越少，权重越高。
 - 最近被抽中的人会被临时降权，避免连续抽中同一人。
 - 长期抽取次数保存在 `stats.ini`，重启后仍然生效。
 - 教师课前的“清空历史”只清历史与冷却，保留长期次数；只有“彻底重置”才会清零长期次数。
-
-### 小组积分
-
-- 默认 6 个小组，可在 1~24 之间调整。
-- 每个小组一张卡片：
-  - 单击展开操作按钮：`-1` / `+1` / `+2` / `+3`；
-  - 双击组名重命名；
-  - 右键可清零本组；
-  - 支持 `Ctrl+Z` 撤销；
-  - 快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
-- 小组数量变化会清空组名和分数，因为分组方案已变化。
-- 分数持久化在 `config.ini`，防抖 400ms 写入，关窗前强制保存。
-- 卡片网格放在滚动区域中，24 组也能正常使用。
 
 ### 管理面板
 
@@ -252,7 +276,7 @@ python tools/fairness_burnin.py
 ├── main.py                     # 程序入口：组装组件、连接信号、进入事件循环
 ├── README.md
 └── namepicker/
-    ├── __init__.md             # 包内文件职责说明（说明文档）
+    ├── _init_.md               # 包内文件职责说明
     ├── config_store.py         # config.ini：小组积分与配置
     ├── stats_store.py          # stats.ini：长期抽取次数
     ├── name_engine.py          # 抽取逻辑：公平加权、冷却、历史
@@ -339,7 +363,7 @@ python tools/fairness_benchmark.py
 python tools/reset_fairness_benchmark.py
 ```
 
-模拟教师每节课前“清空历史”的工作流，量化保留长期次数带来的改善。根据文档说明，每人总次数极差可从 15 降到 4，标准差从 3.89 降到 0.95。
+模拟教师每节课前“清空历史”的工作流，量化保留长期次数带来的改善。
 
 ```bash
 python tools/weighting_demo.py
@@ -408,3 +432,27 @@ app.setQuitOnLastWindowClosed(False)
 查看 `crash.log`。如果文件为 0 字节，通常说明不是崩溃，而是正常退出或其他原因。
 
 ---
+
+## 许可证
+
+MIT License
+
+Copyright (c) 2026 Gentole Lee
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
