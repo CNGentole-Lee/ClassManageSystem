@@ -1,0 +1,78 @@
+name: build-windows-exe
+
+# 在真正的 x64 Windows runner 上：平台自检 → 存储/日志验收 → PyInstaller 打包 → 上传产物
+#
+# 为什么必须放 CI：PyInstaller 不支持交叉编译，macOS 上跑不出 EXE。
+# 为什么是 x64：windows-latest 是 x64，正好匹配学校电脑；Windows 11 ARM 打出来
+# 的是 ARM64，老电脑跑不了。
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Platform self-check (registry backup / SetWindowPos / encoding / locking)
+        run: python tools/windows_check.py
+
+      - name: Storage and operation-log checks
+        run: |
+          python tools/config_check.py
+          python tools/config_crypto_check.py
+          python tools/log_crypto_check.py
+
+      # 无头 runner 上托盘/窗口断言可能不稳，所以这一步只作参考，不挡出包
+      - name: GUI smoke test (offscreen, informational)
+        continue-on-error: true
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/smoke_test.py
+
+      - name: Build EXE
+        run: pyinstaller packaging/windows/ClassManageSystem.spec --noconfirm --clean
+
+      - name: Show artifact info
+        shell: pwsh
+        run: |
+          $f = Get-Item dist/ClassManageSystem.exe
+          "size: {0:N1} MB" -f ($f.Length / 1MB)
+          "sha256: " + (Get-FileHash dist/ClassManageSystem.exe -Algorithm SHA256).Hash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClassManageSystem-windows-x64
+          path: dist/ClassManageSystem.exe
+          if-no-files-found: error
+
+      - name: Attach EXE to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ClassManageSystem.exe
+          generate_release_notes: true
