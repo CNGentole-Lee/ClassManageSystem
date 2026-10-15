@@ -1,6 +1,10 @@
 import os, sys, tempfile
 sys.path.insert(0, ".")
 
+from _settings_isolation import isolate_settings  # noqa: E402
+
+isolate_settings()  # 测试数据不写进真实的隐蔽备份（Windows 注册表 / macOS plist）
+
 from namepicker.config_store import ConfigStore
 from namepicker.stats_store import StatsStore
 

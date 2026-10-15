@@ -7,7 +7,11 @@
   - 揭晓被抽中名字前的滚动动画
   - 居中结果弹窗，带 X 按钮，5 秒后自动关闭
   - 连抽：右键点击悬浮球 → 一次抽取 2-10 个名字，在同一个弹窗中显示
-  - 小组积分面板（6 个小组，-1/+1/+2/+3），持久化保存在 config.ini 中
+  - 小组积分面板（6 个小组，-1/+1/+2/+3），积分加密保存在 config.dat 中
+    （AES-256-GCM + 三级回档：同目录 .bak / 系统级隐蔽备份 / 默认值）
+  - config.ini 只是明文查看副本，程序永不读取
+  - 每次积分变动自动写入加密操作日志（points_log.dat），唯一查看入口是
+    积分面板底栏「操作日志」按钮
   - config.ini 旁边生成 crash.log，以便在没有控制台的情况下诊断故障
 """
 
@@ -18,7 +22,9 @@ from PyQt5.QtCore import Qt, QSettings, QTimer
 from PyQt5.QtWidgets import QApplication
 
 from namepicker import crash_log
-from namepicker.config_store import APP_NAME, ConfigStore, resolve_config_path
+from namepicker.config_store import (
+    APP_NAME, ConfigStore, migrate_legacy_plaintext, resolve_config_path,
+)
 from namepicker.name_engine import NameEngine
 from namepicker.floating_ball import FloatingBall
 from namepicker.draw_popup import DrawResultPopup
@@ -93,6 +99,11 @@ def main():
         }
     """)
 
+
+    # --- 旧版明文迁移（一次性）---
+    # 老版本把分数明文写在 config.ini 里；如果还没有加密主文件，先把旧数据加密
+    # 落盘，之后就再也不读明文 config.ini 了（它只是给人看的副本）。
+    migrate_legacy_plaintext()
 
     store = ConfigStore()
     stats = StatsStore()

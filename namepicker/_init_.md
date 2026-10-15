@@ -7,7 +7,7 @@
 数据流为单向，按以下顺序阅读：
 
 ```text
-文件（config.ini / stats.ini）
+文件（config.dat 加密主数据 / config.ini 查看副本 / points_log.dat 加密操作日志 / stats.ini）
     ↓ 读取
 逻辑层（NameEngine 决定抽取对象）
     ↓ Qt 信号
@@ -22,18 +22,62 @@
 
 ### `config_store.py`
 
-读写程序所在目录下的 `config.ini`：
+加密读写程序所在目录下的 `config.dat`（明文 `config.ini` 只是给人看的副本，
+程序永不读取）：
 
 - `[meta]`：应用名称、最后修改时间。
 - `[points]`：小组数量、每个小组的名称与分数。
 
+副本与回退顺序：
+
+```text
+config.dat → config.dat.bak → QSettings 隐蔽备份 → 旧版明文（一次性迁移）→ 默认值
+```
+
+任何一级读成功都会用成功的数据修复前面的副本。
+
 行为：
 
+- 加密：AES-256-GCM（见 `crypto_utils.py`），密钥在 `~/.classmanage_key`（权限 600）。
+  任何一字节被改动都会解密失败，因此改分一定被发现。
 - 原子写入：先写 `.tmp`，再执行 `os.replace()`。断电或崩溃不会留下不完整文件。
 - 程序位于只读目录（如 `C:\Program Files`）时，自动改用 `%APPDATA%\ClassTerminal2411`，避免因写入失败而丢失教师录入的分数。
 - `resolve_config_path()` 被 `stats_store` 复用，确保两个文件始终位于同一目录。
 - `set_group_count()` 是修改小组数量的入口：整段重建 `[points]`，组名恢复默认、分数清零。组数变化意味着分组方案变化，旧分数无法可靠映射到新分组。
 - 历史兼容：早期版本将抽取次数写在 `[points]` 旁的 `[stats]` 段；现在 `reset_all()` 会删除该遗留段。
+- 旧版兼容：首次运行时若只有旧的明文 `config.ini`，`migrate_legacy_plaintext()`
+  会把它加密落盘一次，之后不再读取明文。
+- 每次分数**真正变化**时自动追加一条操作日志（`set_score` / `reset_scores` /
+  `_write_default_groups` 三个改分入口都覆盖），日志写失败静默，绝不影响积分。
+
+### `crypto_utils.py`
+
+AES-256-GCM 加解密与密钥管理：`encrypt()` / `decrypt()`，
+密钥文件 `~/.classmanage_key`（32 字节，chmod 600），不硬编码密钥。
+落盘格式为 `nonce(12B) + 密文 + GCM tag(16B)`。
+
+### `backup_store.py`
+
+用 PyQt5 自带的 `QSettings` 存系统级隐蔽备份，一套代码三平台通用
+（Windows 注册表 / macOS plist / Linux conf），因此**不需要** `import winreg`，
+macOS 下不会 `ModuleNotFoundError`。所有失败静默处理。
+
+积分的备份键前缀是 `sys_cache`，操作日志是 `sys_log`（见 `prefix` 参数），
+两者按配置目录哈希分桶，互不覆盖。
+
+### `log_store.py`
+
+小组积分变动日志：`points_log.dat` + `points_log.dat.bak` + QSettings 隐蔽备份，
+同样 AES-256-GCM 加密、三级回退、自动修复。**没有明文副本**。
+
+行为：
+
+- 写入由 `config_store` 在分数真正变化时自动触发，界面无需关心；
+- 明文是 JSON：`{"version":1,"seq":137,"entries":[[时间, 文本], ...]}`；
+- 日志只增不减（最多保留最近 `MAX_ENTRIES` 条，`seq` 持续增长），因此读取时
+  取三份副本里 `seq` 最大的一份 —— 用旧密文覆盖主文件这种回滚式篡改也会被修回来；
+- 「彻底重置」只追加一条标记，不清空日志；
+- 唯一查看入口是积分面板的「操作日志」按钮（`points_window._LogViewerDialog`）。
 
 ### `stats_store.py`
 
@@ -91,7 +135,14 @@
 
 行为：
 
-- 通过 Win32 `SetWindowPos` 强制置顶，保证可覆盖在 PPT 全屏之上。
+- 强制置顶是分平台的（见模块顶部注释）：
+  - Windows：`SetWindowPos(HWND_TOPMOST)` 把窗口钉进 topmost 层；传 HWND 用
+    `ctypes.c_void_p`，不依赖 `ctypes.wintypes`（`import ctypes` 不会带出该子模块，
+    早期写法因此静默失效）。
+  - macOS：`Qt.Tool` 即 NSPanel，默认 `hidesOnDeactivate=YES`，失焦会被系统隐藏，
+    故设置 `Qt.WA_MacAlwaysShowToolWindow`；再用 `ctypes` 调 libobjc 设
+    `NSWindowCollectionBehaviorCanJoinAllSpaces | FullScreenAuxiliary` 并抬到
+    `NSStatusWindowLevel`，才能盖在全屏课件之上。
 - 双击：抽一个人。
 - 右键：菜单，包括连抽 2~10 人、积分管理、打开管理面板。
 - 使用 `Qt.Tool`，使其不获取焦点，避免输入时被打断。
@@ -121,6 +172,9 @@
 - 支持撤销（`Ctrl+Z`）和“全部清零”。
 - 每次改动防抖 400 ms 后写盘；关闭窗口前再强制保存一次。
 - 底栏“小组数量...”可修改组数：弹框输入数字并二次确认，两步操作降低误操作风险。修改后整段重置：组名恢复默认、分数清零。
+- 底栏“小组数量...”旁边的“操作日志”按钮打开只读查看器（`_LogViewerDialog`），
+  显示最近 400 条积分变动（最新在最上面），并提示本次读取是否用到了备份回档。
+  这是全程序读取操作日志的唯一入口。
 - 卡片网格置于滚动区域中。24 组为 8 行 × 200 px，普通窗口无法容纳。
 
 为避免崩溃采用的写法（代码中有注释）：
@@ -151,7 +205,7 @@
 
 ### `crash_log.py`
 
-将崩溃信息写入与 `config.ini` 同目录的 `crash.log`。
+将崩溃信息写入与 `config.dat` 同目录的 `crash.log`。
 
 行为：
 
@@ -169,7 +223,7 @@
 行为：
 
 - 第二个实例启动时，会将第一个实例唤到前台，然后自行退出。
-- 存在原因：两个实例会同时写入 `config.ini`，后写入者覆盖先写入者。
+- 存在原因：两个实例会同时写入 `config.dat`，后写入者覆盖先写入者。
 
 ---
 
@@ -184,8 +238,19 @@
 冒烟测试。修改代码后应首先运行。
 
 - 不启动完整程序，而是分别构造每个窗口并模拟操作。
-- 用于捕获“编译能过但一运行就错”的问题：信号连接、布局、`config.ini` 落盘、撤销、连抽、小组数量、崩溃日志。
+- 用于捕获“编译能过但一运行就错”的问题：信号连接、布局、`config.dat` 落盘、撤销、连抽、小组数量、崩溃日志。
 - 构造 `MainWindow` 会读写真实注册表，因此它会先备份开机自启动项，跑完后还原。
+
+#### `config_crypto_check.py` / `log_crypto_check.py`
+
+加密存储的验收自检，不依赖 Qt 也能跑（装了 PyQt5 时会额外验证真实的隐蔽备份）。
+
+- `config_crypto_check.py`：积分加密、篡改/删除/清空回档、旧明文迁移、原子写入。
+- `log_crypto_check.py`：操作日志自动记录、无明文副本、篡改回档、**防回滚**、只增不减。
+- `windows_check.py`：**在 Windows 上运行**，实测注册表隐蔽备份、Win32 `SetWindowPos` 是否拿到真函数、
+  中文/空格路径、`os.replace`、文件被占用等平台专有行为。
+- `_settings_isolation.py`：测试辅助，把 QSettings 切到测试命名空间并在退出时清空，
+  避免测试数据写进用户真实的注册表 / plist（Windows 上 `$HOME` 隔离对注册表无效）。
 
 #### `group_count_stress.py`（43 处断言）
 

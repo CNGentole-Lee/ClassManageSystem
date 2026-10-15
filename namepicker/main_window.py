@@ -2,7 +2,11 @@
 
 import os
 import sys
-import winreg
+
+try:  # 注册表模块只在 Windows 上存在；macOS/Linux 下没有它
+    import winreg
+except ImportError:  # pragma: no cover - 取决于运行平台
+    winreg = None
 
 from PyQt5.QtCore import Qt, QSettings, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush
@@ -24,6 +28,9 @@ class MainWindow(QMainWindow):
     REFRESH_INTERVAL_MS = 2000  # refresh cooldown display every 2s
     REG_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
     REG_VALUE_NAME = "RandomNamePicker"
+    # macOS 用 LaunchAgent 实现同一功能（winreg 在 macOS 上不存在）
+    AUTOSTART_LABEL = "com.namepicker.randomnamepicker"
+    MACOS_AGENT_DIR = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents")
 
     def __init__(self, engine, app_path: str = "", parent=None):
         super().__init__(parent)
@@ -403,7 +410,9 @@ class MainWindow(QMainWindow):
             self._set_autostart(False)
 
     def _is_autostart_enabled(self) -> bool:
-        """Check if auto-start registry entry exists."""
+        """检查开机自启动是否已开启（Windows 注册表 / macOS LaunchAgent）。"""
+        if winreg is None:
+            return self._macos_autostart_enabled()
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER, self.REG_RUN_KEY,
@@ -420,7 +429,9 @@ class MainWindow(QMainWindow):
             return False
 
     def _set_autostart(self, enabled: bool) -> bool:
-        """Write or delete the auto-start registry entry. Returns success."""
+        """写入或删除开机自启动项。Windows 用注册表，macOS 用 LaunchAgent。"""
+        if winreg is None:
+            return self._macos_set_autostart(enabled)
         try:
             if enabled:
                 # Detect PyInstaller bundle vs source run
@@ -458,6 +469,59 @@ class MainWindow(QMainWindow):
             return True
         except OSError:
             return False
+
+    # --- 开机自启动：macOS 分支（Windows 分支见上面的 winreg 代码）---
+
+    def _autostart_command(self) -> list:
+        """自启动命令：打包后用可执行文件，源码运行用当前解释器 + main.py。"""
+        if getattr(sys, 'frozen', False):
+            return [sys.executable]
+        return [sys.executable, self._app_path]
+
+    def _macos_agent_path(self) -> str:
+        return os.path.join(self.MACOS_AGENT_DIR, self.AUTOSTART_LABEL + ".plist")
+
+    def _macos_autostart_enabled(self) -> bool:
+        if sys.platform != "darwin":
+            return False
+        return os.path.isfile(self._macos_agent_path())
+
+    def _macos_set_autostart(self, enabled: bool) -> bool:
+        """macOS 用 LaunchAgent（~/Library/LaunchAgents/*.plist）实现开机自启动。"""
+        if sys.platform != "darwin":
+            return False
+        path = self._macos_agent_path()
+        try:
+            if enabled:
+                import plistlib
+                os.makedirs(self.MACOS_AGENT_DIR, exist_ok=True)
+                payload = {
+                    "Label": self.AUTOSTART_LABEL,
+                    "ProgramArguments": self._autostart_command(),
+                    "RunAtLoad": True,
+                }
+                with open(path, "wb") as f:
+                    plistlib.dump(payload, f)
+                self._launchctl("load", path)
+            else:
+                if os.path.isfile(path):
+                    self._launchctl("unload", path)
+                    os.remove(path)
+            return True
+        except OSError:
+            return False
+
+    @staticmethod
+    def _launchctl(action: str, path: str) -> None:
+        """让 plist 立即生效；失败也不影响结果（下次登录仍会加载）。"""
+        try:
+            import subprocess
+            subprocess.run(
+                ["launchctl", action, path],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+            )
+        except Exception:
+            pass
 
     def _on_clear_history(self) -> None:
         reply = QMessageBox.question(

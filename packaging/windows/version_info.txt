@@ -1,0 +1,34 @@
+# EXE 属性（右键 → 属性 → 详细信息）里显示的版本信息。
+# 升级版本时改这里的 filevers/prodvers 与 FileVersion/ProductVersion 即可。
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '080404b0',
+          [
+            StringStruct('CompanyName', '班级多用教学辅助终端'),
+            StringStruct('FileDescription', '班级多用教学辅助终端（随机点名 + 小组积分）'),
+            StringStruct('FileVersion', '1.0.0.0'),
+            StringStruct('InternalName', 'ClassManageSystem'),
+            StringStruct('LegalCopyright', 'See LICENSE'),
+            StringStruct('OriginalFilename', 'ClassManageSystem.exe'),
+            StringStruct('ProductName', '班级多用教学辅助终端'),
+            StringStruct('ProductVersion', '1.0.0.0'),
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [2052, 1200])])
+  ]
+)

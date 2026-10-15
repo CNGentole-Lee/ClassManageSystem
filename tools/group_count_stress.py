@@ -19,6 +19,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PyQt5.QtWidgets import QApplication, QPushButton, QScrollArea  # noqa: E402
 from PyQt5 import sip  # noqa: E402
 
+from _settings_isolation import isolate_settings  # noqa: E402
+
+isolate_settings()  # 测试数据不写进真实的隐蔽备份（Windows 注册表 / macOS plist）
+
 from namepicker.config_store import (  # noqa: E402
     DEFAULT_GROUP_COUNT, MAX_GROUP_COUNT, ConfigStore,
 )

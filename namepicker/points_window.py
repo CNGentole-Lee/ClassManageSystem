@@ -3,17 +3,20 @@
 六张小组卡片排成网格。先点卡片把它展开，露出 -1 / +1 / +2 / +3 四个按钮，
 点按钮即应用对应增减。同一时刻只展开一张卡片，老师始终知道下一击落在哪组。
 
-每次改动防抖写入 config.ini，关窗时再补一次落盘，分数跨重启保留。
+每次改动防抖写入加密的 config.dat（明文 config.ini 只是查看副本），关窗时再
+补一次落盘，分数跨重启保留。每次分数变动还会自动追加一条加密的操作日志，
+唯一入口是底栏「小组数量...」旁边的「操作日志」按钮（见 _LogViewerDialog）。
 """
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QFontDatabase
 from PyQt5.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QGridLayout, QVBoxLayout,
     QHBoxLayout, QMessageBox, QInputDialog, QSizePolicy, QMenu, QAction,
-    QScrollArea, QLayout,
+    QScrollArea, QLayout, QDialog, QPlainTextEdit,
 )
 
+from . import log_store
 from .config_store import MAX_GROUP_COUNT, MIN_GROUP_COUNT
 
 # 每个操作按钮对应的增减量，按显示顺序。
@@ -349,6 +352,13 @@ class PointsWindow(QWidget):
         count_btn.clicked.connect(self._on_change_group_count)
         footer.addWidget(count_btn)
 
+        # 操作日志的唯一入口：紧挨着「小组数量...」。除此之外程序里没有任何
+        # 地方能读到日志（磁盘上只有密文，也没有明文副本）。
+        self._log_btn = QPushButton("操作日志")
+        self._log_btn.setToolTip("查看小组积分变动记录（加密存储，只读，可自动回档）")
+        self._log_btn.clicked.connect(self.show_log_viewer)
+        footer.addWidget(self._log_btn)
+
         footer.addStretch()
 
         self._status_label = QLabel("")
@@ -421,7 +431,7 @@ class PointsWindow(QWidget):
             return
 
         new_score = card.score() + delta
-        self._store.set_score(index, new_score)
+        self._store.set_score(index, new_score, reason=f"{delta:+d}")
         card.set_score(new_score)
         card.flash(delta)
 
@@ -442,7 +452,7 @@ class PointsWindow(QWidget):
             return
 
         new_score = card.score() - delta
-        self._store.set_score(index, new_score)
+        self._store.set_score(index, new_score, reason=f"撤销 {delta:+d}")
         card.set_score(new_score)
         card.flash(-delta)
 
@@ -504,7 +514,7 @@ class PointsWindow(QWidget):
         )
         if reply != QMessageBox.Yes:
             return
-        self._store.set_score(index, 0)
+        self._store.set_score(index, 0, reason="清零此组")
         card.set_score(0)
         self._schedule_save()
 
@@ -515,7 +525,7 @@ class PointsWindow(QWidget):
         )
         if reply != QMessageBox.Yes:
             return
-        self._store.reset_scores()
+        self._store.reset_scores(reason="全部清零")
         for card in self._cards:
             card.set_score(0)
         self._undo_stack.clear()
@@ -600,3 +610,79 @@ class PointsWindow(QWidget):
         self._closing = True
         self.save_now()
         event.accept()
+
+    # --- 操作日志（唯一查看入口）---
+
+    def show_log_viewer(self) -> None:
+        """打开只读的操作日志查看器。
+
+        这是全程序读取操作日志的唯一入口：日志只有密文落盘（没有明文副本），
+        也不出现在托盘菜单或管理面板里。
+        """
+        dialog = _LogViewerDialog(self._store.path, self)
+        dialog.exec_()
+
+
+class _LogViewerDialog(QDialog):
+    """操作日志查看器：只读，最新记录在最上面。"""
+
+    def __init__(self, config_path: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("操作日志 — 只读")
+        self.setMinimumSize(660, 460)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
+
+        view = log_store.load(config_path)
+        entries = list(reversed(view.entries))   # 最新的排在最前面
+
+        if view.entries:
+            title_text = f"共 {len(view.entries)} 条记录"
+            if view.seq > len(view.entries):
+                title_text += f"（历史累计 {view.seq} 条，只保留最近 {len(view.entries)} 条）"
+        else:
+            title_text = "暂无记录"
+        title = QLabel(title_text)
+        title.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        layout.addWidget(title)
+
+        # 数据来源与自动回档提示
+        source_names = {"main": "加密主文件", "bak": "同目录加密备份",
+                        "hidden": "系统级隐蔽备份", "empty": "无"}
+        info = QLabel(
+            f"加密保存于 {log_store.log_path_for(config_path)}"
+            "（另有同目录 .bak 与系统级隐蔽备份，可自动回档）\n"
+            f"本次读取自：{source_names.get(view.source, view.source)}"
+        )
+        if view.source in ("bak", "hidden"):
+            info.setText(info.text() +
+                          "\n⚠ 主日志被篡改、丢失或回滚过，已自动从更新的一份副本恢复。")
+        info.setStyleSheet("color: #888; font-size: 12px;")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        text.setStyleSheet("background: #fafafa; border: 1px solid #ccc;")
+        if entries:
+            text.setPlainText("\n".join(f"[{stamp}] {body}" for stamp, body in entries))
+        else:
+            text.setPlainText("还没有任何积分变动记录。\n"
+                              "每次加分 / 减分 / 撤销 / 清零 / 改组数都会自动记一条。")
+        layout.addWidget(text, 1)
+
+        tip = QLabel("日志只增不减：修改或删除都会被下一份副本修回来，「彻底重置」也不会清空它。")
+        tip.setStyleSheet("color: #aaa; font-size: 11px;")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.setDefault(True)
+        close_btn.clicked.connect(self.accept)
+        buttons.addWidget(close_btn)
+        layout.addLayout(buttons)

@@ -1,6 +1,8 @@
 """FloatingBall —— 屏幕边缘可拖动的小圆球，用于随机抽名字。"""
 
 import ctypes
+import sys
+
 from PyQt5.QtCore import (
     Qt, QPoint, QTimer, pyqtSignal
 )
@@ -10,28 +12,100 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import QWidget, QApplication, QMenu, QAction
 
 
-# 用于强制置顶的 Windows API
-try:
-    _SetWindowPos = ctypes.windll.user32.SetWindowPos
-    _HWND_TOPMOST = -1
-    _SWP_NOMOVE = 0x0002
-    _SWP_NOSIZE = 0x0001
-    _SWP_NOACTIVATE = 0x0010
-    _HWND = ctypes.wintypes.HWND
-except Exception:
-    _SetWindowPos = None
+# --- 强制置顶（跨平台）-------------------------------------------------
+#
+# Qt 的 WindowStaysOnTopHint 只保证「同一桌面内高于普通窗口」，两个平台都还有
+# 各自的一道坎，所以要分别补刀；置顶只是增强，任何一步失败都静默跳过。
+#
+#   Windows：全屏应用会把普通置顶窗口压住，需要 SetWindowPos(HWND_TOPMOST)
+#            把窗口钉进 topmost 层。
+#   macOS  ：Qt.Tool 会变成 NSPanel，默认 hidesOnDeactivate=YES，程序一失焦
+#            （老师切到 PPT）整个球会被系统隐藏；全屏应用还各自占一个 Space，
+#            普通浮动窗口不会跟过去。前者在 _init_ui 里用
+#            Qt.WA_MacAlwaysShowToolWindow 关掉，后者在这里设置
+#            NSWindowCollectionBehavior。
+
+# --- Windows ---
+_HWND_TOPMOST = -1
+_SWP_NOMOVE = 0x0002
+_SWP_NOSIZE = 0x0001
+_SWP_NOACTIVATE = 0x0010
+
+# 历史坑：原来这里写的是 ctypes.windll... 然后 _HWND = ctypes.wintypes.HWND。
+# `import ctypes` 并不会带出 wintypes 子模块，于是第 20 行抛 AttributeError，
+# 被下面那个宽松的 except 吞掉 → _SetWindowPos = None → Windows 上的强制置顶
+# 一直是空操作（除非某个库碰巧先 import 了 ctypes.wintypes）。
+# 现在直接用 ctypes.c_void_p 传 HWND，彻底不依赖 wintypes。
+_SetWindowPos = None
+if sys.platform == "win32":
+    try:
+        _SetWindowPos = ctypes.windll.user32.SetWindowPos
+        _SetWindowPos.restype = ctypes.c_bool
+        _SetWindowPos.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            ctypes.c_uint,
+        ]
+    except Exception:
+        _SetWindowPos = None
+
+# --- macOS ---
+_NS_CAN_JOIN_ALL_SPACES = 1 << 0      # 出现在所有 Space（包括全屏应用的空间）
+_NS_FULL_SCREEN_AUXILIARY = 1 << 8    # 允许与全屏窗口同屏显示
+_MACOS_OVERLAY_LEVEL = 25             # NSStatusWindowLevel，高于普通窗口与全屏窗口
+_macos_objc = None
+
+
+def _macos_overlay(widget: QWidget) -> None:
+    """macOS：让窗口跟随所有 Space、可盖在全屏应用之上（纯 ctypes 调 libobjc）。"""
+    global _macos_objc
+    try:
+        import ctypes.util
+        if _macos_objc is None:
+            objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+            objc.sel_registerName.restype = ctypes.c_void_p
+            objc.sel_registerName.argtypes = [ctypes.c_char_p]
+            _macos_objc = objc
+        objc = _macos_objc
+        msg = objc.objc_msgSend
+
+        # [nsView window] → NSWindow
+        msg.restype = ctypes.c_void_p
+        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        window = msg(ctypes.c_void_p(int(widget.winId())),
+                     objc.sel_registerName(b"window"))
+        if not window:
+            return
+
+        # [window setCollectionBehavior:]
+        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
+        msg(window, objc.sel_registerName(b"setCollectionBehavior:"),
+            _NS_CAN_JOIN_ALL_SPACES | _NS_FULL_SCREEN_AUXILIARY)
+
+        # [window setLevel:]
+        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        msg(window, objc.sel_registerName(b"setLevel:"), _MACOS_OVERLAY_LEVEL)
+    except Exception:
+        pass
 
 
 def force_topmost(widget: QWidget) -> None:
-    """用 Win32 API 强制控件置顶（盖在全屏应用之上）。"""
-    if _SetWindowPos is not None:
-        hwnd = int(widget.winId())
+    """把控件钉在最上层：Windows 用 SetWindowPos，macOS 用 NSWindow 层级/Space。"""
+    if sys.platform == "darwin":
+        _macos_overlay(widget)
+        return
+
+    if _SetWindowPos is None:
+        return
+    try:
         _SetWindowPos(
-            _HWND(hwnd),
-            _HWND(_HWND_TOPMOST),
+            ctypes.c_void_p(int(widget.winId())),
+            ctypes.c_void_p(_HWND_TOPMOST),
             0, 0, 0, 0,
             _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE,
         )
+    except Exception:
+        pass
 
 
 class FloatingBall(QWidget):
@@ -94,6 +168,11 @@ class FloatingBall(QWidget):
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        if sys.platform == "darwin":
+            # Qt.Tool 在 macOS 上就是 NSPanel，默认 hidesOnDeactivate=YES：
+            # 一旦本程序失焦（老师切到 PPT 放映），系统会把整个球隐藏，
+            # 看起来就像「置顶失效」。这个属性让它保持可见。
+            self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
 
         self.setFixedSize(self.BALL_SIZE, self.BALL_SIZE)
         self._position_at_right_edge()

@@ -14,19 +14,28 @@ import io
 import os
 import sys
 import tempfile
-import winreg
+
+try:  # 注册表模块只在 Windows 上存在（macOS/Linux 上跳过自启动备份）
+    import winreg
+except ImportError:  # pragma: no cover - 取决于运行平台
+    winreg = None
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt5.QtWidgets import QApplication  # noqa: E402
+from PyQt5.QtWidgets import QApplication, QPlainTextEdit  # noqa: E402
 from PyQt5.QtCore import QTimer  # noqa: E402
 from PyQt5.QtGui import QFont, QFontMetrics  # noqa: E402
 from PyQt5 import sip  # noqa: E402
 
 from namepicker import crash_log  # noqa: E402
+from _settings_isolation import isolate_settings  # noqa: E402
+
+isolate_settings()  # 测试数据不写进真实的隐蔽备份（Windows 注册表 / macOS plist）
+
+from namepicker import log_store  # noqa: E402
 from namepicker.config_store import APP_NAME, ConfigStore  # noqa: E402
 from namepicker.name_engine import NameEngine  # noqa: E402
-from namepicker.points_window import PointsWindow  # noqa: E402
+from namepicker.points_window import PointsWindow, _LogViewerDialog  # noqa: E402
 from namepicker.stats_store import StatsStore  # noqa: E402
 from namepicker.floating_ball import FloatingBall  # noqa: E402
 from namepicker.draw_popup import DrawResultPopup  # noqa: E402
@@ -45,6 +54,8 @@ def check(label, condition, detail=""):
 # --- 注册表备份 / 还原（避免测试动到真实的开机自启动）---
 
 def _read_autostart():
+    if winreg is None:  # 非 Windows：没有注册表自启动项
+        return None
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, MainWindow.REG_RUN_KEY,
                              0, winreg.KEY_READ)
@@ -59,6 +70,8 @@ def _read_autostart():
 
 
 def _write_autostart(value):
+    if winreg is None:  # 非 Windows：无需还原
+        return
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, MainWindow.REG_RUN_KEY,
                          0, winreg.KEY_SET_VALUE)
     try:
@@ -115,6 +128,26 @@ def test_points_window(store, config_path):
     store.reset_scores()
     points.save_now()
     check("全部清零", ConfigStore(config_path).all_scores() == [0] * 6)
+
+    # --- 操作日志（唯一入口是底栏按钮）---
+    check("底栏「小组数量...」旁边有 操作日志 按钮",
+          points._log_btn.text() == "操作日志")
+    entries = log_store.load(config_path).entries
+    check("日志已自动记录了刚才的加减分清零",
+          len(entries) > 0 and any("清零" in b for _s, b in entries),
+          f"实际 {len(entries)} 条")
+    check("日志密文不含明文",
+          b"group" not in open(log_store.log_path_for(config_path), "rb").read())
+    dialog = _LogViewerDialog(config_path)
+    shown = dialog.findChild(QPlainTextEdit).toPlainText()
+    check("查看器能显示出记录内容",
+          "第" in shown and "→" in shown, f"实际 {shown[:40]!r}")
+    check("查看器是只读的", dialog.findChild(QPlainTextEdit).isReadOnly())
+    check("日志没有明文副本（只有 .dat / .dat.bak）",
+          sorted(n for n in os.listdir(os.path.dirname(config_path)) if "log" in n)
+          == ["points_log.dat", "points_log.dat.bak"])
+    dialog.close()
+    dialog.deleteLater()
 
     # 连续加分的同时关掉面板 —— 分数要落盘，程序不能被关掉
     for _ in range(50):
