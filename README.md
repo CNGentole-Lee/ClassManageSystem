@@ -25,7 +25,10 @@
 ### 核心卖点
 
 - **不挡课件**：悬浮球只有 50×50，默认贴在屏幕右侧边缘，可拖动到不遮挡 PPT 的位置。
-- **无需退出课件**：悬浮球通过 Qt.Tool + 置顶 + Win32 `SetWindowPos` 强制置顶，可覆盖在 PPT 全屏之上；双击抽人、右键连抽/积分，全程不用退出全屏课件。
+- **无需退出课件**：悬浮球通过 Qt.Tool + 置顶强制压在其它窗口之上
+  （Windows 走 `SetWindowPos(HWND_TOPMOST)`；macOS 走
+  `WA_MacAlwaysShowToolWindow` + `CanJoinAllSpaces`/`FullScreenAuxiliary`），
+  可覆盖在 PPT 全屏之上；双击抽人、右键连抽/积分，全程不用退出全屏课件。
 - **不抢焦点**：悬浮球和结果弹窗使用 `Qt.WindowDoesNotAcceptFocus`，不打断键盘输入和 PPT 操作。
 - **学习小组模式**：内置小组积分面板，默认 6 组，可调 1~24 组，支持 `-1 / +1 / +2 / +3`、撤销、重命名、清零、自动保存。
 - **公平抽选**：不是纯随机，采用“加权少抽优先 + 每人冷却”，长期看每人被抽次数更均衡，避免“怎么又是他”。
@@ -65,7 +68,9 @@
   - 右键可清零本组；
   - 支持 `Ctrl+Z` 撤销；
   - 快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
-- 分数自动保存到 `config.ini`，重启不丢。
+- 分数自动加密保存到 `config.dat`，重启不丢；被改坏/删掉会自动回档。
+- 每次积分变动（加减分 / 撤销 / 清零 / 改组数 / 彻底重置）自动写入加密操作日志；
+  底栏「操作日志」按钮可只读查看，这是全程序唯一的查看入口。
 - 小组数量变化会重置组名和分数，避免旧分数挂错组。
 - 卡片网格可滚动，24 组也能正常使用。
 
@@ -96,8 +101,14 @@
 ### 稳定性
 
 - 单实例保护：重复启动会唤醒已有实例并退出。
-- 崩溃日志：`crash.log` 与 `config.ini` 同目录，记录 Python traceback 和原生故障。
-- 原子写入：`config.ini` 与 `stats.ini` 都先写 `.tmp` 再 `os.replace()`。
+- 崩溃日志：`crash.log` 与 `config.dat` 同目录，记录 Python traceback 和原生故障。
+- 原子写入：`config.dat`、`config.dat.bak`、`config.ini` 与 `stats.ini` 都先写 `.tmp` 再 `os.replace()`。
+- 防篡改 + 自动回档：积分用 AES-256-GCM 认证加密，读取顺序为
+  `config.dat → config.dat.bak → QSettings 隐蔽备份 → 默认值`；
+  任何一级被改坏、被清空或被删除，都会自动从下一级恢复，并顺手修复前面的副本。
+- 操作日志同样加密 + 三级回档，并且**只增不减**（「彻底重置」也只追加一条标记）：
+  日志多带一个累计条数 `seq`，哪份副本的 `seq` 最大就用哪份 —— 拿旧密文覆盖主
+  文件这种「回滚式篡改」也会被自动修回来。磁盘上没有日志的明文副本。
 - 只读目录回退：如果程序目录不可写，配置会落到 `%APPDATA%\ClassTerminal2411`。
 - 关闭积分面板不会导致整个程序退出。
 
@@ -105,17 +116,28 @@
 
 ## 环境要求
 
-- **Windows 10 及以上**；
+- Windows 10 及以上 / macOS 11 及以上 / Linux；
 - Python 3.10+（仅源码运行需要）；
-- PyQt5（仅源码运行需要）。
+- PyQt5、cryptography（仅源码运行需要）。
 
 安装依赖：
 
 ```bash
-pip install PyQt5
+pip install -r requirements.txt
 ```
 
-> 本项目使用 `winreg`、`ctypes.windll`、Win32 `SetWindowPos` 等 Windows 特性，非 Windows 平台无法完整运行。
+或直接：
+
+```bash
+pip install PyQt5 cryptography
+```
+
+> 跨平台说明：存储层不 `import winreg`，系统级隐蔽备份统一走 PyQt5 自带的
+> `QSettings`（Windows → 注册表，macOS → `~/Library/Preferences/*.plist`，
+> Linux → `~/.config/*.conf`）；开机自启动在 Windows 用注册表、在 macOS 用
+> LaunchAgent。所有平台专有调用都包在 `try/except` 里，因此 macOS 下能直接
+> 启动运行，悬浮球也做了 mac 侧置顶（`WA_MacAlwaysShowToolWindow` +
+> `NSWindowCollectionBehaviorCanJoinAllSpaces`），可盖在全屏课件之上。
 
 ---
 
@@ -193,11 +215,53 @@ pythonw main.py
 
 ## 数据文件
 
-### `config.ini`
+积分为防篡改存储，同一份数据有四个副本，读取时逐级回退：
 
-与程序同目录，若目录不可写则放到 `%APPDATA%\ClassTerminal2411\config.ini`。
+| 文件 / 位置 | 角色 | 程序行为 |
+|---|---|---|
+| `config.dat` | 加密主数据源（AES-256-GCM） | 读 + 写 |
+| `config.dat.bak` | 同目录加密备份 | 读（回档）+ 写 |
+| `QSettings` 隐蔽备份 | 注册表 / plist / conf | 读（回档）+ 写 |
+| `config.ini` | 明文查看副本 | **只写，永不读** |
 
-主要结构：
+读取顺序：
+
+```text
+config.dat → config.dat.bak → QSettings 隐蔽备份 → 旧版明文（一次性迁移）→ 默认值
+```
+
+任何一级读成功，都会用成功的数据把前面的副本重新写一遍（自动修复）。
+`config.dat` 与 `config.dat.bak` 与 `config.ini` 同目录，目录不可写时整体回退到
+`%APPDATA%\ClassTerminal2411\`（macOS/Linux 下为 `~/ClassTerminal2411\`）。
+
+### `config.dat` / `config.dat.bak`
+
+- 内容为 `nonce(12B) + 密文 + GCM tag(16B)`，用记事本打开是乱码；
+- 密钥首次运行自动生成到 `~/.classmanage_key`（32 字节，权限 `600`），不硬编码；
+- GCM 是认证加密：改任何一个字节，解密都会失败，程序随即回档到下一级副本。
+
+### `config.ini`（查看副本）
+
+每次保存都会重新生成，内容与加密数据一致，开头带一行
+`# 仅供查看，修改无效`。
+
+- 程序**从不读取**它，手工改它不会影响分数；
+- 想修改组名/分数请在界面里操作，或直接备份整个目录。
+
+### `QSettings` 隐蔽备份
+
+同一份密文再存一份到系统级位置，学生很难找到也不容易删：
+
+```text
+Windows : HKCU\Software\YourOrg\ClassManageSystem
+macOS   : ~/Library/Preferences/com.YourOrg.ClassManageSystem.plist
+Linux   : ~/.config/YourOrg/ClassManageSystem.conf
+```
+
+用 `QSettings` 而不是 `winreg`，一套代码三平台通用，且 macOS 下不会
+`ModuleNotFoundError`。写入失败会被静默忽略，绝不影响正常使用。
+
+加密前的明文结构（仅用于说明字段）：
 
 ```ini
 [meta]
@@ -217,9 +281,31 @@ score_1 = 12
 - `set_group_count()` 会整段重建 `[points]`，组名恢复默认、分数清零；
 - `reset_all()` 会删除早期版本遗留的 `[stats]` 段。
 
+### `points_log.dat` / `points_log.dat.bak`（操作日志）
+
+与 `config.dat` 同目录，保存每次小组积分变动，同样是 AES-256-GCM 加密二进制，
+再额外存一份到 QSettings（键前缀 `sys_log`，与积分的 `sys_cache` 分开）。
+
+- **唯一查看入口**：积分面板底栏「小组数量...」旁边的「操作日志」按钮（只读）；
+  磁盘上只有密文，**没有明文副本**，托盘菜单 / 管理面板都没有入口；
+- 自动记录的动作：加分、减分、撤销、清零此组、全部清零、修改小组数量、彻底重置；
+- 分数没变化时不记录，避免噪音；
+- 记录格式（加密前的明文，JSON）：
+
+```json
+{"version": 1, "seq": 137,
+ "entries": [["2026-10-16 00:12:03", "第2组（雄鹰组）6 → 8｜+2"]]}
+```
+
+- 日志**只增不减**：最多保留最近 400 条（超长组名会截断，避免 Windows 注册表单值超限），
+  `seq` 是历史累计条数并持续增长；
+  读取时取三份副本里 `seq` 最大的那份 —— 用旧密文覆盖主文件（回滚式篡改）
+  也会被自动修回来；
+- 「彻底重置」不清空日志，只在末尾追加一条标记：审计记录不能靠一个按钮抹掉。
+
 ### `stats.ini`
 
-与 `config.ini` 同目录，保存长期抽取次数。
+与 `config.dat` 同目录，保存长期抽取次数（明文，不含积分）。
 
 ```ini
 [counts]
@@ -229,14 +315,14 @@ score_1 = 12
 
 说明：
 
-- 独立于 `config.ini`，因为“清空历史”不能清掉长期公平记忆；
+- 独立于配置，因为“清空历史”不能清掉长期公平记忆；
 - `save()` 是合并而非覆盖，换花名册不会清掉上一个班的记录；
 - 次数为 0 时删除该行，而不是写 `name = 0`；
 - 只有“彻底重置”会调用 `clear()`。
 
 ### `crash.log`
 
-与 `config.ini` 同目录。
+与 `config.dat` 同目录。
 
 - 记录 Python 异常 traceback；
 - 通过 `faulthandler` 记录原生崩溃；
@@ -287,7 +373,10 @@ python tools/fairness_burnin.py
 ├── README.md
 └── namepicker/
     ├── _init_.md               # 包内文件职责说明
-    ├── config_store.py         # config.ini：小组积分与配置
+    ├── config_store.py         # config.dat：加密配置 + 三级回档（config.ini 只写不读）
+    ├── crypto_utils.py         # AES-256-GCM 加解密与 ~/.classmanage_key 密钥管理
+    ├── log_store.py            # points_log.dat：加密操作日志 + 防回滚
+    ├── backup_store.py         # QSettings 系统级隐蔽备份（跨平台，不 import winreg）
     ├── stats_store.py          # stats.ini：长期抽取次数
     ├── name_engine.py          # 抽取逻辑：公平加权、冷却、历史
     ├── floating_ball.py        # 悬浮球
@@ -300,6 +389,10 @@ python tools/fairness_burnin.py
     ├── smoke_test.py           # 冒烟测试
     ├── group_count_stress.py   # 小组数量功能 + 压力测试
     ├── config_check.py         # 存储往返测试（不依赖 Qt）
+    ├── config_crypto_check.py  # 加密存储 / 篡改回档 / 迁移 自检
+    ├── log_crypto_check.py     # 操作日志：自动记录 / 篡改回档 / 防回滚 自检
+    ├── windows_check.py        # Windows 兼容性自检（在 Windows 上一条命令跑）
+    └── _settings_isolation.py  # 测试用的 QSettings 命名空间隔离
     ├── repro_quit.py           # “关闭面板导致退出”最小复现
     ├── fairness_burnin.py      # 1 万次单抽烧机测试 + χ² 检验
     ├── fairness_benchmark.py   # 公平性调参基准
@@ -321,15 +414,25 @@ python tools/config_check.py
 
 不依赖 Qt，运行最快，验证 `ConfigStore` 与 `StatsStore` 的读写、合并、清零、重置。
 
+```bash
+python tools/config_crypto_check.py
+python tools/log_crypto_check.py
+python tools/windows_check.py
+```
+
+前两个验证加密存储与操作日志的验收标准：`config.dat` 是乱码、`config.ini` 手改无效、
+篡改/清空/删除后自动回档、全部删除后回默认值、旧版明文一次性迁移、
+密钥文件权限 600、不留 `.tmp` 残留。在临时 HOME 下运行，不碰真实数据。
+
 ### 冒烟测试
 
 ```bash
 python tools/smoke_test.py
 ```
 
-不启动完整程序，直接构造各窗口并模拟操作。覆盖信号连接、布局、`config.ini` 落盘、撤销、连抽、小组数量、崩溃日志等。
+不启动完整程序，直接构造各窗口并模拟操作。覆盖信号连接、布局、`config.dat` 落盘、撤销、连抽、小组数量、崩溃日志等。
 
-> 构造 `MainWindow` 会读写真实注册表，测试会先备份开机自启动项，跑完后还原。
+> 构造 `MainWindow` 在 Windows 上会读写真实注册表，测试会先备份开机自启动项，跑完后还原；macOS/Linux 下自动跳过。
 
 ### 小组数量压力测试
 
@@ -409,6 +512,43 @@ python tools/repro_quit.py
 
 ---
 
+## 打包 Windows EXE
+
+> **PyInstaller 不支持交叉编译**：在 macOS 上执行只会得到 mac 程序，`.exe` 必须在
+> Windows 上打包。别用 Apple Silicon 的 Parallels（打出来是 ARM64，学校 x64 电脑跑不了）。
+
+### 方式一：GitHub Actions（推荐）
+
+推送代码即自动打包，产物在 Actions 页面下载，无需本机 Windows：
+
+```bash
+git push origin main          # 触发 .github/workflows/build-windows.yml
+git tag v1.0 && git push origin v1.0   # 打 tag 会额外自动建 Release 并附上 EXE
+```
+
+工作流会依次执行：`tools/windows_check.py`（平台自检，同时验证注册表隐蔽备份与
+Win32 置顶是否真的可用）→ 三个存储/日志验收 → PyInstaller 打包 → 上传
+`ClassManageSystem-windows-x64` 产物。自检失败会中断出包，因此"能下到 EXE"
+本身就意味着 Windows 上这些功能是实测过的。
+
+### 方式二：任意一台 Windows
+
+```bat
+packaging\windows\build.bat
+```
+
+脚本会自动建 `.venv-build` 虚拟环境、装依赖、跑自检、打包，产物为
+`dist\ClassManageSystem.exe`。
+
+### 产物说明
+
+- 单文件窗口程序，双击即用，不需要目标机装 Python；
+- 配置与操作日志写在 EXE 同目录（只读目录则回退 `%APPDATA%\ClassTerminal2411`），
+  密钥在 `%USERPROFILE%\.classmanage_key`；
+- 未做代码签名，首次运行 SmartScreen 会提示"未知发布者"，点"更多信息 → 仍要运行"即可。
+
+---
+
 ## 常见问题
 
 ### 关闭积分面板后程序消失了？
@@ -423,11 +563,20 @@ app.setQuitOnLastWindowClosed(False)
 
 ### 分数没有保存？
 
-检查 `config.ini` 是否可写。程序目录只读时会自动回退到：
+检查配置目录（放 `config.dat` 的那个目录）是否可写。程序目录只读时会自动回退到：
 
 ```text
-%APPDATA%\ClassTerminal2411\config.ini
+%APPDATA%\ClassTerminal2411\config.ini（macOS/Linux：~/ClassTerminal2411/）
 ```
+
+积分本身存加密的 `config.dat`，`config.ini` 只是给人看的副本。运行
+`python tools/config_crypto_check.py` 可以定位是密钥、密文还是目录权限的问题。
+
+### 学生改了 config.ini 的分数，为什么没生效？
+
+因为程序从不读取 `config.ini`。它每次保存都会被加密数据重新覆盖，
+真正生效的是 `config.dat`（外加 `.bak` 与系统级隐蔽备份）。
+改了 `config.dat` 也一样没用：GCM 认证加密会让解密失败，程序自动回档。
 
 ### 清空历史后公平性会失效吗？
 
