@@ -236,6 +236,9 @@ def main():
     main_win.save_settings()
     points_win.save_now()
     save_stats()
+    # 主动释放单实例资源，避免留下孤儿套接字/共享内存（被强杀时仍可能残留，
+    # SingleInstance 的探活逻辑已经能容忍这种情况）。
+    single.release()
     sys.exit(exit_code)
 
 

@@ -88,9 +88,21 @@ def _shorten(text: str, limit: int = 16) -> str:
 
 
 def _app_dir() -> str:
-    """程序运行目录：打包后是 EXE 所在目录，否则是项目根目录。"""
+    """程序运行目录：打包后是可执行文件所在目录，否则是项目根目录。
+
+    macOS 的 .app 要特别处理：冻结后 sys.executable 指向
+    `Xxx.app/Contents/MacOS/Xxx`，直接用它会把 config.dat 写进**应用包内部**——
+    老师找不到、复制/更新 .app 时还可能连同数据一起被覆盖，而且包内目录在
+    签名校验下本该只读。所以退回 .app 所在的那一级目录（老师能看到的地方）。
+    """
     if getattr(sys, 'frozen', False):
-        return os.path.dirname(os.path.abspath(sys.executable))
+        exe = os.path.dirname(os.path.abspath(sys.executable))
+        # .../Xxx.app/Contents/MacOS → 上三级才是 .app 所在目录
+        if (os.path.basename(exe) == "MacOS"
+                and os.path.basename(os.path.dirname(exe)) == "Contents"
+                and os.path.dirname(exe).endswith(".app/Contents")):
+            return os.path.dirname(os.path.dirname(os.path.dirname(exe)))
+        return exe
     # namepicker/config_store.py → 项目根目录
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

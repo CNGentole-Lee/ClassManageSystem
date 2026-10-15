@@ -236,3 +236,9 @@ crash.log
 
 # 本地打包产生的中间产物
 .venv-build/
+
+# --- macOS 打包产物 ---
+# PyInstaller 在项目内建的缓存（见 packaging/macos/build.command 里的 PYINSTALLER_CONFIG_DIR）
+.pyinstaller-cache/
+# 打包出来的 .app（dist/ 已在上面忽略，这里再明确一次 mac 产物）
+*.app/
