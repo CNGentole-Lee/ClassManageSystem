@@ -1,0 +1,16 @@
+# Windows 批处理必须是 CRLF + 纯 ASCII，否则 cmd 解析会出错
+# （本项目踩过：LF + UTF-8 中文注释 + REM 行里的裸括号 → 报一堆
+#  "'t' 不是内部或外部命令" 这种怪错）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 其余文本文件统一按原样处理，不做行尾转换
+*.py   text
+*.md   text
+*.yml  text
+*.spec text
+*.txt  text
+
+# 二进制资源不许被当成文本
+*.ico binary
+*.icns binary

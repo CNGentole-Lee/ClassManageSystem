@@ -242,3 +242,6 @@ crash.log
 .pyinstaller-cache/
 # 打包出来的 .app（dist/ 已在上面忽略，这里再明确一次 mac 产物）
 *.app/
+
+# 打包产物压缩包（.app / .exe 的分发压缩包，不入库）
+*.zip
