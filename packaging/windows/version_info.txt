@@ -1,5 +1,8 @@
+# -*- coding: utf-8 -*-
 # EXE 属性（右键 → 属性 → 详细信息）里显示的版本信息。
 # 升级版本时改这里的 filevers/prodvers 与 FileVersion/ProductVersion 即可。
+# 显式写 UTF-8 编码声明：PyInstaller 用 tokenize.detect_encoding 读这个文件，
+# 默认就是 UTF-8，声明一下可以避免任何工具按系统 ANSI 代码页（中文 Windows 是 GBK）去解。
 VSVersionInfo(
   ffi=FixedFileInfo(
     filevers=(1, 0, 0, 0),
