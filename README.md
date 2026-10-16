@@ -2,7 +2,7 @@
 
 > 面向课堂教学的 Windows 悬浮式抽选与小组积分工具。  
 > 核心：**不遮挡课件、不抢焦点、无需退出 PPT 全屏课件，就能完成随机点名、连抽和小组加减分。**  
-> 可运行版本见 **GitHub Releases**。系统要求：**Windows 10 及以上 MacOS11及以上**。
+> 可运行版本见 **GitHub Releases**。系统要求：**Windows 10 及以上 MacOS 11及以上**。
 
 ---
 
@@ -592,7 +592,7 @@ app.setQuitOnLastWindowClosed(False)
 
 ### 可运行版本在哪里下载？
 
-在 **GitHub Releases** 页面下载。系统要求 **Windows 10 及以上**。
+在 **GitHub Releases** 页面下载。系统要求 **Windows 10 及以上、MacOS 11 及以上**。
 
 ---
 
