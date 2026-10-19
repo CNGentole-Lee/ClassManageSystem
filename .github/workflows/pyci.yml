@@ -37,13 +37,8 @@ jobs:
           python -m PyInstaller packaging\windows\ClassManageSystem.spec --noconfirm --clean
       
       - name: Smoke test
-        run: |
-          start /B dist\ClassManageSystem\ClassManageSystem.exe
-          timeout /T 12 /NOBREAK
-          tasklist | findstr ClassManageSystem && echo "Process alive"
-          if exist dist\ClassManageSystem\crash.log (
-            for %%I in (dist\ClassManageSystem\crash.log) do if %%~zI neq 0 exit /b 1
-          )
+        shell: cmd
+        run: start /B dist\ClassManageSystem\ClassManageSystem.exe && timeout /T 12 /NOBREAK && tasklist | findstr ClassManageSystem && echo "Process alive" && if exist "dist\ClassManageSystem\crash.log" (for %%I in ("dist\ClassManageSystem\crash.log") do if %%~zI neq 0 exit /b 1)
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
