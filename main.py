@@ -18,10 +18,11 @@
 import sys
 import os
 
-from PyQt5.QtCore import Qt, QSettings, QTimer
+from PyQt5.QtCore import Qt, QSettings, QTimer, QLibraryInfo, QLocale, QTranslator
 from PyQt5.QtWidgets import QApplication
 
 from namepicker import crash_log
+from namepicker import theme
 from namepicker.config_store import (
     APP_NAME, ConfigStore, migrate_legacy_plaintext, resolve_config_path,
 )
@@ -68,36 +69,18 @@ def main():
         single.notify_existing()
         sys.exit(0)
 
-    app.setStyleSheet("""
-        QGroupBox {
-            font-weight: bold;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            margin-top: 10px;
-            padding-top: 10px;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            subcontrol-position: top left;
-            padding: 0 8px;
-        }
-        QPushButton {
-            padding: 6px 16px;
-            border: 1px solid #aaa;
-            border-radius: 4px;
-            background: #f5f5f5;
-        }
-        QPushButton:hover {
-            background: #e0e0e0;
-        }
-        QPushButton:pressed {
-            background: #d0d0d0;
-        }
-        QListWidget, QTableWidget {
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-    """)
+    # 深/浅色自适应：字体、调色板与样式表都由 theme 统一生成（见 namepicker/theme.py）。
+    # 必须在创建任何窗口之前应用，否则先建出来的控件会拿到默认字体。
+    theme.apply(app)
+
+    # Qt 自带控件的文案（对话框的 Yes/No/Cancel/OK 等）本地化。
+    # 找不到 .qm 时静默跳过，不影响功能。
+    translator = QTranslator(app)
+    _tr_path = QLibraryInfo.location(QLibraryInfo.TranslationsPath)
+    if translator.load(QLocale(QLocale.Chinese, QLocale.China), "qtbase", "_", _tr_path):
+        app.installTranslator(translator)
+    elif translator.load("qt_zh_CN", _tr_path):
+        app.installTranslator(translator)
 
 
     # --- 旧版明文迁移（一次性）---

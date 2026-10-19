@@ -59,6 +59,18 @@
 
 ![管理面板](docs/images/main-window.png)
 
+### 深色模式
+
+界面跟随系统外观（macOS / Windows 均可），不是把浅色主题硬套一遍：
+卡片、按钮、表格、日志区都有各自的深色配色，文字与背景保持足够对比度。
+也可用环境变量强制预览：`CLASSMANAGE_THEME=dark python main.py`。
+
+| 积分面板 | 操作日志 |
+|---|---|
+| ![深色积分面板](docs/images/points-panel-dark.png) | ![深色操作日志](docs/images/log-viewer-dark.png) |
+
+![深色管理面板](docs/images/main-window-dark.png)
+
 ---
 
 ## 它解决什么问题
@@ -72,9 +84,9 @@
 
 程序默认以一颗 50×50 的悬浮球停在屏幕右侧：双击抽人，右键连抽 / 开积分面板 / 开管理面板。所有关键窗口置顶但不抢焦点，弹窗自动关闭，关闭积分面板也不会退出程序 —— 老师可以一直留在 PPT 全屏里，像用遥控器一样完成课堂互动。
 
-### 核心卖点
+### 核心特点
 
-| 卖点 | 说明 |
+| 特点 | 说明 |
 |---|---|
 | **不挡课件** | 悬浮球只有 50×50，默认贴屏幕右侧边缘，可拖到任意位置 |
 | **无需退出课件** | 悬浮球强制置顶（Windows 用 `SetWindowPos(HWND_TOPMOST)`；macOS 设置 NSWindow 层级与 Space 行为），可覆盖在 PPT 之上 |
@@ -309,13 +321,15 @@ python tools/fairness_burnin.py
 
 | 能力 | Windows | macOS | Linux |
 |---|---|---|---|
-| 抽选 / 积分 / 日志 / 托盘 | ✅ | ✅ | 未验证 |
+| 抽选 / 积分 / 日志 | ✅ | ✅ | 未验证 |
+| 托盘 / 菜单栏图标 | ✅ 彩色托盘图标 | ✅ 模板图（自动适配浅/深色菜单栏） | 未验证 |
+| 浅色 / 深色模式 | ✅ 跟随系统 | ✅ 跟随系统 | ✅ 跟随系统 |
 | 系统级隐蔽备份 | ✅ HKCU 注册表 | ✅ `~/Library/Preferences` plist | ✅ `~/.config` |
-| 悬浮球置顶 | ✅ `SetWindowPos(HWND_TOPMOST)` | ✅ NSWindow 层级 + Space 行为 | 未验证 |
+| 悬浮球置顶 | ✅ `SetWindowPos(HWND_TOPMOST)` | ✅ 层级 + `CanJoinAllSpaces`/`FullScreenAuxiliary`/`Stationary` | 未验证 |
 | 开机自启动 | ✅ 注册表 Run 项 | ✅ LaunchAgent | ❌（返回失败） |
 | 冻结后数据位置 | ✅ EXE 同级目录 | ✅ `.app` **同级**目录（不在包内） | — |
 
-设计约定：**不直接 `import winreg`**（改为 `try/except ImportError`），平台专有调用全部包在 `try/except` 里并静默降级；存储层统一走 PyQt5 自带的 `QSettings`。
+设计约定：**不直接 `import winreg`**（改为 `try/except ImportError`），平台专有调用全部包在 `try/except` 里并静默降级；存储层统一走 PyQt5 自带的 `QSettings`；配色与字体统一由 `namepicker/theme.py` 提供。
 
 ---
 
@@ -399,6 +413,7 @@ packaging/macos/build.command        # 双击也可以
 │   ├── config_crypto_check.py       # 加密存储 / 篡改回档 / 迁移 自检
 │   ├── log_crypto_check.py          # 操作日志：自动记录 / 篡改回档 / 防回滚
 │   ├── windows_check.py             # Windows 平台自检（注册表 / 置顶 / 编码 / 占用）
+│   ├── macos_check.py               # macOS 平台自检（菜单栏图标 / NSWindow 浮层 / 深色）
 │   ├── smoke_test.py                # GUI 冒烟测试
 │   ├── group_count_stress.py        # 小组数量功能 + 300 轮压力
 │   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图
@@ -423,6 +438,7 @@ python tools/config_check.py           # 最快，不依赖 Qt：存储读写/�
 python tools/config_crypto_check.py    # 加密存储：乱码、手改无效、篡改/删除回档、迁移
 python tools/log_crypto_check.py       # 操作日志：自动记录、无明文副本、防回滚、只增不减
 python tools/windows_check.py          # 平台自检（在 Windows 上才跑真实分支）
+python tools/macos_check.py            # 平台自检（菜单栏模板图标 / NSWindow 浮层属性 / 深色）
 python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、落盘、撤销、连抽
 python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
 ```
@@ -443,8 +459,12 @@ python tools/weighting_demo.py         # 新旧算法分布对比
 重新生成 README 截图：
 
 ```bash
-python tools/make_screenshots.py       # 输出到 docs/images/
+python tools/make_screenshots.py                          # 浅色（默认）
+CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-dark.png
 ```
+
+截图脚本会把窗口移到屏幕外再 `grab()`，不会在你桌面上闪；数据用临时目录，
+不碰真实配置。
 
 ---
 
@@ -523,10 +543,13 @@ QSettings 隐蔽备份恢复。
 - **未做代码签名/公证**：Windows 有 SmartScreen 提示，macOS 拷贝到别的机器需右键打开。
 - **架构跟随构建机**：Apple Silicon 上打出 arm64 的 `.app`，Intel Mac 不能跑；
   Windows CI 产出 x64。
-- **macOS 覆盖全屏 PPT**：已设置 `WA_MacAlwaysShowToolWindow` 与
-  `NSWindowCollectionBehaviorCanJoinAllSpaces | FullScreenAuxiliary` 并抬到
-  `NSStatusWindowLevel`（NSWindow 属性已实测），但「盖住 PPT 放映」最终效果取决于
-  PowerPoint 是否占用独立全屏 Space，未在真机 PPT 上验证。
+- **macOS 覆盖全屏 PPT**：已设置 `WA_MacAlwaysShowToolWindow`，并把 NSWindow 配成
+  `CanJoinAllSpaces | FullScreenAuxiliary | Stationary`、`level = NSStatusWindowLevel(25)`、
+  `hidesOnDeactivate = NO`、`canHide = NO`、`orderFrontRegardless`（属性由
+  `tools/macos_check.py` 实测）。但「盖住 PPT 放映」最终仍取决于 PowerPoint 的放映
+  方式是否占用独立全屏 Space —— 这一点无法在没有 PPT 的机器上验证。若仍盖不住，
+  可把 `floating_ball.py` 里的 `_MACOS_OVERLAY_LEVEL` 提到 1000
+  （`NSScreenSaverWindowLevel`）再试，代价是会盖住菜单栏。
 - **密钥与账户同权限**：密钥在用户主目录，若教师与学生共用同一个系统登录账户，
   学生理论上可以读取密钥。这是「用户级密钥」方案的固有边界。
 - **Linux 未验证**：代码有平台守卫不会崩，但托盘/置顶行为未测试。

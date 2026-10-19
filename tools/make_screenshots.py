@@ -22,6 +22,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "docs", "images")
 OFFSCREEN = -5000
 
+#: 运行前用 CLASSMANAGE_THEME=light|dark 指定变体；light 输出常规文件名，
+#: dark 输出 foo-dark.png（README 里并排展示深浅两套）。
+VARIANT = (os.environ.get("CLASSMANAGE_THEME") or "light").lower()
+SUFFIX = "" if VARIANT == "light" else f"-{VARIANT}"
+os.environ["CLASSMANAGE_THEME"] = VARIANT
+
 # 先把项目根目录加进 sys.path，否则 import namepicker 会失败
 sys.path.insert(0, ROOT)
 # 截屏脚本不碰真实的隐蔽备份（Windows 注册表 / macOS plist）
@@ -34,6 +40,7 @@ from PyQt5.QtCore import QRectF, Qt  # noqa: E402
 from PyQt5.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
+from namepicker import theme  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 from namepicker.draw_popup import DrawResultPopup  # noqa: E402
 from namepicker.floating_ball import FloatingBall  # noqa: E402
@@ -44,6 +51,12 @@ from namepicker.points_window import PointsWindow, _LogViewerDialog  # noqa: E40
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "docs", "images")
 OFFSCREEN = -5000
+
+#: 运行前用 CLASSMANAGE_THEME=light|dark 指定变体；light 输出常规文件名，
+#: dark 输出 foo-dark.png（README 里并排展示深浅两套）。
+VARIANT = (os.environ.get("CLASSMANAGE_THEME") or "light").lower()
+SUFFIX = "" if VARIANT == "light" else f"-{VARIANT}"
+os.environ["CLASSMANAGE_THEME"] = VARIANT
 
 SAMPLE_NAMES = ["张伟", "李娜", "王强", "刘洋", "陈静", "杨帆", "赵磊", "黄婷",
                 "周涛", "吴敏", "徐鹏", "孙悦", "马超", "朱琳", "胡军", "郭燕"]
@@ -63,9 +76,10 @@ def save(widget, name: str, scale: int = 2) -> None:
     if scale > 1:
         pix = pix.scaled(pix.width() // scale, pix.height() // scale,
                          Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    name = name.replace(".png", f"{SUFFIX}.png")
     path = os.path.join(OUT_DIR, name)
     pix.save(path, "PNG")
-    print(f"  {name:22} {pix.width()}x{pix.height()}  {os.path.getsize(path) // 1024} KB")
+    print(f"  {name:26} {pix.width()}x{pix.height()}  {os.path.getsize(path) // 1024} KB")
 
 
 def shot_floating_ball(app) -> None:
@@ -77,19 +91,20 @@ def shot_floating_ball(app) -> None:
 
     w, h = 720, 240
     canvas = QImage(w, h, QImage.Format_ARGB32)
-    canvas.fill(QColor(246, 247, 249))
+    dark = theme.is_dark()
+    canvas.fill(QColor(28, 30, 34) if dark else QColor(246, 247, 249))
     painter = QPainter(canvas)
-    painter.setPen(QColor(206, 210, 216))
+    painter.setPen(QColor(70, 74, 82) if dark else QColor(206, 210, 216))
     painter.drawLine(0, 26, w, 26)                    # 屏幕右边缘
-    painter.setPen(QColor(120, 126, 136))
-    painter.setFont(QFont("PingFang SC", 13))
+    painter.setPen(QColor(226, 230, 236) if dark else QColor(120, 126, 136))
+    painter.setFont(theme.font(13))
     painter.drawText(26, 66, "悬浮球：50×50，默认贴在屏幕右侧边缘")
-    painter.setFont(QFont("PingFang SC", 12))
-    painter.setPen(QColor(140, 146, 156))
+    painter.setFont(theme.font(12))
+    painter.setPen(QColor(168, 176, 186) if dark else QColor(140, 146, 156))
     painter.drawText(26, 108, "双击 = 抽 1 人")
     painter.drawText(26, 138, "右键 = 连抽 2~10 人 · 积分管理 · 打开管理面板")
     painter.drawText(26, 186, "始终置顶、不抢焦点，可在 PPT 全屏放映时操作")
-    painter.setPen(QColor(206, 210, 216))
+    painter.setPen(QColor(70, 74, 82) if dark else QColor(206, 210, 216))
     painter.drawLine(26, 204, w - 26, 204)
     painter.end()
 
@@ -102,9 +117,10 @@ def shot_floating_ball(app) -> None:
     compose.drawPixmap(w - ball_pix.width() - 12, (h - ball_pix.height()) // 2 - 6, ball_pix)
     compose.end()
 
-    path = os.path.join(OUT_DIR, "floating-ball.png")
+    name = f"floating-ball{SUFFIX}.png"
+    path = os.path.join(OUT_DIR, name)
     final.save(path, "PNG")
-    print(f"  {'floating-ball.png':22} {w}x{h}  {os.path.getsize(path) // 1024} KB")
+    print(f"  {name:26} {w}x{h}  {os.path.getsize(path) // 1024} KB")
     ball.hide()
     ball.deleteLater()
 
@@ -127,6 +143,8 @@ def scrub_paths(widget) -> None:
 def main() -> int:
     os.makedirs(OUT_DIR, exist_ok=True)
     app = QApplication(sys.argv)
+    # 与 main.py 一致：字体 + 调色板 + 全局样式表（截图必须反映真实观感）
+    theme.apply(app)
 
     tmp = tempfile.mkdtemp(prefix="cm_shots_")
 

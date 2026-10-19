@@ -11,6 +11,8 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import QWidget, QApplication, QMenu, QAction
 
+from . import theme
+
 
 # --- 强制置顶（跨平台）-------------------------------------------------
 #
@@ -50,14 +52,31 @@ if sys.platform == "win32":
         _SetWindowPos = None
 
 # --- macOS ---
-_NS_CAN_JOIN_ALL_SPACES = 1 << 0      # 出现在所有 Space（包括全屏应用的空间）
+# NSWindowCollectionBehavior 位值（AppKit 定义）
+_NS_CAN_JOIN_ALL_SPACES = 1 << 0      # 出现在所有 Space（含其它 App 的全屏空间）
+_NS_STATIONARY = 1 << 4               # 切换 Space 时保持不动（不参与空间动画）
 _NS_FULL_SCREEN_AUXILIARY = 1 << 8    # 允许与全屏窗口同屏显示
 _MACOS_OVERLAY_LEVEL = 25             # NSStatusWindowLevel，高于普通窗口与全屏窗口
 _macos_objc = None
 
 
 def _macos_overlay(widget: QWidget) -> None:
-    """macOS：让窗口跟随所有 Space、可盖在全屏应用之上（纯 ctypes 调 libobjc）。"""
+    """macOS：把窗口做成「全屏也压不住」的浮层（纯 ctypes 调 libobjc）。
+
+    要真正盖住 PPT 全屏，光靠 Qt 的 WindowStaysOnTopHint 不够，需要同时满足：
+
+      1. collectionBehavior 含 CanJoinAllSpaces —— 否则窗口只待在自己那个 Space，
+         切到 PPT 的全屏 Space 时它根本不在这块屏幕上；
+      2. FullScreenAuxiliary —— 允许与全屏窗口共存；
+      3. Stationary —— Space 切换动画期间不跟着跑，避免闪一下；
+      4. level 高于全屏窗口（这里用 NSStatusWindowLevel = 25）；
+      5. canHide = NO / hidesOnDeactivate = NO —— 否则切到别的 App（PPT）时
+         系统会把窗口收起来；
+      6. orderFrontRegardless —— 不抢焦点也要显示到最前。
+
+    这些属性都只在窗口完成创建后才有意义，所以调用点放在 show 之后/拖动时。
+    任何一步失败都静默（置顶是增强，不该影响主流程）。
+    """
     global _macos_objc
     try:
         import ctypes.util
@@ -68,23 +87,32 @@ def _macos_overlay(widget: QWidget) -> None:
             _macos_objc = objc
         objc = _macos_objc
         msg = objc.objc_msgSend
+        sel = objc.sel_registerName
 
         # [nsView window] → NSWindow
         msg.restype = ctypes.c_void_p
         msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        window = msg(ctypes.c_void_p(int(widget.winId())),
-                     objc.sel_registerName(b"window"))
+        window = msg(ctypes.c_void_p(int(widget.winId())), sel(b"window"))
         if not window:
             return
 
-        # [window setCollectionBehavior:]
+        # 1) Space / 全屏行为
         msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
-        msg(window, objc.sel_registerName(b"setCollectionBehavior:"),
-            _NS_CAN_JOIN_ALL_SPACES | _NS_FULL_SCREEN_AUXILIARY)
+        msg(window, sel(b"setCollectionBehavior:"),
+            _NS_CAN_JOIN_ALL_SPACES | _NS_STATIONARY | _NS_FULL_SCREEN_AUXILIARY)
 
-        # [window setLevel:]
+        # 2) 层级
         msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
-        msg(window, objc.sel_registerName(b"setLevel:"), _MACOS_OVERLAY_LEVEL)
+        msg(window, sel(b"setLevel:"), _MACOS_OVERLAY_LEVEL)
+
+        # 3) 切到别的 App 时不要被收起/隐藏（BOOL 参数用 c_bool 传）
+        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+        msg(window, sel(b"setHidesOnDeactivate:"), False)
+        msg(window, sel(b"setCanHide:"), False)
+
+        # 4) 不抢焦点也显示到最前
+        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        msg(window, sel(b"orderFrontRegardless"))
     except Exception:
         pass
 
@@ -127,27 +155,36 @@ class FloatingBall(QWidget):
 
     DOUBLE_CLICK_MS = 400  # 两次点击之间判定双击的最大间隔
 
-    _MENU_QSS = """
-        QMenu {
-            background: #fafafa;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            padding: 4px 0;
-        }
-        QMenu::item {
-            padding: 6px 24px;
-            font-family: "Microsoft YaHei";
-            font-size: 13px;
-        }
-        QMenu::item:selected {
-            background: #4682B4;
-            color: white;
-        }
-        QMenu::right-arrow {
-            width: 12px;
-            height: 12px;
-        }
-    """
+    @staticmethod
+    def menu_stylesheet() -> str:
+        """右键菜单样式：跟随深/浅色，避免深色模式下白底黑字或反过来的惨案。"""
+        return f"""
+            QMenu {{
+                background: {theme.c("panel")};
+                color: {theme.c("text")};
+                border: 1px solid {theme.c("card_border")};
+                border-radius: 4px;
+                padding: 4px 0;
+            }}
+            QMenu::item {{
+                padding: 6px 24px;
+                font-family: "{theme.font_family()}";
+                font-size: 13px;
+            }}
+            QMenu::item:selected {{
+                background: {theme.c("accent")};
+                color: {theme.c("accent_text")};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {theme.c("card_border")};
+                margin: 4px 8px;
+            }}
+            QMenu::right-arrow {{
+                width: 12px;
+                height: 12px;
+            }}
+        """
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -178,6 +215,18 @@ class FloatingBall(QWidget):
         self._position_at_right_edge()
 
         QTimer.singleShot(100, lambda: force_topmost(self))
+
+    # --- 事件 ---
+
+    def showEvent(self, event) -> None:
+        """每次显示都重新确认浮层属性。
+
+        「隐藏悬浮球」按钮会 hide()/show() 这个窗口；Qt 在隐藏/显示之间可能重建
+        平台窗口，NSWindow 上的 level / collectionBehavior 就丢了。这里补一次，
+        顺便保证重新显示后仍然盖在全屏应用之上。
+        """
+        super().showEvent(event)
+        force_topmost(self)
 
     def _position_at_right_edge(self) -> None:
         screen = QApplication.primaryScreen()
@@ -255,11 +304,11 @@ class FloatingBall(QWidget):
     def build_context_menu(self) -> QMenu:
         """构建右键菜单（与 exec_ 分开，便于测试）。"""
         menu = QMenu(self)
-        menu.setStyleSheet(self._MENU_QSS)
+        menu.setStyleSheet(self.menu_stylesheet())
 
         # 连抽 —— 悬停后竖排展开 2~10 人（左键双击本来就能抽一个，不重复放）
         multi_menu = menu.addMenu("连抽")
-        multi_menu.setStyleSheet(self._MENU_QSS)
+        multi_menu.setStyleSheet(self.menu_stylesheet())
         for count in self.MULTI_DRAW_CHOICES:
             action = QAction(f"{count} 人", self)
             action.triggered.connect(
@@ -317,8 +366,7 @@ class FloatingBall(QWidget):
 
         # 始终显示「抽」
         painter.setPen(QColor(255, 255, 255, 240))
-        font = QFont("Microsoft YaHei", 20, QFont.Bold)
-        painter.setFont(font)
+        painter.setFont(theme.font(20, bold=True))
         painter.drawText(self.rect(), Qt.AlignCenter, "抽")
 
         painter.end()

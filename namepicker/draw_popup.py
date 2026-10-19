@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QApplication,
 )
 
+from . import theme
 from .config_store import APP_NAME
 
 
@@ -35,7 +36,7 @@ class DrawResultPopup(QWidget):
     SUBTITLE_QSS = """
         QLabel {
             color: #FFD700;
-            font-family: "Microsoft YaHei";
+            font-family: "%s";
             font-size: 16px;
             font-weight: bold;
             background: transparent;
@@ -98,7 +99,7 @@ class DrawResultPopup(QWidget):
         # --- 副标题 ---
         self._subtitle = QLabel("🎉 恭喜!")
         self._subtitle.setAlignment(Qt.AlignCenter)
-        self._subtitle.setStyleSheet(self.SUBTITLE_QSS)
+        self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
 
         # --- 名字网格（每次抽取重建）---
         self._name_host = QWidget()
@@ -112,11 +113,11 @@ class DrawResultPopup(QWidget):
         self._footer.setStyleSheet("""
             QLabel {
                 color: rgba(255, 255, 255, 80);
-                font-family: "Microsoft YaHei";
+                font-family: "%s";
                 font-size: 11px;
                 background: transparent;
             }
-        """)
+        """ % theme.font_family())
 
         # --- 布局 ---
         main_layout = QVBoxLayout(self)
@@ -171,7 +172,7 @@ class DrawResultPopup(QWidget):
         # Start rolling
         self._roll_count = 0
         self._subtitle.setText("🎉 抽签中...")
-        self._subtitle.setStyleSheet(self.SUBTITLE_QSS)
+        self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
         for label in self._name_labels:
             self._style_rolling(label)
 
@@ -197,7 +198,7 @@ class DrawResultPopup(QWidget):
 
     def _measure_cell(self, font_size: int) -> tuple[int, int]:
         """Cell size wide enough for the longest name (rolling shows pool names)."""
-        font = QFont("Microsoft YaHei", font_size, QFont.Bold)
+        font = theme.font(font_size, bold=True)
         fm = QFontMetrics(font)
         pool = self._all_names or self._result_names
         widest = max((fm.horizontalAdvance(n) for n in pool), default=0)
@@ -243,8 +244,8 @@ class DrawResultPopup(QWidget):
         size = label.property("base_font_size") or 36
         label.setStyleSheet(f"""
             QLabel {{
-                color: #87CEEB;
-                font-family: "Microsoft YaHei";
+                color: #8fc9e8;
+                font-family: "{theme.font_family()}";
                 font-size: {size}px;
                 font-weight: bold;
                 background: transparent;
@@ -256,7 +257,7 @@ class DrawResultPopup(QWidget):
         label.setStyleSheet(f"""
             QLabel {{
                 color: white;
-                font-family: "Microsoft YaHei";
+                font-family: "{theme.font_family()}";
                 font-size: {size}px;
                 font-weight: bold;
                 background: transparent;
@@ -293,7 +294,7 @@ class DrawResultPopup(QWidget):
             self._style_final(label)
 
         self._subtitle.setText("🎉 恭喜!")
-        self._subtitle.setStyleSheet(self.SUBTITLE_QSS)
+        self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
 
         # Auto-close after 5 seconds
         self._auto_close_timer = QTimer(self)
