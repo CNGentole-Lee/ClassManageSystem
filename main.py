@@ -22,6 +22,7 @@ from PyQt5.QtCore import Qt, QSettings, QTimer, QLibraryInfo, QLocale, QTranslat
 from PyQt5.QtWidgets import QApplication
 
 from namepicker import crash_log
+from namepicker import macos_window
 from namepicker import theme
 from namepicker.config_store import (
     APP_NAME, ConfigStore, migrate_legacy_plaintext, resolve_config_path,
@@ -72,6 +73,11 @@ def main():
     # 深/浅色自适应：字体、调色板与样式表都由 theme 统一生成（见 namepicker/theme.py）。
     # 必须在创建任何窗口之前应用，否则先建出来的控件会拿到默认字体。
     theme.apply(app)
+
+    # macOS：必须切到 accessory 激活策略，悬浮球才能加入别的 App 的全屏 Space。
+    # 代价是没有 Dock 图标（Alfred / Raycast 同样如此）；这不是可选项 ——
+    # regular 策略下窗口会留在桌面 Space，PPT 全屏时必然被盖住。
+    macos_window.set_accessory_policy()
 
     # Qt 自带控件的文案（对话框的 Yes/No/Cancel/OK 等）本地化。
     # 找不到 .qm 时静默跳过，不影响功能。
@@ -144,6 +150,10 @@ def main():
 
     # 右键点击悬浮球 → 打开小组积分面板
     ball.points_panel_requested.connect(points_win.show_and_activate)
+
+    # 右键菜单里的兜底动作（macOS 没有 Dock 图标、菜单栏可能自动隐藏）
+    ball.wipe_requested.connect(main_win._on_wipe_all)
+    ball.quit_requested.connect(app.quit)
 
     # 滚动开始 → 显示带滚动动画的弹窗
     def on_rolling_start(name: str):

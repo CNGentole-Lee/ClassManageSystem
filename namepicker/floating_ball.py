@@ -17,15 +17,23 @@ from . import theme
 # --- 强制置顶（跨平台）-------------------------------------------------
 #
 # Qt 的 WindowStaysOnTopHint 只保证「同一桌面内高于普通窗口」，两个平台都还有
-# 各自的一道坎，所以要分别补刀；置顶只是增强，任何一步失败都静默跳过。
+# 各自的一道坎：
 #
 #   Windows：全屏应用会把普通置顶窗口压住，需要 SetWindowPos(HWND_TOPMOST)
 #            把窗口钉进 topmost 层。
-#   macOS  ：Qt.Tool 会变成 NSPanel，默认 hidesOnDeactivate=YES，程序一失焦
-#            （老师切到 PPT）整个球会被系统隐藏；全屏应用还各自占一个 Space，
-#            普通浮动窗口不会跟过去。前者在 _init_ui 里用
-#            Qt.WA_MacAlwaysShowToolWindow 关掉，后者在这里设置
-#            NSWindowCollectionBehavior。
+#   macOS  ：光调窗口层级**不够**。实测（CGWindowList onScreenOnly）发现：
+#            regular 激活策略的应用自己占着一个桌面 Space，切到 PPT 的全屏
+#            Space 后窗口根本不在那儿；换成 accessory 策略（LSUIElement）后，
+#            它不占 Space，窗口才能加入当前全屏 Space。
+#            因此 macOS 侧的关键是 macos_window.set_accessory_policy()（在
+#            main.py 启动时调用）+ 这里的窗口属性。
+#
+# 置顶只是增强，任何一步失败都静默跳过。
+
+try:  # 包内相对导入（正常运行时）
+    from . import macos_window
+except ImportError:  # 允许把 namepicker 目录直接加进 sys.path 的用法
+    import macos_window  # type: ignore
 
 # --- Windows ---
 _HWND_TOPMOST = -1
@@ -51,76 +59,14 @@ if sys.platform == "win32":
     except Exception:
         _SetWindowPos = None
 
-# --- macOS ---
-# NSWindowCollectionBehavior 位值（AppKit 定义）
-_NS_CAN_JOIN_ALL_SPACES = 1 << 0      # 出现在所有 Space（含其它 App 的全屏空间）
-_NS_STATIONARY = 1 << 4               # 切换 Space 时保持不动（不参与空间动画）
-_NS_FULL_SCREEN_AUXILIARY = 1 << 8    # 允许与全屏窗口同屏显示
-_MACOS_OVERLAY_LEVEL = 25             # NSStatusWindowLevel，高于普通窗口与全屏窗口
-_macos_objc = None
-
-
-def _macos_overlay(widget: QWidget) -> None:
-    """macOS：把窗口做成「全屏也压不住」的浮层（纯 ctypes 调 libobjc）。
-
-    要真正盖住 PPT 全屏，光靠 Qt 的 WindowStaysOnTopHint 不够，需要同时满足：
-
-      1. collectionBehavior 含 CanJoinAllSpaces —— 否则窗口只待在自己那个 Space，
-         切到 PPT 的全屏 Space 时它根本不在这块屏幕上；
-      2. FullScreenAuxiliary —— 允许与全屏窗口共存；
-      3. Stationary —— Space 切换动画期间不跟着跑，避免闪一下；
-      4. level 高于全屏窗口（这里用 NSStatusWindowLevel = 25）；
-      5. canHide = NO / hidesOnDeactivate = NO —— 否则切到别的 App（PPT）时
-         系统会把窗口收起来；
-      6. orderFrontRegardless —— 不抢焦点也要显示到最前。
-
-    这些属性都只在窗口完成创建后才有意义，所以调用点放在 show 之后/拖动时。
-    任何一步失败都静默（置顶是增强，不该影响主流程）。
-    """
-    global _macos_objc
-    try:
-        import ctypes.util
-        if _macos_objc is None:
-            objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
-            objc.sel_registerName.restype = ctypes.c_void_p
-            objc.sel_registerName.argtypes = [ctypes.c_char_p]
-            _macos_objc = objc
-        objc = _macos_objc
-        msg = objc.objc_msgSend
-        sel = objc.sel_registerName
-
-        # [nsView window] → NSWindow
-        msg.restype = ctypes.c_void_p
-        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        window = msg(ctypes.c_void_p(int(widget.winId())), sel(b"window"))
-        if not window:
-            return
-
-        # 1) Space / 全屏行为
-        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong]
-        msg(window, sel(b"setCollectionBehavior:"),
-            _NS_CAN_JOIN_ALL_SPACES | _NS_STATIONARY | _NS_FULL_SCREEN_AUXILIARY)
-
-        # 2) 层级
-        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
-        msg(window, sel(b"setLevel:"), _MACOS_OVERLAY_LEVEL)
-
-        # 3) 切到别的 App 时不要被收起/隐藏（BOOL 参数用 c_bool 传）
-        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
-        msg(window, sel(b"setHidesOnDeactivate:"), False)
-        msg(window, sel(b"setCanHide:"), False)
-
-        # 4) 不抢焦点也显示到最前
-        msg.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        msg(window, sel(b"orderFrontRegardless"))
-    except Exception:
-        pass
-
 
 def force_topmost(widget: QWidget) -> None:
-    """把控件钉在最上层：Windows 用 SetWindowPos，macOS 用 NSWindow 层级/Space。"""
+    """把控件钉在最上层：Windows 用 SetWindowPos，macOS 用 NSWindow 浮层。
+
+    macOS 的全屏覆盖依赖应用激活策略（accessory），见模块顶部说明。
+    """
     if sys.platform == "darwin":
-        _macos_overlay(widget)
+        macos_window.make_overlay(widget)
         return
 
     if _SetWindowPos is None:
@@ -143,6 +89,10 @@ class FloatingBall(QWidget):
     open_panel_requested = pyqtSignal()  # 右键 → 打开管理面板
     points_panel_requested = pyqtSignal()  # 右键 → 打开小组积分窗口
     multi_draw_requested = pyqtSignal(int)  # 右键 → 连抽 N 人
+    # 托盘被系统隐藏时（macOS 菜单栏自动隐藏 / 没有 Dock 图标），
+    # 这些动作由悬浮球右键菜单兜底，保证功能不丢。
+    wipe_requested = pyqtSignal()           # 右键 → 彻底重置
+    quit_requested = pyqtSignal()           # 右键 → 退出程序
 
     # 连抽人数（右键菜单里竖排展开的选项）
     MULTI_DRAW_CHOICES = tuple(range(2, 11))
@@ -325,6 +275,23 @@ class FloatingBall(QWidget):
         open_action = QAction("打开管理面板", self)
         open_action.triggered.connect(self.open_panel_requested.emit)
         menu.addAction(open_action)
+
+        # 下面几项原本只在托盘菜单里。macOS 切到 accessory 策略后没有 Dock 图标，
+        # 而菜单栏又可能被系统设为自动隐藏，所以在这里再放一份，保证任何情况下
+        # 都能抽人 / 重置 / 退出。
+        menu.addSeparator()
+        draw_action = QAction("抽取名字", self)
+        draw_action.triggered.connect(self.ball_clicked.emit)
+        menu.addAction(draw_action)
+
+        wipe_action = QAction("彻底重置...", self)
+        wipe_action.triggered.connect(self.wipe_requested.emit)
+        menu.addAction(wipe_action)
+
+        menu.addSeparator()
+        quit_action = QAction("退出", self)
+        quit_action.triggered.connect(self.quit_requested.emit)
+        menu.addAction(quit_action)
 
         return menu
 

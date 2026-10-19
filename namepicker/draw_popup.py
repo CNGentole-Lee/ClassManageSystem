@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QApplication,
 )
 
+from . import macos_window
 from . import theme
 from .config_store import APP_NAME
 
@@ -312,6 +313,15 @@ class DrawResultPopup(QWidget):
         fade_out.setEasingCurve(QEasingCurve.InCubic)
         fade_out.finished.connect(self._on_close)
         fade_out.start()
+
+    def showEvent(self, event) -> None:
+        """显示时套用 macOS 浮层属性。
+
+        结果弹窗也要盖在全屏 PPT 之上，否则老师点完抽选什么也看不到。
+        非 macOS 上是空操作。
+        """
+        super().showEvent(event)
+        macos_window.make_overlay(self)
 
     def _on_close(self) -> None:
         self._stop_timers()

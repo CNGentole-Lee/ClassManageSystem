@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QScrollArea, QLayout, QDialog, QPlainTextEdit,
 )
 
+from . import macos_window
 from . import theme
 from . import log_store
 from .config_store import MAX_GROUP_COUNT, MIN_GROUP_COUNT
@@ -430,6 +431,11 @@ class PointsWindow(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def showEvent(self, event) -> None:
+        """显示时套用 macOS 浮层属性：课堂中打开面板加分时，PPT 可能还在全屏。"""
+        super().showEvent(event)
+        macos_window.make_overlay(self)
 
     def reload_from_store(self) -> None:
         """从 store 重新读取组名、分数和小组数量。
