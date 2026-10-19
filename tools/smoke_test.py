@@ -321,8 +321,15 @@ def test_floating_ball():
 
     menu = ball.build_context_menu()
     texts = [a.text() for a in menu.actions()]
-    check("菜单顶层为 连抽 / 积分管理 / 打开管理面板",
-          texts == ["连抽", "积分管理", "", "打开管理面板"], f"实际 {texts}")
+    check("菜单含连抽 / 积分管理 / 打开管理面板",
+          texts[:4] == ["连抽", "积分管理", "", "打开管理面板"], f"实际 {texts}")
+    # 托盘在 macOS 上可能不可见（无 Dock 图标 + 菜单栏自动隐藏），
+    # 这些动作必须能通过悬浮球右键菜单触达
+    check("菜单兜底含 抽取名字 / 彻底重置 / 退出",
+          "抽取名字" in texts and "彻底重置..." in texts and "退出" in texts,
+          f"实际 {texts}")
+    check("有 彻底重置 / 退出 信号",
+          hasattr(ball, "wipe_requested") and hasattr(ball, "quit_requested"))
 
     multi = menu.actions()[0].menu()
     sub_texts = [a.text() for a in multi.actions()]

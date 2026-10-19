@@ -16,6 +16,8 @@ from PyQt5.QtWidgets import (
     QScrollArea, QLayout, QDialog, QPlainTextEdit,
 )
 
+from . import macos_window
+from . import theme
 from . import log_store
 from .config_store import MAX_GROUP_COUNT, MIN_GROUP_COUNT
 
@@ -36,59 +38,60 @@ QFrame#card {
 QFrame#card QLabel { background: transparent; }
 QFrame#card QLabel#groupName {
     color: %(name)s;
-    font-family: "Microsoft YaHei";
+    font-family: "%(family)s";
     font-size: 17px;
     font-weight: bold;
 }
 QFrame#card QLabel#score {
     color: %(score)s;
-    font-family: "Microsoft YaHei";
+    font-family: "%(family)s";
     font-size: 44px;
     font-weight: bold;
 }
 QFrame#card QLabel#deltaBadge {
     color: %(badge)s;
-    font-family: "Microsoft YaHei";
+    font-family: "%(family)s";
     font-size: 18px;
     font-weight: bold;
 }
 QFrame#card QLabel#hint {
-    color: #9aa3ad;
-    font-family: "Microsoft YaHei";
+    color: %(hint)s;
+    font-family: "%(family)s";
     font-size: 12px;
 }
 QFrame#card QPushButton {
-    font-family: "Microsoft YaHei";
+    font-family: "%(family)s";
     font-size: 15px;
     font-weight: bold;
     border-radius: 8px;
     padding: 6px 0;
 }
 QFrame#card QPushButton#minus {
-    background: #fdecea;
-    color: #c0392b;
-    border: 1px solid #f0b4ae;
+    background: %(minus_bg)s;
+    color: %(minus_fg)s;
+    border: 1px solid %(minus_border)s;
 }
-QFrame#card QPushButton#minus:hover { background: #f8d3ce; }
+QFrame#card QPushButton#minus:hover { background: %(minus_hover)s; }
 QFrame#card QPushButton#plus {
-    background: #eaf6ee;
-    color: #2E8B57;
-    border: 1px solid #a9d5b9;
+    background: %(plus_bg)s;
+    color: %(plus_fg)s;
+    border: 1px solid %(plus_border)s;
 }
-QFrame#card QPushButton#plus:hover { background: #d5ecdf; }
+QFrame#card QPushButton#plus:hover { background: %(plus_hover)s; }
 QFrame#card QPushButton:pressed {
-    background: #c8c8c8;
-    color: #333;
+    background: %(pressed_bg)s;
+    color: %(pressed_fg)s;
 }
 """
 
 
 def _score_color(score: int) -> str:
+    """分数颜色：正/负/零，跟随主题（深色下用更亮的绿/红保证对比度）。"""
     if score > 0:
-        return "#2E8B57"
+        return theme.c("success")
     if score < 0:
-        return "#c0392b"
-    return "#444444"
+        return theme.c("danger")
+    return theme.c("text")
 
 
 class GroupCard(QFrame):
@@ -202,7 +205,7 @@ class GroupCard(QFrame):
     def flash(self, delta: int) -> None:
         """在分数旁短暂显示刚应用的增减量。"""
         self._badge_label.setText(f"{delta:+d}")
-        color = "#2E8B57" if delta > 0 else "#c0392b"
+        color = theme.c("success") if delta > 0 else theme.c("danger")
         if color != self._badge_color:
             self._badge_color = color
             self._badge_label.setStyleSheet(f"color: {color};")
@@ -271,11 +274,24 @@ class GroupCard(QFrame):
             return
         self._style_key = key
         self.setStyleSheet(_CARD_QSS % {
-            "bg": "#eef4fa" if self._selected else "#fbfcfd",
-            "border": "#4682B4" if self._selected else "#dfe3e8",
-            "name": "#2c3e50",
+            "bg": theme.c("card_selected") if self._selected else theme.c("card"),
+            "border": (theme.c("card_border_selected") if self._selected
+                       else theme.c("card_border")),
+            "name": theme.c("text_strong"),
             "score": _score_color(self._score),
-            "badge": "#2E8B57",
+            "badge": theme.c("success"),
+            "hint": theme.c("hint"),
+            "family": theme.font_family(),
+            "minus_bg": theme.c("minus_bg"),
+            "minus_fg": theme.c("minus_fg"),
+            "minus_border": theme.c("minus_border"),
+            "minus_hover": theme.c("minus_hover"),
+            "plus_bg": theme.c("plus_bg"),
+            "plus_fg": theme.c("plus_fg"),
+            "plus_border": theme.c("plus_border"),
+            "plus_hover": theme.c("plus_hover"),
+            "pressed_bg": theme.c("pressed_bg"),
+            "pressed_fg": theme.c("pressed_fg"),
         })
 
 
@@ -310,11 +326,11 @@ class PointsWindow(QWidget):
         # 顶栏
         header = QHBoxLayout()
         title = QLabel("小组积分")
-        title.setFont(QFont("Microsoft YaHei", 15, QFont.Bold))
+        title.setFont(theme.font(15, bold=True))
         header.addWidget(title)
         header.addStretch()
         hint = QLabel("单击小组展开操作 · 双击组名可重命名 · 快捷键 1/2/3/4 = -1/+1/+2/+3")
-        hint.setStyleSheet("color: #888; font-size: 12px;")
+        hint.setStyleSheet(f"color: {theme.c('muted')}; font-size: 12px;")
         header.addWidget(hint)
         layout.addLayout(header)
 
@@ -362,11 +378,11 @@ class PointsWindow(QWidget):
         footer.addStretch()
 
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: #888; font-size: 12px;")
+        self._status_label.setStyleSheet(f"color: {theme.c('muted')}; font-size: 12px;")
         footer.addWidget(self._status_label)
 
         self._config_label = QLabel("")
-        self._config_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        self._config_label.setStyleSheet(f"color: {theme.c('faint')}; font-size: 11px;")
         self._config_label.setToolTip("积分数据保存在此文件中")
         footer.addWidget(self._config_label)
 
@@ -415,6 +431,11 @@ class PointsWindow(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def showEvent(self, event) -> None:
+        """显示时套用 macOS 浮层属性：课堂中打开面板加分时，PPT 可能还在全屏。"""
+        super().showEvent(event)
+        macos_window.make_overlay(self)
 
     def reload_from_store(self) -> None:
         """从 store 重新读取组名、分数和小组数量。
@@ -587,8 +608,8 @@ class PointsWindow(QWidget):
     def _set_status(self, text: str, ok: bool = True) -> None:
         self._status_label.setText(text)
         self._status_label.setStyleSheet(
-            "color: #888; font-size: 12px;" if ok
-            else "color: #c0392b; font-size: 12px; font-weight: bold;"
+            f"color: {theme.c('muted')}; font-size: 12px;" if ok
+            else f"color: {theme.c('danger')}; font-size: 12px; font-weight: bold;"
         )
 
     # --- 事件 ---
@@ -645,7 +666,7 @@ class _LogViewerDialog(QDialog):
         else:
             title_text = "暂无记录"
         title = QLabel(title_text)
-        title.setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        title.setFont(theme.font(12, bold=True))
         layout.addWidget(title)
 
         # 数据来源与自动回档提示
@@ -659,14 +680,19 @@ class _LogViewerDialog(QDialog):
         if view.source in ("bak", "hidden"):
             info.setText(info.text() +
                           "\n⚠ 主日志被篡改、丢失或回滚过，已自动从更新的一份副本恢复。")
-        info.setStyleSheet("color: #888; font-size: 12px;")
+        info.setStyleSheet(f"color: {theme.c('muted')}; font-size: 12px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
         text = QPlainTextEdit()
         text.setReadOnly(True)
         text.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
-        text.setStyleSheet("background: #fafafa; border: 1px solid #ccc;")
+        # 深色模式下必须同时设 color，否则 QPlainTextEdit 会继承系统浅色文字，
+        # 落在浅色背景上几乎看不见（这就是「深色模式字体观感差」最严重的一处）。
+        text.setStyleSheet(
+            f"background: {theme.c('log_bg')}; color: {theme.c('text')};"
+            f" border: 1px solid {theme.c('view_border')};"
+        )
         if entries:
             text.setPlainText("\n".join(f"[{stamp}] {body}" for stamp, body in entries))
         else:
@@ -675,7 +701,7 @@ class _LogViewerDialog(QDialog):
         layout.addWidget(text, 1)
 
         tip = QLabel("日志只增不减：修改或删除都会被下一份副本修回来，「彻底重置」也不会清空它。")
-        tip.setStyleSheet("color: #aaa; font-size: 11px;")
+        tip.setStyleSheet(f"color: {theme.c('faint')}; font-size: 11px;")
         tip.setWordWrap(True)
         layout.addWidget(tip)
 

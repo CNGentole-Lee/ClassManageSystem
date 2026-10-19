@@ -9,16 +9,17 @@ except ImportError:  # pragma: no cover - 取决于运行平台
     winreg = None
 
 from PyQt5.QtCore import Qt, QSettings, QTimer
-from PyQt5.QtGui import QFont, QColor, QBrush
+from PyQt5.QtGui import QColor, QBrush
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QFileDialog,
     QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
     QSpinBox, QGroupBox, QSplitter, QHeaderView,
     QSystemTrayIcon, QMenu, QAction, QMessageBox,
-    QStyle, QApplication, QAbstractItemView, QCheckBox,
+    QApplication, QAbstractItemView, QCheckBox,
 )
 
+from . import theme
 from .config_store import APP_NAME
 
 
@@ -129,9 +130,10 @@ class MainWindow(QMainWindow):
         # --- Status ---
         status_layout = QHBoxLayout()
         self._status_label = QLabel("未加载名单")
-        self._status_label.setStyleSheet("color: #888;")
+        self._status_label.setStyleSheet(f"color: {theme.c('muted')};")
         self._cooldown_hint = QLabel("")
-        self._cooldown_hint.setStyleSheet("color: #888; font-size: 11px;")
+        self._cooldown_hint.setStyleSheet(
+            f"color: {theme.c('faint')}; font-size: 11px;")
         status_layout.addWidget(self._status_label)
         status_layout.addStretch()
         status_layout.addWidget(self._cooldown_hint)
@@ -144,7 +146,7 @@ class MainWindow(QMainWindow):
         name_group = QGroupBox("名单列表（灰色=冷却中）")
         name_layout = QVBoxLayout(name_group)
         self._name_list_widget = QListWidget()
-        self._name_list_widget.setFont(QFont("Microsoft YaHei", 11))
+        self._name_list_widget.setFont(theme.font(11))
         self._name_list_widget.setAlternatingRowColors(True)
         name_layout.addWidget(self._name_list_widget)
         splitter.addWidget(name_group)
@@ -217,8 +219,11 @@ class MainWindow(QMainWindow):
             return
 
         self._tray_icon = QSystemTrayIcon(self)
-        icon = self.style().standardIcon(QStyle.SP_ComputerIcon)
-        self._tray_icon.setIcon(icon)
+        # macOS 的菜单栏图标必须是模板图（只有 alpha 有效，系统会按浅/深色自动
+        # 反色）。之前用 QStyle.SP_ComputerIcon —— 一张 512px 的彩色位图 —— 在
+        # 菜单栏里既糊又可能压根不显示。theme.tray_icon() 在 macOS 上返回
+        # setIsMask(True) 的「抽」字，Windows 上返回钢蓝圆底图标。
+        self._tray_icon.setIcon(theme.tray_icon())
         self._tray_icon.setToolTip(APP_NAME)
 
         menu = QMenu()
@@ -252,7 +257,7 @@ class MainWindow(QMainWindow):
     def on_name_drawn(self, name: str) -> None:
         self._refresh_history()
         self._status_label.setText(f"本次抽中: {name}")
-        self._status_label.setStyleSheet("color: #2E8B57; font-weight: bold;")
+        self._status_label.setStyleSheet(f"color: {theme.c('success')}; font-weight: bold;")
 
     def on_names_drawn(self, names: list) -> None:
         """连抽结果 — show a short preview in the status line."""
@@ -261,27 +266,27 @@ class MainWindow(QMainWindow):
         if len(names) > 8:
             preview += f" … 共 {len(names)} 人"
         self._status_label.setText(f"本次抽中: {preview}")
-        self._status_label.setStyleSheet("color: #2E8B57; font-weight: bold;")
+        self._status_label.setStyleSheet(f"color: {theme.c('success')}; font-weight: bold;")
 
     def on_partial_multi_draw(self, drawn: int, requested: int) -> None:
         """连抽时可用人数不足（其余都在冷却中）。"""
         self._status_label.setText(
             f"⚠️ 只抽到 {drawn} 人（请求 {requested} 人，其余仍在冷却中）"
         )
-        self._status_label.setStyleSheet("color: #CD853F; font-weight: bold;")
+        self._status_label.setStyleSheet(f"color: {theme.c('warning')}; font-weight: bold;")
 
     def on_cooldowns_updated(self) -> None:
         self._refresh_cooldown_display()
 
     def on_names_loaded(self, count: int) -> None:
         self._status_label.setText(f"已加载 {count} 个名字")
-        self._status_label.setStyleSheet("color: #2E8B57; font-weight: bold;")
+        self._status_label.setStyleSheet(f"color: {theme.c('success')}; font-weight: bold;")
 
         self._name_list_widget.clear()
         self._name_items.clear()
         for name in self._engine.get_names():
             item = QListWidgetItem(name)
-            item.setFont(QFont("Microsoft YaHei", 11))
+            item.setFont(theme.font(11))
             self._name_list_widget.addItem(item)
             self._name_items[name] = item
 
@@ -296,14 +301,14 @@ class MainWindow(QMainWindow):
 
     def on_pool_refilled(self, count: int) -> None:
         self._status_label.setText(f"🔄 全员已抽过一轮（共 {count} 人），开始新一轮")
-        self._status_label.setStyleSheet("color: #4682B4; font-weight: bold;")
+        self._status_label.setStyleSheet(f"color: {theme.c('accent')}; font-weight: bold;")
 
     def on_cooldown_blocked(self, remaining: int) -> None:
         """Show brief cooldown reminder (for per-name case this is less common)."""
         m = remaining // 60
         s = remaining % 60
         self._status_label.setText(f"⏳ 冷却中: {m:02d}:{s:02d}")
-        self._status_label.setStyleSheet("color: #CD853F; font-weight: bold;")
+        self._status_label.setStyleSheet(f"color: {theme.c('warning')}; font-weight: bold;")
 
     def on_error(self, message: str) -> None:
         QMessageBox.warning(self, "提示", message)
@@ -325,11 +330,11 @@ class MainWindow(QMainWindow):
                 m = remaining // 60
                 s = remaining % 60
                 item.setText(f"{name}  [{m}:{s:02d}]")
-                item.setForeground(QBrush(QColor(160, 160, 160)))
+                item.setForeground(QBrush(QColor(theme.c("faint"))))
                 cooling_count += 1
             else:
                 item.setText(name)
-                item.setForeground(QBrush(QColor(0, 0, 0)))
+                item.setForeground(QBrush(QColor(theme.c("text"))))
 
         if cooling_count > 0:
             self._cooldown_hint.setText(f"{cooling_count} 人在冷却中")
@@ -555,7 +560,7 @@ class MainWindow(QMainWindow):
         self._refresh_history()
         self._refresh_cooldown_display()
         self._status_label.setText("已彻底重置，所有数据恢复出厂状态")
-        self._status_label.setStyleSheet("color: #4682B4; font-weight: bold;")
+        self._status_label.setStyleSheet(f"color: {theme.c('accent')}; font-weight: bold;")
 
     def _refresh_history(self) -> None:
         history = self._engine.get_history()
