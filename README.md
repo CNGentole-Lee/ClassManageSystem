@@ -337,7 +337,7 @@ python tools/fairness_burnin.py
 
 ## 打包
 
-> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包（设计GUI CI无法测试）
+> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包（涉及到GUI相关，并且无法通过Somketest， CI无法测试故新Commit取消CI）
 
 ### Windows —— Windows 10及以上电脑+相关依赖
 
