@@ -2,8 +2,13 @@
 
 [![English](https://img.shields.io/badge/English-Jump%20to%20English-blue)](#english)　[中文](#chinese) [English](#english)
 
-> 本文档为中文 + 英文双语版：英文请点击 **English** 按钮  
+> 本文档为中文 + 英文双语版：英文请点击 **English** 按钮
+>   
 >This document is available in both Chinese and English: for English, please click the **English** button.
+>   
+> **注意：** 由于作者时间紧张，全面英配工作量过大，目前程序还是纯中文，望理解
+>   
+> **Attention please:** Due to the author's tight schedule, full English localization would require too much work, so the program is currently still available in Chinese only. Thank you for your understanding.
 
 ---
 
