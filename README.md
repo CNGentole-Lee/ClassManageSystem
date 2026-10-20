@@ -2,8 +2,8 @@
 
 [![English](https://img.shields.io/badge/English-Jump%20to%20English-blue)](#english)　[中文](#chinese) [English](#english)
 
-> 本文档为中文 + 英文双语版：英文请点击 **Englishi** 按钮  
->This document is available in both Chinese and English: for English, please click the **Englishi** button.
+> 本文档为中文 + 英文双语版：英文请点击 **English** 按钮  
+>This document is available in both Chinese and English: for English, please click the **English** button.
 
 ---
 
