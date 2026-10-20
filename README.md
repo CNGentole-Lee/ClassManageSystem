@@ -61,7 +61,7 @@
 
 ### 深色模式
 
-界面跟随系统外观（macOS / Windows 均可），不是把浅色主题硬套一遍：
+界面跟随系统外观（仅macOS），不是把浅色主题硬套一遍：
 卡片、按钮、表格、日志区都有各自的深色配色，文字与背景保持足够对比度。
 也可用环境变量强制预览：`CLASSMANAGE_THEME=dark python main.py`。
 
@@ -416,7 +416,7 @@ packaging/macos/build.command        # 双击也可以
 │   ├── repro_quit.py                # 「关闭面板导致退出」最小复现
 │   └── _settings_isolation.py       # 测试用的 QSettings 命名空间隔离
 │
-└── .github/workflows/build-windows.yml   # CI：x64 Windows 打包
+└── .github/workflows/build-windows.yml   # CI：x64 Windows 打包 --已弃用
 ```
 
 ---
