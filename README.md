@@ -337,20 +337,9 @@ python tools/fairness_burnin.py
 
 ## 打包
 
-> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包（本地 Windows 或 CI）。
+> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包（设计GUI CI无法测试）
 
-### Windows —— 方式一：GitHub Actions（推荐）
-
-推送即自动打包，产物在 Actions 页面下载：
-
-```bash
-git push origin main                    # 触发 .github/workflows/build-windows.yml
-git tag v1.0.0 && git push origin v1.0.0   # 打 tag 会自动建 Release 并附上 EXE
-```
-
-CI 会依次跑：`tools/windows_check.py`（平台自检，同时验证注册表隐蔽备份与 Win32 置顶是否真的可用）→ 存储/日志验收 → PyInstaller 打包 → 上传 `ClassManageSystem-windows-x64` 产物。**自检失败会中断出包**，所以能下到 EXE 就意味着这些功能在真 Windows 上实测过。
-
-### Windows —— 方式二：任意一台 Windows
+### Windows —— Windows 10及以上电脑+相关依赖
 
 ```bat
 packaging\windows\build.bat
@@ -545,8 +534,7 @@ QSettings 隐蔽备份恢复。
 ## 已知限制
 
 - **未做代码签名/公证**：Windows 有 SmartScreen 提示，macOS 拷贝到别的机器需右键打开。
-- **架构跟随构建机**：Apple Silicon 上打出 arm64 的 `.app`，Intel Mac 不能跑；
-  Windows CI 产出 x64。
+- **架构跟随构建机**：Apple Silicon 上打出 arm64 的 `.app`，Intel Mac 不能跑，没有写双架构冗余，Intel Mac需要自己运行打包的Shell程序；
 - **macOS 全屏覆盖靠「应用激活策略」**：窗口层级再高也没用 —— regular 应用自己占着
   一个桌面 Space，别的 App 进全屏后它压根不在那个 Space 里。本程序启动时会切到
   **accessory** 策略（`LSUIElement`，与 Alfred / Raycast 相同），窗口才能加入
