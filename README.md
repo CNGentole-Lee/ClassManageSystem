@@ -324,7 +324,7 @@ python tools/fairness_burnin.py
 | 抽选 / 积分 / 日志 | ✅ | ✅ | 未验证 |
 | 盖住全屏应用 | ✅ `SetWindowPos` | ✅ accessory 策略 + 浮层属性（已实测） | 未验证 |
 | 托盘 / 菜单栏图标 | ✅ 彩色托盘图标 | ✅ 模板图；**菜单栏自动隐藏时不显示** | 未验证 |
-| 浅色 / 深色模式 | ✅ 跟随系统 | ✅ 跟随系统 | ✅ 跟随系统 |
+| 浅色 / 深色模式 | ❌ 深色未生效 | ✅ 跟随系统 | 未验证 |
 | 系统级隐蔽备份 | ✅ HKCU 注册表 | ✅ `~/Library/Preferences` plist | ✅ `~/.config` |
 | 悬浮球置顶 | ✅ `SetWindowPos(HWND_TOPMOST)` | ✅ 层级 + `CanJoinAllSpaces`/`FullScreenAuxiliary`/`Stationary` | 未验证 |
 | Dock 图标 | — | ❌ 无（accessory 策略的代价，见下） | — |
