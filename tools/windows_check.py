@@ -14,6 +14,7 @@ macOS 上真正跑一遍。这个脚本把每条平台相关假设都实测一�
 
 import os
 import locale
+import subprocess
 import sys
 import tempfile
 
@@ -69,8 +70,26 @@ if IS_WINDOWS:
           "None 说明 force_topmost 在 Windows 上是空操作（祖传 bug 复发）")
     check("argtypes 已设置（HWND 用 c_void_p 传，不依赖 ctypes.wintypes）",
           bool(floating_ball._SetWindowPos.argtypes) if floating_ball._SetWindowPos else False)
-    check("ctypes 不自动带出 wintypes 这个结论仍然成立",
-          not hasattr(__import__("ctypes"), "wintypes"))
+
+    # 验证「我们的代码不依赖 ctypes.wintypes」。
+    # 注意：必须在**干净的独立子进程**里验证。本进程已经 import 了
+    # cryptography / PyQt5 / pyinstaller，其中 PyInstaller 的
+    # _pyi_rth_utils._win32 与 pip 的 truststore._windows 都会
+    # `import ctypes.wintypes`，于是 ctypes 上多出 wintypes 属性 ——
+    # 那是环境现象，不是本程序的问题（曾经误报过一次）。
+    probe = (
+        "import ctypes, sys\n"
+        "assert not hasattr(ctypes, 'wintypes'), 'clean ctypes leaked wintypes'\n"
+        "from namepicker import floating_ball\n"
+        "assert floating_ball._SetWindowPos is not None, 'SetWindowPos missing'\n"
+        "print('OK')\n"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True,
+                         text=True, cwd=os.path.dirname(os.path.dirname(
+                             os.path.abspath(__file__))))
+    check("干净进程里导入本程序不依赖 ctypes.wintypes",
+          out.returncode == 0 and "OK" in out.stdout,
+          (out.stdout + out.stderr).strip()[:160])
 else:
     skip("Win32 SetWindowPos 实测", "当前不是 Windows")
     check("macOS/Linux 上安全降级为 None（不会 ImportError）",
