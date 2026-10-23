@@ -29,8 +29,10 @@ a = Analysis(
     pathex=[ROOT],
     binaries=[],
     # 程序运行时不读取包内资源：名单文件由老师自己选；配置/日志写在 EXE 旁边，
-    # 只读目录则回退到 %APPDATA%\ClassTerminal2411。所以不需要 datas。
-    datas=[],
+    # 只读目录则回退到 %APPDATA%\ClassTerminal2411。
+    # 唯一要随包走的资源是 LICENSE —— GPL-3.0 要求分发时附带许可证全文，
+    # 「关于」窗口会读取它显示。
+    datas=[(os.path.join(ROOT, "LICENSE"), ".")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

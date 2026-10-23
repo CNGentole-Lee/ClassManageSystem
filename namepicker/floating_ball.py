@@ -94,6 +94,7 @@ class FloatingBall(QWidget):
     # 这些动作由悬浮球右键菜单兜底，保证功能不丢。
     wipe_requested = pyqtSignal()           # 右键 → 彻底重置
     quit_requested = pyqtSignal()           # 右键 → 退出程序
+    about_requested = pyqtSignal()          # 右键 → 关于（GPL 声明）
 
     # 连抽人数（右键菜单里竖排展开的选项）
     MULTI_DRAW_CHOICES = tuple(range(2, 11))
@@ -289,6 +290,10 @@ class FloatingBall(QWidget):
         wipe_action.triggered.connect(self.wipe_requested.emit)
         menu.addAction(wipe_action)
 
+        menu.addSeparator()
+        about_action = QAction(tr("关于", "About"), self)
+        about_action.triggered.connect(self.about_requested.emit)
+        menu.addAction(about_action)
         menu.addSeparator()
         quit_action = QAction(tr("退出", "Quit"), self)
         quit_action.triggered.connect(self.quit_requested.emit)

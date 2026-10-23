@@ -31,6 +31,9 @@ MANIFEST
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# 但这两个是我们手写并维护的打包配置，必须提交
+!packaging/windows/ClassManageSystem.spec
+!packaging/macos/ClassManageSystem.spec
 
 # Installer logs
 pip-log.txt

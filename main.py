@@ -21,6 +21,7 @@ import os
 from PyQt5.QtCore import Qt, QSettings, QTimer
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
+from namepicker import about_dialog
 from namepicker import crash_log
 from namepicker import i18n
 from namepicker import macos_window
@@ -178,6 +179,7 @@ def main():
 
     # 右键菜单里的兜底动作（macOS 没有 Dock 图标、菜单栏可能自动隐藏）
     ball.wipe_requested.connect(main_win._on_wipe_all)
+    ball.about_requested.connect(lambda: about_dialog.show_about(main_win))
     ball.quit_requested.connect(app.quit)
 
     # 滚动开始 → 显示带滚动动画的弹窗

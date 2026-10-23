@@ -206,6 +206,33 @@ def main() -> int:
         fh.write("pass\n")
     check("startDetached actually spawns a process", restart.restart([probe]) is True)
 
+    print("\n--- 9. About dialog / GPL compliance ---")
+    from namepicker import about_dialog
+    check("LICENSE file is found next to the sources",
+          bool(about_dialog.license_path()), about_dialog.license_path())
+    text = about_dialog.license_text()
+    check("license text is the GPL-3.0", "GNU GENERAL PUBLIC LICENSE" in text
+          and "Version 3, 29 June 2007" in text)
+    check("license text carries the copyright line",
+          "Gentole Lee" in text and "Copyright (C)" in text)
+    check("license text is complete (has the FSF end notes)",
+          "END OF TERMS AND CONDITIONS" in text)
+    check("license text states there is no warranty",
+          "WITHOUT ANY WARRANTY" in text.upper())
+
+    version_file = os.path.join(_ROOT, "packaging", "windows", "version_info.txt")
+    if os.path.isfile(version_file):
+        with open(version_file, encoding="utf-8") as fh:
+            info = fh.read()
+        major, minor, patch = about_dialog.VERSION.split(".")
+        check("version matches packaging/windows/version_info.txt",
+              f"filevers=({major}, {minor}, {patch}, 0)" in info,
+              f"app says {about_dialog.VERSION}")
+
+    dlg = about_dialog.AboutDialog()
+    check("about dialog builds", dlg.windowTitle() != "")
+    dlg.close()
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")
