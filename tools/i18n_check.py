@@ -28,11 +28,12 @@ isolate_settings()
 from PyQt5.QtCore import QSettings  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
-from namepicker import i18n, log_store, theme  # noqa: E402
+from namepicker import i18n, log_store, restart, theme  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 from namepicker.main_window import MainWindow  # noqa: E402
 from namepicker.name_engine import NameEngine  # noqa: E402
 from namepicker.points_window import PointsWindow  # noqa: E402
+from namepicker.draw_popup import DrawResultPopup  # noqa: E402
 
 failures = []
 
@@ -92,6 +93,7 @@ def main() -> int:
     engine.generate_number_list(1, 5)
     win = MainWindow(engine)
     # 切换语言会弹「重启后生效」提示框；测试里替换掉，避免阻塞
+    original_question = QMessageBox.question
     original_information = QMessageBox.information
     QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
     try:
@@ -112,6 +114,97 @@ def main() -> int:
     check("entries carry both zh and en",
           all(zh and en for _s, zh, en in entries),
           f"first={entries[0] if entries else None}")
+
+    print("\n--- 5. Default group names follow the language ---")
+    i18n.set_language("zh")
+    localized = ConfigStore(os.path.join(tmp, "localized.ini"))
+    check("zh defaults are Chinese", localized.get_group_name(1) == "第一组",
+          localized.get_group_name(1))
+    localized.set_group_name(2, "雄鹰组")
+    localized.save()
+    i18n.set_language("en")
+    check("default name switches to English",
+          localized.get_group_name(1) == "Group 1", localized.get_group_name(1))
+    check("custom name is untouched",
+          localized.get_group_name(2) == "雄鹰组", localized.get_group_name(2))
+    reloaded = ConfigStore(localized.path)
+    check("localization survives a reload (not written back)",
+          reloaded.get_group_name(1) == "Group 1"
+          and reloaded.get_group_name(2) == "雄鹰组")
+    i18n.set_language("zh")
+    check("switching back restores Chinese defaults",
+          ConfigStore(localized.path).get_group_name(1) == "第一组")
+
+    print("\n--- 6. Language change asks to restart ---")
+    restarts = []
+    win.restart_requested.connect(lambda: restarts.append(True))
+    i18n.set_language("zh")
+    win._lang_combo.blockSignals(True)
+    win._lang_combo.setCurrentIndex(win._lang_combo.findData("zh"))
+    win._lang_combo.blockSignals(False)
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+    win._lang_combo.setCurrentIndex(win._lang_combo.findData("en"))
+    check("choosing Yes emits restart_requested", len(restarts) == 1, f"{len(restarts)}")
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.No)
+    win._lang_combo.setCurrentIndex(win._lang_combo.findData("zh"))
+    check("choosing No does not restart", len(restarts) == 1, f"{len(restarts)}")
+    QMessageBox.question = original_question
+
+    print("\n--- 7. Long foreign names ---")
+    i18n.set_language("en")
+    long_name = "Bartholomew Montgomery-Fitzgerald"
+    long_store = ConfigStore(os.path.join(tmp, "long.ini"))
+    long_store.set_group_name(1, long_name)
+    long_store.save()
+    long_points = PointsWindow(long_store)
+    long_points.resize(940, 680)
+    long_points.show()
+    app.processEvents()
+    card = long_points._cards[0]
+    check("card keeps the full name", card._name_label.full_text() == long_name,
+          card._name_label.full_text())
+    check("card text is elided, not clipped",
+          card._name_label.text() != long_name
+          and card._name_label.text().endswith("\u2026"),
+          f"shows {card._name_label.text()!r}")
+    check("tooltip reveals the full name",
+          card._name_label.toolTip() == long_name)
+    long_points.close()
+
+    popup = DrawResultPopup()
+    popup.set_name_pool([long_name, "Li", "Wang"])
+    popup.show_results([long_name])
+    app.processEvents()
+    popup._stop_timers()
+    popup._show_final()          # 跳过滚动动画，直接看最终文字
+    app.processEvents()
+    screen_width = app.primaryScreen().availableGeometry().width()
+    check("popup never exceeds the screen width", popup.width() <= screen_width,
+          f"{popup.width()} <= {screen_width}")
+    check("popup keeps the full name for the label",
+          popup._name_labels[0].full_text() == long_name,
+          popup._name_labels[0].full_text())
+    check("popup elides the rendered text",
+          popup._name_labels[0].text() != long_name,
+          f"shows {popup._name_labels[0].text()!r}")
+    popup.close()
+
+    print("\n--- 8. Restart command line ---")
+    program, args = restart.restart_arguments(["/tmp/x/main.py", "--flag"])
+    check("source run passes the absolute script path",
+          program == sys.executable and args == ["/tmp/x/main.py", "--flag"],
+          f"{program} {args}")
+    sys.frozen = True
+    try:
+        program, args = restart.restart_arguments(["/Applications/App.app/exe", "--flag"])
+    finally:
+        del sys.frozen
+    check("frozen app passes only user arguments",
+          program == sys.executable and args == ["--flag"], f"{program} {args}")
+    probe = os.path.join(tempfile.mkdtemp(prefix="cm_restart_"), "probe.py")
+    with open(probe, "w", encoding="utf-8") as fh:
+        fh.write("pass\n")
+    check("startDetached actually spawns a process", restart.restart([probe]) is True)
 
     print("\n" + "=" * 60)
     if failures:

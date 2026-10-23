@@ -90,12 +90,13 @@ def _cfnum(cf, d, key):
 
 
 def on_screen_windows():
-    """当前活跃 Space 里的窗口：[(pid, width, height), ...]。"""
+    """当前活跃 Space 里的窗口（按前后顺序）：[(pid, number, width, height), ...]。"""
     try:
         cg, cf = _cg_api()
     except Exception:
         return []
     k_pid = _cfstr(cf, "kCGWindowOwnerPID")
+    k_num = _cfstr(cf, "kCGWindowNumber")
     k_bounds = _cfstr(cf, "kCGWindowBounds")
     k_w = _cfstr(cf, "Width")
     k_h = _cfstr(cf, "Height")
@@ -107,10 +108,11 @@ def on_screen_windows():
         for i in range(cf.CFArrayGetCount(arr)):
             d = cf.CFArrayGetValueAtIndex(arr, i)
             pid = _cfnum(cf, d, k_pid)
+            number = _cfnum(cf, d, k_num)
             bounds = cf.CFDictionaryGetValue(d, k_bounds)
-            if pid is None or not bounds:
+            if pid is None or number is None or not bounds:
                 continue
-            out.append((int(pid), _cfnum(cf, bounds, k_w) or 0.0,
+            out.append((int(pid), int(number), _cfnum(cf, bounds, k_w) or 0.0,
                         _cfnum(cf, bounds, k_h) or 0.0))
     finally:
         cf.CFRelease(arr)
@@ -136,6 +138,15 @@ def status_bar_window_count() -> int:
         return 0
 
 
+def window_number(widget) -> int:
+    """NSWindow.windowNumber（用于在 CGWindowList 里定位窗口）。"""
+    try:
+        window = macos_window.ns_window(widget)
+        return int(macos_window._msg(window, b"windowNumber", ctypes.c_long) or 0)
+    except Exception:
+        return 0
+
+
 def menu_bar_auto_hidden() -> bool | None:
     try:
         out = subprocess.run(["defaults", "read", "-g", "_HIHideMenuBar"],
@@ -150,7 +161,7 @@ def menu_bar_auto_hidden() -> bool | None:
 
 def fullscreen_test():
     """启动一个进入原生全屏的辅助进程，验证悬浮球仍在当前 Space。"""
-    print("\n--- 5. Real full-screen overlap test ---")
+    print("\n--- 6. Real full-screen overlap test ---")
     helper = subprocess.Popen(
         [sys.executable, os.path.join(_HERE, "_fullscreen_helper.py")],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
@@ -168,21 +179,30 @@ def fullscreen_test():
         force_topmost(ball)
         process(0.4)
 
-        # 激活辅助进程 → 系统切到它的全屏 Space
-        try:
-            running = macos_window._msg(
-                macos_window._class(b"NSRunningApplication"),
-                b"runningApplicationWithProcessIdentifier:",
-                ctypes.c_void_p, [ctypes.c_int32], ctypes.c_int32(helper.pid))
-            macos_window._msg(running, b"activateWithOptions:", ctypes.c_bool,
-                              [ctypes.c_ulong], ctypes.c_ulong(1 << 1))
-        except Exception:
-            pass
-        process(2.2)
+        # 激活辅助进程 → 系统切到它的全屏 Space。
+        # 切换 Space 是异步动画，CI/负载高时会慢半拍，所以重试几次再判定。
+        def activate_helper():
+            try:
+                running = macos_window._msg(
+                    macos_window._class(b"NSRunningApplication"),
+                    b"runningApplicationWithProcessIdentifier:",
+                    ctypes.c_void_p, [ctypes.c_int32], ctypes.c_int32(helper.pid))
+                macos_window._msg(running, b"activateWithOptions:", ctypes.c_bool,
+                                  [ctypes.c_ulong], ctypes.c_ulong(1 << 1))
+            except Exception:
+                pass
 
-        windows = on_screen_windows()
-        helper_visible = any(pid == helper.pid for pid, _w, _h in windows)
-        mine = [(w, h) for pid, w, h in windows if pid == os.getpid()]
+        windows = []
+        helper_visible = False
+        for attempt in range(4):
+            activate_helper()
+            process(1.2 if attempt == 0 else 0.9)
+            windows = on_screen_windows()
+            helper_visible = any(pid == helper.pid for pid, _n, _w, _h in windows)
+            if helper_visible:
+                break
+
+        mine = [(w, h) for pid, _n, w, h in windows if pid == os.getpid()]
         small = [(w, h) for w, h in mine if w <= 90 and h <= 90]
 
         check("helper full-screen window is on screen (switched to its full-screen Space)", helper_visible,
@@ -218,6 +238,7 @@ theme.apply(app)
 # 与 main.py 一致：macOS 必须切到 accessory 策略，窗口才能加入别的 App 的全屏 Space
 if is_macos:
     macos_window.set_accessory_policy()
+    macos_window.install_dialog_raiser(app)
 
 print("=" * 66)
 print(f"Platform: {sys.platform} | Python {sys.version.split()[0]}")
@@ -307,6 +328,51 @@ if attrs:
           and again["behavior"] == attrs["behavior"])
 ball.hide()
 ball.deleteLater()
+
+print("\n--- 5. Modal dialogs above the overlay panel ---")
+if is_macos:
+    from PyQt5.QtWidgets import QInputDialog
+    from namepicker.config_store import ConfigStore
+    from namepicker.points_window import PointsWindow
+
+    store = ConfigStore(os.path.join(tempfile.mkdtemp(prefix="cm_modal_"), "config.ini"))
+    panel = PointsWindow(store)
+    panel.show()
+    force_topmost(panel)
+    process(0.3)
+
+    dialog = QInputDialog(panel)
+    dialog.setWindowTitle("Rename")
+    dialog.setLabelText("New name:")
+    result = {}
+
+    def inspect():
+        panel_level = (macos_window.window_attrs(panel) or {}).get("level", 0)
+        dialog_level = (macos_window.window_attrs(dialog) or {}).get("level", 0)
+        order = [number for _pid, number, _w, _h in on_screen_windows()]
+        panel_num, dialog_num = window_number(panel), window_number(dialog)
+        above = (panel_num in order and dialog_num in order
+                 and order.index(dialog_num) < order.index(panel_num))
+        result.update(panel_level=panel_level, dialog_level=dialog_level, above=above)
+        dialog.reject()
+
+    QTimer.singleShot(600, inspect)
+    dialog.exec_()          # 模态打开；inspect() 在模态循环里执行并关掉它
+    process(0.2)
+
+    check("panel really is an overlay (level 25)", result.get("panel_level") == 25,
+          f"level={result.get('panel_level')}")
+    check("modal dialog is raised above the panel",
+          result.get("dialog_level", 0) > result.get("panel_level", 0),
+          f"dialog level={result.get('dialog_level')}")
+    check("dialog is frontmost in the window list", bool(result.get("above")),
+          f"above={result.get('above')}")
+    panel.close()
+    panel.hide()
+    panel.deleteLater()
+    process(0.4)
+else:
+    skip("modal dialog layering", "macOS only")
 
 if FULLSCREEN_TEST and is_macos:
     fullscreen_test()

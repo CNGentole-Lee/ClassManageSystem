@@ -19,11 +19,12 @@ import sys
 import os
 
 from PyQt5.QtCore import Qt, QSettings, QTimer
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from namepicker import crash_log
 from namepicker import i18n
 from namepicker import macos_window
+from namepicker import restart as restart_service
 from namepicker import theme
 from namepicker.config_store import (
     ConfigStore, app_name, migrate_legacy_plaintext, resolve_config_path,
@@ -92,6 +93,10 @@ def main():
     # Qt 自带控件的文案（对话框按钮等）：zh 装中文翻译，en 用 Qt 默认英文。
     i18n.translator_for_qt(app, i18n.language())
 
+    # macOS：积分面板/弹窗是 level 25 的浮层，普通对话框（改名、确认框）会被
+    # 它盖住并表现为假死。这里统一把对话框抬到 level 26。
+    macos_window.install_dialog_raiser(app)
+
 
     # --- 旧版明文迁移（一次性）---
     # 老版本把分数明文写在 config.ini 里；如果还没有加密主文件，先把旧数据加密
@@ -139,6 +144,22 @@ def main():
     main_win.set_ball(ball)
     main_win.set_points_window(points_win)
     main_win.set_wipe_handler(wipe_everything)
+
+    def restart_app() -> None:
+        """切换语言后立即重启：先释放单实例锁，再拉起新进程，最后退出自己。"""
+        single.release()
+        started = restart_service.restart()
+        if not started:
+            QMessageBox.warning(
+                main_win,
+                tr("重启失败", "Restart failed"),
+                tr("无法自动重启，请手动关闭后重新打开。",
+                   "Could not restart automatically. Please close and reopen the app."),
+            )
+            return
+        app.quit()
+
+    main_win.restart_requested.connect(restart_app)
 
 # --- 信号连接 ---
 

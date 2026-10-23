@@ -8,7 +8,7 @@ try:  # 注册表模块只在 Windows 上存在；macOS/Linux 下没有它
 except ImportError:  # pragma: no cover - 取决于运行平台
     winreg = None
 
-from PyQt5.QtCore import Qt, QSettings, QTimer
+from PyQt5.QtCore import Qt, QSettings, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -33,6 +33,9 @@ class MainWindow(QMainWindow):
     # macOS 用 LaunchAgent 实现同一功能（winreg 在 macOS 上不存在）
     AUTOSTART_LABEL = "com.namepicker.randomnamepicker"
     MACOS_AGENT_DIR = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents")
+
+    #: 用户选择「立即重启」时发出；由 main.py 负责真正拉起新进程
+    restart_requested = pyqtSignal()
 
     def __init__(self, engine, app_path: str = "", parent=None):
         super().__init__(parent)
@@ -549,14 +552,19 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_language_changed(self, _index: int) -> None:
-        """语言选择：写入 QSettings，重启后生效（界面文字不做热替换）。"""
+        """语言选择：写入 QSettings，并询问是否立即重启。"""
         code = self._lang_combo.currentData()
         self._settings.setValue("language", code)
-        QMessageBox.information(
+        reply = QMessageBox.question(
             self,
-            tr("语言", "Language"),
-            tr("语言已保存，重启程序后生效。", "Language saved. Restart the app to apply it."),
+            tr("语言已保存", "Language saved"),
+            tr("语言已保存，需要重启程序才能完全生效。\n\n是否立即重启？",
+               "Language saved. A restart is needed for it to take effect.\n\nRestart now?"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
         )
+        if reply == QMessageBox.Yes:
+            self.restart_requested.emit()
 
     def _on_clear_history(self) -> None:
         reply = QMessageBox.question(

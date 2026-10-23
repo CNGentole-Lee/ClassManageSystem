@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
 
 from . import i18n, log_store, macos_window, theme
 from .i18n import tr
+from .widgets import ElidedLabel
 from .config_store import MAX_GROUP_COUNT, MIN_GROUP_COUNT
 
 # 每个操作按钮对应的增减量，按显示顺序。
@@ -136,9 +137,8 @@ class GroupCard(QFrame):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(2)
 
-        self._name_label = QLabel(group_name)
+        self._name_label = ElidedLabel(group_name)
         self._name_label.setObjectName("groupName")
-        self._name_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._name_label)
 
         # 分数行：大数字 + 短暂闪现的 "+2" 徽标

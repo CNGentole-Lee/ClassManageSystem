@@ -84,6 +84,23 @@ DEFAULT_GROUP_NAMES_EN = [f"Group {i}" for i in range(1, len(DEFAULT_GROUP_NAMES
 _last_io_error = ""
 
 
+def default_names_for(index: int) -> tuple[str, str]:
+    """小组 index 在中/英两种语言下的默认名（判定「这是不是默认名」用）。"""
+    if 1 <= index <= len(DEFAULT_GROUP_NAMES):
+        return DEFAULT_GROUP_NAMES[index - 1], DEFAULT_GROUP_NAMES_EN[index - 1]
+    return f"第{index}组", f"Group {index}"
+
+
+def is_default_group_name(name: str, index: int) -> bool:
+    """这个名字是不是「程序给的默认名」（任一种语言都算）。
+
+    默认名不该被当成用户数据固定下来：切到英文后「第一组」应显示为
+    "Group 1"；只有老师自己改过的名字才保持原样。
+    """
+    zh, en = default_names_for(index)
+    return name.strip() in (zh, en)
+
+
 def default_group_name(index: int) -> str:
     """小组 index（1 起）的兜底显示名（跟随界面语言）。
 
@@ -550,10 +567,15 @@ class ConfigStore:
         return count
 
     def get_group_name(self, index: int) -> str:
-        """小组 index（1 起）的显示名。"""
-        fallback = default_group_name(index)
-        name = self._cp.get("points", f"group_{index}", fallback=fallback).strip()
-        return name or fallback
+        """小组 index（1 起）的显示名。
+
+        存的是默认名（`第一组` / `Group 1`）时按当前界面语言返回 —— 这样切到
+        英文后默认组名会变成 "Group 1"，而老师自定义的名字不受影响。
+        """
+        raw = self._cp.get("points", f"group_{index}", fallback="").strip()
+        if not raw or is_default_group_name(raw, index):
+            return default_group_name(index)
+        return raw
 
     def set_group_name(self, index: int, name: str) -> None:
         name = name.strip()

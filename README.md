@@ -199,6 +199,15 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | 「全部清零」 | 所有小组归零（不可撤销） |
 | 「操作日志」 | 打开只读日志查看器（唯一入口，中英双语逐条显示） |
 
+小组名支持任意长度的名字（外国人名可能几十个字符）：卡片和抽选弹窗会按宽度
+自动省略显示「…」，完整名字放在 tooltip 里，鼠标悬停可见；抽选弹窗还会先缩小
+字号、再把窗口宽度限制在屏幕内，不会把名字顶出屏幕。
+
+![长名字与英文默认组名](docs/images/long-names-en.png)
+
+上图同时展示了英文模式下的默认组名：只改过名字的小组显示自定义名，
+没改过的显示 `Group 4/5/6`。
+
 ### 管理面板
 
 - 「名单来源」：浏览 `.txt` 名单，或按数字范围生成；「重置为学号」恢复默认 1~99。
@@ -214,15 +223,17 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 界面、对话框、托盘/悬浮球菜单、操作日志全部支持中英双语。
 
-- **切换方式**：管理面板底栏的语言下拉框（`中文` / `English`）。
-- **生效时机**：语言保存在 `QSettings` 里，**重启程序后生效**（界面文字不做热替换）。
+- **切换方式**：管理面板底栏的语言下拉框（`中文` / `English`）。切换后会询问
+  **是否立即重启**；选「是」会自动退出并重新拉起一个新进程，选「否」则下次启动生效。
+- **生效时机**：界面文字不做热替换（Qt 没有 `retranslateUi`），因此需要重启。
 - **默认值**：首次运行跟随系统语言；之后以保存的选择为准。
 - **临时覆盖**：`CLASSMANAGE_LANG=zh|en` 环境变量，优先级最高，不写回设置
   （截图与自动化测试用）。
 - **操作日志**：每条记录同时保存中文和 English 两个版本，查看器里两行一起显示，
   所以切换语言不会让历史记录变成看不懂的语言。
-- **数据不随语言改写**：已有组名、日志内容不会被切换语言覆盖；只有「新建/补齐
-  缺失小组」才会用当前语言的默认名（`第一组…` / `Group 1…`）。
+- **默认组名跟随语言**：还叫默认名的小组会显示为当前语言的默认名
+  （中文 `第一组…` ↔ 英文 `Group 1…`）；**老师自定义过的组名保持原样**，
+  不会被切换语言改写。日志内容同样不会被改写。
 
 | 中文界面 | English UI |
 |---|---|
@@ -443,6 +454,8 @@ packaging/macos/build.command        # 双击也可以
 │   ├── points_window.py             # 积分面板 + 操作日志查看器
 │   ├── main_window.py               # 管理面板、托盘、开机自启动、语言切换
 │   ├── i18n.py                      # 中英双语：tr() / both() / Qt 翻译装载
+│   ├── widgets.py                   # ElidedLabel：长名字按宽度省略 + tooltip 全名
+│   ├── restart.py                   # 切换语言后的「立即重启」（源码/打包两种参数）
 │   ├── wipe_dialog.py               # 彻底重置：勾选清空范围 + 二次确认
 │   ├── wipe_service.py              # 按勾选项逐项清空（可单测）
 │   ├── theme.py                     # 浅/深色配色 token、跨平台字体、托盘图标
@@ -488,12 +501,12 @@ python tools/config_check.py           # 最快，不依赖 Qt：存储读写/�
 python tools/config_crypto_check.py    # 加密存储：乱码、手改无效、篡改/删除回档、迁移
 python tools/log_crypto_check.py       # 操作日志：自动记录、无明文副本、防回滚、只增不减
 python tools/windows_check.py          # 平台自检（在 Windows 上才跑真实分支）
-python tools/macos_check.py            # 平台自检（菜单栏图标 / 浮层属性 / 深色 / 激活策略）
+python tools/macos_check.py            # 平台自检（菜单栏 / 浮层 / 深色 / 激活策略 / 模态框层级）
 python tools/macos_check.py --fullscreen   # 额外跑一次「真·原生全屏」覆盖测试
 python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、落盘、撤销、连抽
 python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
 python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
-python tools/i18n_check.py             # 双语：语言切换、控件文案、持久化、双语日志
+python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志
 ```
 
 - `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PyQt5 时还会验证真实的 QSettings 隐蔽备份。
@@ -590,6 +603,15 @@ QSettings 隐蔽备份恢复。
 `.gitattributes`；自行改动时请保持纯 ASCII + CRLF。
 
 ---
+
+## 开发注意事项（踩过的坑）
+
+- **浮层会盖住对话框**：积分面板/结果弹窗为了盖住全屏 PPT 被设成
+  `NSStatusWindowLevel(25)`，而模态对话框（改名、确认框）默认是
+  `NSModalPanelWindowLevel(8)` —— 对话框被面板盖住、模态循环还在等点击，
+  表现就是「点改名后整个程序假死」。修复见 `macos_window.install_dialog_raiser()`：
+  应用级事件过滤器把所有 `QDialog` 抬到 level 26 并置前（`tools/macos_check.py`
+  有回归测试，会对比两者的 level 与前后顺序）。
 
 ## 已知限制
 
