@@ -84,25 +84,25 @@ def gini(counts):
 
 def summarize(counts, expected):
     worst = max(abs(c - expected) for c in counts) / expected
-    return (f"{min(counts)}~{max(counts)} 次  σ={statistics.pstdev(counts):.3f}  "
-            f"极差={spread(counts)}  最大偏差={worst:.3%}  Gini={gini(counts):.4f}")
+    return (f"{min(counts)}~{max(counts)} draws  σ={statistics.pstdev(counts):.3f}  "
+            f"range={spread(counts)}  max deviation={worst:.3%}  Gini={gini(counts):.4f}")
 
 
 # --- 测试 1：冷启动长跑 ---
 
 def test_long_run():
-    print(f"--- 测试 1：冷启动 {BURNIN} 次单抽（{NAMES} 人，无冷却）---")
+    print(f"--- Test 1: cold start, {BURNIN} single draws ({NAMES} names, no cooldown) ---")
     engine = fresh_engine(cooldown_seconds=0)
     for _ in range(BURNIN):
         engine.draw_name()
 
     counts = counts_of(engine)
     expected = BURNIN / NAMES
-    print(f"  每人期望 {expected:.0f} 次，实测 {summarize(counts, expected)}")
+    print(f"  expected {expected:.0f} per person, actual {summarize(counts, expected)}")
 
-    check("总抽次正确", sum(counts) == BURNIN, f"{sum(counts)}")
-    check("40 人 1 万次：极差 ≤ 2", spread(counts) <= 2, f"极差 {spread(counts)}")
-    check("最大偏差 < 1%",
+    check("total draw count is correct", sum(counts) == BURNIN, f"{sum(counts)}")
+    check("40 names, 10k draws: range <= 2", spread(counts) <= 2, f"range {spread(counts)}")
+    check("max deviation < 1%",
           max(abs(c - expected) for c in counts) / expected < 0.01,
           f"{max(abs(c - expected) for c in counts) / expected:.3%}")
     return counts
@@ -111,17 +111,17 @@ def test_long_run():
 # --- 测试 2：对照组（纯随机长什么样）---
 
 def test_plain_random_baseline(engine_counts):
-    print(f"--- 测试 2：对照 — 纯 random.choice 同样 {BURNIN} 次 ---")
+    print(f"--- Test 2: baseline - pure random.choice, same {BURNIN} draws ---")
     pool = [str(i) for i in range(1, NAMES + 1)]
     counter = Counter(random.choice(pool) for _ in range(BURNIN))
     counts = [counter[p] for p in pool]
     expected = BURNIN / NAMES
-    print(f"  纯随机实测   {summarize(counts, expected)}")
-    print(f"  本引擎实测   {summarize(engine_counts, expected)}")
-    note(f"极差  纯随机 {spread(counts)}  ->  本引擎 {spread(engine_counts)}")
-    note(f"Gini  纯随机 {gini(counts):.4f}  ->  本引擎 {gini(engine_counts):.4f}")
+    print(f"  pure random measured   {summarize(counts, expected)}")
+    print(f"  this engine measured   {summarize(engine_counts, expected)}")
+    note(f"range  pure random {spread(counts)}  ->  this engine {spread(engine_counts)}")
+    note(f"Gini  pure random {gini(counts):.4f}  ->  this engine {gini(engine_counts):.4f}")
 
-    check("本引擎比纯随机明显更均匀（Gini 至少小一个数量级）",
+    check("this engine is clearly more even than pure random (Gini at least 10x smaller)",
           gini(engine_counts) * 10 <= gini(counts),
           f"{gini(engine_counts):.4f} vs {gini(counts):.4f}")
 
@@ -129,7 +129,7 @@ def test_plain_random_baseline(engine_counts):
 # --- 测试 3：加权是否落地（偏斜起点追赶）---
 
 def test_catch_up():
-    print(f"--- 测试 3：加权落地 — 一半人先欠 30 次，看能不能拉平 ---")
+    print(f"--- Test 3: weighting in action - half the names start 30 draws behind ---")
     engine = fresh_engine(cooldown_seconds=0)
     # 1~20 号先记 30 次（领先组），21~40 号 0 次（落后组）
     engine.set_draw_counts({str(i): (30 if i <= 20 else 0)
@@ -140,23 +140,23 @@ def test_catch_up():
     seq = [engine.draw_name() for _ in range(1000)]
 
     first_leader = next((i for i, n in enumerate(seq) if n in leaders), None)
-    check("前 500 次全部补给落后的 20 人（0 次的那批）",
+    check("first 500 draws all go to the 20 lagging names (the 0-draw group)",
           all(n not in leaders for n in seq[:500]),
-          f"前 500 次里有 {sum(1 for n in seq[:500] if n in leaders)} 次抽到了领先组")
-    note(f"领先组第一次被抽到是第 {first_leader + 1 if first_leader is not None else '>1000'} 次"
-         f"（落后组欠 20 人 × 30 次 = 600 次，先还债符合预期）")
+          f"{sum(1 for n in seq[:500] if n in leaders)} of the first 500 draws hit the leading group")
+    note(f"the leading group is first drawn at draw {first_leader + 1 if first_leader is not None else '>1000'}"
+         f" (the lagging group owes 20 x 30 = 600 draws, catching up first is expected)")
 
-    print(f"  跑完 1000 次后   {summarize(counts_of(engine), engine.get_total_draws() / NAMES)}")
-    check("跑完 1000 次后极差收缩到 ≤ 4", spread(counts_of(engine)) <= 4,
-          f"极差 {spread(counts_of(engine))}")
-    check("领先组没有被永久封印（1000 次内被抽到过）",
+    print(f"  after 1000 draws   {summarize(counts_of(engine), engine.get_total_draws() / NAMES)}")
+    check("range shrinks to <= 4 after 1000 draws", spread(counts_of(engine)) <= 4,
+          f"range {spread(counts_of(engine))}")
+    check("the leading group is not sealed off forever (drawn within 1000 draws)",
           first_leader is not None)
 
 
 # --- 测试 4：声明的权重 vs 实测频率（χ² 拟合）---
 
 def test_weight_fidelity():
-    print("--- 测试 4：声明的权重 = 实际抽样频率？（χ² 拟合检验）---")
+    print("--- Test 4: declared weights = actual sampling frequency? (chi-square goodness of fit) ---")
     trials = 50_000
 
     # 造一个「温和偏斜」的状态：10 人 0 次 / 10 人 1 次 / 10 人 2 次 / 10 人 3 次。
@@ -178,16 +178,16 @@ def test_weight_fidelity():
     hottest = max(pool, key=lambda n: theory[n])
     coldest = min(pool, key=lambda n: theory[n])
 
-    print(f"  理论概率 {theory[coldest]:.5f} ~ {theory[hottest]:.5f}"
-          f"（相差 {theory[hottest] / theory[coldest]:.0f} 倍）")
-    print(f"  实测频率 {min(obs) / trials:.5f} ~ {max(obs) / trials:.5f}"
-          f"（{min(obs)} ~ {max(obs)} 次 / {trials}）")
-    note(f"χ² = {chi2:.2f}（df=39，p=0.001 临界值 {CHI2_DF39_P001}）")
+    print(f"  theoretical probability {theory[coldest]:.5f} ~ {theory[hottest]:.5f}"
+          f" ({theory[hottest] / theory[coldest]:.0f}x apart)")
+    print(f"  measured frequency {min(obs) / trials:.5f} ~ {max(obs) / trials:.5f}"
+          f" ({min(obs)} ~ {max(obs)} of {trials})")
+    note(f"chi2 = {chi2:.2f} (df=39, p=0.001 critical value {CHI2_DF39_P001})")
 
-    check("每格期望 ≥ 5（χ² 检验前提）", min(exp) >= 5, f"最小期望 {min(exp):.1f}")
-    check("实测频率与声明概率一致（χ² 不显著）", chi2 < CHI2_DF39_P001,
+    check("every expected cell >= 5 (chi-square precondition)", min(exp) >= 5, f"min expected {min(exp):.1f}")
+    check("measured frequencies match declared probabilities (chi-square not significant)", chi2 < CHI2_DF39_P001,
           f"χ²={chi2:.2f}")
-    check("最冷门的人确实最难被抽到",
+    check("the coldest name really is the hardest to draw",
           obs[pool.index(coldest)] < obs[pool.index(hottest)],
           f"{obs[pool.index(coldest)]} vs {obs[pool.index(hottest)]}")
     return chi2
@@ -196,8 +196,8 @@ def test_weight_fidelity():
 # --- 测试 5：真实课间节奏（含冷却 + 课前清空历史）---
 
 def test_lesson_rhythm():
-    print(f"--- 测试 5：真实节奏 — {LESSONS} 节课 × 每课 {LESSON_SIZE} 抽"
-          f"（冷却开启 + 课前清空历史）---")
+    print(f"--- Test 5: real lesson rhythm - {LESSONS} lessons x {LESSON_SIZE} draws each"
+          f" (cooldown on + history cleared before each lesson) ---")
     engine = fresh_engine()          # 默认 600 秒冷却
     short_lessons = 0
     for _ in range(LESSONS):
@@ -210,19 +210,19 @@ def test_lesson_rhythm():
 
     counts = counts_of(engine)
     expected = BURNIN / NAMES
-    print(f"  每人期望 {expected:.0f} 次，实测 {summarize(counts, expected)}")
+    print(f"  expected {expected:.0f} per person, actual {summarize(counts, expected)}")
 
-    check("每节课都抽满且课内不重复", short_lessons == 0, f"{short_lessons} 节课异常")
-    check("每节课只有 10 抽 < 40 人，冷却没有把谁挡在门外", short_lessons == 0)
-    check("长期极差 ≤ 6（清空历史不影响加权）", spread(counts) <= 6,
-          f"极差 {spread(counts)}")
+    check("every lesson is full with no repeats inside it", short_lessons == 0, f"{short_lessons} abnormal lessons")
+    check("only 10 draws per lesson for 40 names, so cooldown excludes nobody", short_lessons == 0)
+    check("long-run range <= 6 (clearing history does not hurt weighting)", spread(counts) <= 6,
+          f"range {spread(counts)}")
     return counts
 
 
 # --- 测试 6：最近惩罚（不让人连庄）---
 
 def test_recency():
-    print("--- 测试 6：最近惩罚 — 同一人连续两次被抽中的概率 ---")
+    print("--- Test 6: recency penalty - probability that the same person is drawn twice in a row ---")
     engine = fresh_engine(cooldown_seconds=0)
     names = engine.get_names()
 
@@ -242,13 +242,13 @@ def test_recency():
 
     repeats = sum(1 for a, b in zip(seq, seq[1:]) if a == b)
     rate = repeats / (BURNIN - 1)
-    print(f"  相邻重复 {repeats} 次（实测率 {rate:.4%}）")
-    print(f"  按引擎自己的权重推算的期望 {expected_repeats:.1f} 次"
-          f"，纯随机对照 {1 / NAMES:.2%}")
+    print(f"  adjacent repeats {repeats} (measured rate {rate:.4%})")
+    print(f"  expected from the engine weights {expected_repeats:.1f}"
+          f", pure-random baseline {1 / NAMES:.2%}")
 
-    check("相邻重复率不到纯随机的 1/5", rate < (1 / NAMES) / 5,
+    check("adjacent repeat rate is below 1/5 of pure random", rate < (1 / NAMES) / 5,
           f"{rate:.4%} vs {1 / NAMES:.2%}")
-    check("实测重复次数与权重推算一致（±40%）",
+    check("measured repeats match the weight-based estimate (±40%)",
           abs(repeats - expected_repeats) <= max(5.0, expected_repeats * 0.4),
           f"{repeats} vs {expected_repeats:.1f}")
 
@@ -256,7 +256,7 @@ def test_recency():
 # --- 测试 7：领先者会被封印多久（行为提示，不是缺陷）---
 
 def test_leader_freeze():
-    print("--- 测试 7：一个人大幅领先时，他会被冷落多久 ---")
+    print("--- Test 7: how long a big leader is left out ---")
     engine = fresh_engine(cooldown_seconds=0)
     engine.set_draw_counts({str(i): (10 if i == 1 else 0)
                             for i in range(1, NAMES + 1)})
@@ -265,16 +265,16 @@ def test_leader_freeze():
         if engine.draw_name() == "1":
             waited = i
             break
-    print(f"  1 号领先 10 次，其余 39 人 0 次")
+    print(f"  name 1 leads with 10 draws, the other 39 have 0")
     if waited is None:
-        note("2000 次之内没有再抽到 1 号")
+        note("name 1 is not drawn again within 2000 draws")
     else:
-        note(f"第 {waited} 次才重新抽到 1 号（约等于把 39 人的 10 次欠账还完）")
-    check("领先者最终会被抽到（不是永久排除）", waited is not None, f"{waited}")
+        note(f"name 1 is drawn again only at draw {waited} (roughly after paying back 39 names x 10 draws)")
+    check("the leader is eventually drawn (not permanently excluded)", waited is not None, f"{waited}")
 
 
 def main():
-    print(f"烧机测试：{NAMES} 人名单，{BURNIN} 次单抽\n")
+    print(f"Burn-in test: {NAMES} names, {BURNIN} single draws\n")
 
     counts = test_long_run()
     print()
@@ -292,9 +292,9 @@ def main():
 
     print()
     if failures:
-        print(f"失败 {len(failures)} 项: {failures}")
+        print(f"failed {len(failures)}: {failures}")
         return 1
-    print("全部通过")
+    print("ALL PASSED")
     return 0
 
 

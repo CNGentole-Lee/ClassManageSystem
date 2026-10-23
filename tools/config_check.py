@@ -29,7 +29,7 @@ s2.reset_all()
 s3 = ConfigStore(tmp)
 assert s3.all_scores() == [0] * 6, s3.all_scores()
 assert s3.get_group_name(1) == "第一组" and s3.get_group_name(2) == "第二组"
-assert not s3._cp.has_section("stats"), "旧的 [stats] 残留没清掉"
+assert not s3._cp.has_section("stats"), "stale [stats] section was not cleared"
 print("CONFIG RESET_OK")
 print("-" * 50)
 

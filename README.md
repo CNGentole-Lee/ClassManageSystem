@@ -18,6 +18,7 @@
 - [功能特性](#功能特性)
 - [快速开始](#快速开始)
 - [使用说明](#使用说明)
+- [界面语言（中文 / English）](#界面语言中文--english)
 - [数据与安全](#数据与安全)
 - [核心设计：为什么不用纯随机](#核心设计为什么不用纯随机)
 - [跨平台支持](#跨平台支持)
@@ -52,6 +53,12 @@
 连抽只弹一个窗口，多个名字同时滚动、一起揭晓，`✕` 关闭或 5 秒后自动消失。
 
 ![结果弹窗](docs/images/draw-popup.png)
+
+### 彻底重置：选择清空范围
+
+组名 / 积分 / 长期公平记录 / 抽取历史可分别勾选，点「重置」后再二次确认。
+
+![彻底重置](docs/images/wipe-dialog.png)
 
 ### 管理面板
 
@@ -112,7 +119,10 @@
 - 单击展开 `-1 / +1 / +2 / +3`；双击组名重命名；右键清零本组。
 - 支持 `Ctrl+Z` 撤销；快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
 - 分数加密保存在 `config.dat`，重启不丢；被改坏或删掉会自动回档。
-- 每次积分变动自动写入加密操作日志，底栏「操作日志」按钮只读查看。
+- 每次积分变动自动写入加密操作日志，底栏「操作日志」按钮只读查看；
+  日志每条同时保存中英两版，切换语言后历史记录依然可读。
+- 「彻底重置」会先弹出**选择清空范围**的对话框：组名 / 积分 / 长期公平记录 /
+  抽取历史可分别勾选，确认后再二次确认，避免误伤不需要清的数据。
 - 改组数会整段重置组名与分数（换组数就是换了一套分组，旧分数没有可挂靠的组）。
 
 ### 公平抽选
@@ -187,7 +197,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | `1 / 2 / 3 / 4` | `-1 / +1 / +2 / +3` |
 | 「小组数量...」 | 改组数（需二次确认，会清空组名与分数） |
 | 「全部清零」 | 所有小组归零（不可撤销） |
-| 「操作日志」 | 打开只读日志查看器（唯一入口） |
+| 「操作日志」 | 打开只读日志查看器（唯一入口，中英双语逐条显示） |
 
 ### 管理面板
 
@@ -197,6 +207,34 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
 - 托盘「彻底重置...」：组名、积分、长期公平记录、抽取历史全部回到出厂状态。
+
+---
+
+## 界面语言（中文 / English）
+
+界面、对话框、托盘/悬浮球菜单、操作日志全部支持中英双语。
+
+- **切换方式**：管理面板底栏的语言下拉框（`中文` / `English`）。
+- **生效时机**：语言保存在 `QSettings` 里，**重启程序后生效**（界面文字不做热替换）。
+- **默认值**：首次运行跟随系统语言；之后以保存的选择为准。
+- **临时覆盖**：`CLASSMANAGE_LANG=zh|en` 环境变量，优先级最高，不写回设置
+  （截图与自动化测试用）。
+- **操作日志**：每条记录同时保存中文和 English 两个版本，查看器里两行一起显示，
+  所以切换语言不会让历史记录变成看不懂的语言。
+- **数据不随语言改写**：已有组名、日志内容不会被切换语言覆盖；只有「新建/补齐
+  缺失小组」才会用当前语言的默认名（`第一组…` / `Group 1…`）。
+
+| 中文界面 | English UI |
+|---|---|
+| ![中文积分面板](docs/images/points-panel.png) | ![English points panel](docs/images/points-panel-en.png) |
+
+![English full reset dialog](docs/images/wipe-dialog-en.png)
+
+底栏右侧的下拉框就是语言开关：
+
+![English main window with language selector](docs/images/main-window-en.png)
+
+`tools/` 下的脚本统一输出英文，便于把日志贴到 issue 或 CI 里。
 
 ---
 
@@ -254,7 +292,9 @@ Linux   : ~/.config/YourOrg/ClassManageSystem.conf
 - **只增不减**：最多保留最近 400 条（`seq` 是历史累计条数并持续增长），因此
   「哪份副本的 `seq` 最大就用哪份」—— 拿旧密文覆盖主文件这种**回滚式篡改**也会被自动修回；
 - 「彻底重置」不清空日志，只追加一条标记：审计记录不能靠一个按钮抹掉；
-- 磁盘上**没有明文副本**，唯一查看入口是积分面板的「操作日志」按钮。
+- 磁盘上**没有明文副本**，唯一查看入口是积分面板的「操作日志」按钮；
+- 每条记录存 `(时间, 中文, English)` 三元组，旧版纯文本记录也能继续读取
+  （英文侧留空，只显示原文）。
 
 ### `stats.ini`
 
@@ -401,7 +441,12 @@ packaging/macos/build.command        # 双击也可以
 │   ├── floating_ball.py             # 悬浮球（含跨平台强制置顶）
 │   ├── draw_popup.py                # 结果弹窗与滚动动画
 │   ├── points_window.py             # 积分面板 + 操作日志查看器
-│   ├── main_window.py               # 管理面板、托盘、开机自启动
+│   ├── main_window.py               # 管理面板、托盘、开机自启动、语言切换
+│   ├── i18n.py                      # 中英双语：tr() / both() / Qt 翻译装载
+│   ├── wipe_dialog.py               # 彻底重置：勾选清空范围 + 二次确认
+│   ├── wipe_service.py              # 按勾选项逐项清空（可单测）
+│   ├── theme.py                     # 浅/深色配色 token、跨平台字体、托盘图标
+│   ├── macos_window.py              # macOS 激活策略 + 全屏浮层
 │   ├── single_instance.py           # 单实例守护（QLocalServer 判活）
 │   └── crash_log.py                 # 崩溃日志
 │
@@ -419,7 +464,9 @@ packaging/macos/build.command        # 双击也可以
 │   ├── _fullscreen_helper.py         # 自检用：进入原生全屏的辅助进程
 │   ├── smoke_test.py                # GUI 冒烟测试
 │   ├── group_count_stress.py        # 小组数量功能 + 300 轮压力
-│   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图
+│   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图（中/英、深/浅）
+│   ├── wipe_check.py                # 彻底重置的勾选与逐项清空测试
+│   ├── i18n_check.py                # 双语切换 / 持久化 / 双语日志测试
 │   ├── fairness_burnin.py           # 1 万次单抽烧机 + χ² 检验
 │   ├── fairness_benchmark.py        # 公平性调参基准
 │   ├── reset_fairness_benchmark.py  # 教师清空历史工作流模拟
@@ -445,6 +492,8 @@ python tools/macos_check.py            # 平台自检（菜单栏图标 / 浮层
 python tools/macos_check.py --fullscreen   # 额外跑一次「真·原生全屏」覆盖测试
 python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、落盘、撤销、连抽
 python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
+python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
+python tools/i18n_check.py             # 双语：语言切换、控件文案、持久化、双语日志
 ```
 
 - `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PyQt5 时还会验证真实的 QSettings 隐蔽备份。

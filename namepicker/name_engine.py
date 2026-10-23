@@ -21,6 +21,8 @@ from datetime import datetime
 
 from PyQt5.QtCore import QObject, pyqtSignal
 
+from .i18n import tr
+
 
 class NameEngine(QObject):
     """非界面逻辑：加载名单、公平抽取、每人冷却、统计。"""
@@ -71,20 +73,21 @@ class NameEngine(QObject):
                     if line.strip() and not line.strip().startswith('#')
                 ]
         except FileNotFoundError:
-            self.error_occurred.emit(f"文件不存在: {filepath}")
+            self.error_occurred.emit(tr("文件不存在: {p}", "File not found: {p}", p=filepath))
             return False
         except PermissionError:
-            self.error_occurred.emit(f"没有权限读取文件: {filepath}")
+            self.error_occurred.emit(tr("没有权限读取文件: {p}", "Permission denied: {p}", p=filepath))
             return False
         except UnicodeDecodeError:
-            self.error_occurred.emit("文件编码不是 UTF-8，请用 UTF-8 保存名单文件。")
+            self.error_occurred.emit(tr("文件编码不是 UTF-8，请用 UTF-8 保存名单文件。",
+                                        "The file is not UTF-8. Please save the name list as UTF-8."))
             return False
         except OSError as e:
-            self.error_occurred.emit(f"读取文件失败: {e}")
+            self.error_occurred.emit(tr("读取文件失败: {e}", "Failed to read file: {e}", e=e))
             return False
 
         if not names:
-            self.error_occurred.emit("文件中没有找到任何名字。")
+            self.error_occurred.emit(tr("文件中没有找到任何名字。", "No names found in the file."))
             return False
 
         self._set_names(names)
@@ -138,7 +141,7 @@ class NameEngine(QObject):
     def _pick_many(self, count: int) -> list[str]:
         """抽取并记录最多 count 个互不重复的名字，成功时不发信号。"""
         if not self._names:
-            self.error_occurred.emit("请先加载名单文件。")
+            self.error_occurred.emit(tr("请先加载名单文件。", "Load a name list first."))
             return []
 
         now = time.time()
@@ -182,7 +185,9 @@ class NameEngine(QObject):
         wait_m = wait_secs // 60
         wait_s = wait_secs % 60
         self.error_occurred.emit(
-            f"所有名字都在冷却中！\n最快可用：{best_name}（{wait_m}分{wait_s:02d}秒后）"
+            tr("所有名字都在冷却中！\n最快可用：{n}（{m}分{s:02d}秒后）",
+               "All names are cooling down!\nNext available: {n} (in {m}m {s:02d}s)",
+               n=best_name, m=wait_m, s=wait_s)
         )
 
     def _pick(self, pool: list[str]) -> str:
@@ -283,6 +288,12 @@ class NameEngine(QObject):
             min(self._draw_counts.values()) if self._draw_counts else 0
         )
         self.history_cleared.emit()
+        self.cooldowns_updated.emit()
+
+    def clear_draw_counts(self) -> None:
+        """只清长期抽取次数，保留抽取历史与冷却（选择性重置用）。"""
+        self._draw_counts = {}
+        self._last_round_min = 0
         self.cooldowns_updated.emit()
 
     def reset_fairness(self) -> None:

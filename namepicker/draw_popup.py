@@ -18,7 +18,8 @@ from PyQt5.QtWidgets import (
 
 from . import macos_window
 from . import theme
-from .config_store import APP_NAME
+from .i18n import tr
+from .config_store import app_name
 
 
 class DrawResultPopup(QWidget):
@@ -98,7 +99,7 @@ class DrawResultPopup(QWidget):
         top_bar.addWidget(self._close_btn)
 
         # --- 副标题 ---
-        self._subtitle = QLabel("🎉 恭喜!")
+        self._subtitle = QLabel(tr("🎉 恭喜!", "🎉 Congratulations!"))
         self._subtitle.setAlignment(Qt.AlignCenter)
         self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
 
@@ -109,7 +110,7 @@ class DrawResultPopup(QWidget):
         self._grid.setSpacing(4)
 
         # --- 底部署名 ---
-        self._footer = QLabel(APP_NAME)
+        self._footer = QLabel(app_name())
         self._footer.setAlignment(Qt.AlignCenter)
         self._footer.setStyleSheet("""
             QLabel {
@@ -172,7 +173,7 @@ class DrawResultPopup(QWidget):
 
         # Start rolling
         self._roll_count = 0
-        self._subtitle.setText("🎉 抽签中...")
+        self._subtitle.setText(tr("🎉 抽签中...", "🎉 Drawing..."))
         self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
         for label in self._name_labels:
             self._style_rolling(label)
@@ -217,7 +218,7 @@ class DrawResultPopup(QWidget):
         self._name_labels = []
 
         for index in range(count):
-            label = QLabel("抽")
+            label = QLabel(tr("抽", "?"))
             label.setAlignment(Qt.AlignCenter)
             label.setFixedSize(self._cell_width, self._cell_height)
             label.setProperty("base_font_size", self._font_size)
@@ -294,7 +295,7 @@ class DrawResultPopup(QWidget):
             label.setText(name)
             self._style_final(label)
 
-        self._subtitle.setText("🎉 恭喜!")
+        self._subtitle.setText(tr("🎉 恭喜!", "🎉 Congratulations!"))
         self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
 
         # Auto-close after 5 seconds

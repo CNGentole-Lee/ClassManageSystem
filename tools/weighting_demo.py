@@ -24,14 +24,14 @@ def report(title, counts):
     tot = sum(k*v for k, v in counts.items())
     mean = tot / sum(counts.values())
     var = sum(v*(k-mean)**2 for k, v in counts.items()) / sum(counts.values())
-    print(f"{title}: 最低={lo} 最高={hi} 极差={hi-lo} 标准差={var**0.5:.2f}")
-    print("        分布", dict(sorted(counts.items())))
+    print(f"{title}: min={lo} max={hi} range={hi-lo} sd={var**0.5:.2f}")
+    print("        distribution", dict(sorted(counts.items())))
 
-print(f"40 人抽 {DRAWS} 次（每人理想 10 次）")
+print(f"40 people, {DRAWS} draws (ideal 10 each)")
 print("=" * 60)
-report("加权少抽优先(新)", fair)
+report("weighted least-drawn (new)", fair)
 print()
-report("纯随机    (旧)", purec)
+report("pure random       (old)", purec)
 
 # 逐轮检查：每轮 40 次内是否基本每人恰好一次
 print()
@@ -41,4 +41,4 @@ seq = [e2.draw_name() for _ in range(160)]
 for r in range(4):
     chunk = seq[r*40:(r+1)*40]
     dup = [n for n, c in collections.Counter(chunk).items() if c > 1]
-    print(f"第{r+1}轮(40次): 重复被抽的人={len(dup)}  {dup[:5]}")
+    print(f"round {r+1} (40 draws): people drawn more than once={len(dup)}  {dup[:5]}")

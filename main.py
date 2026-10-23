@@ -18,14 +18,15 @@
 import sys
 import os
 
-from PyQt5.QtCore import Qt, QSettings, QTimer, QLibraryInfo, QLocale, QTranslator
+from PyQt5.QtCore import Qt, QSettings, QTimer
 from PyQt5.QtWidgets import QApplication
 
 from namepicker import crash_log
+from namepicker import i18n
 from namepicker import macos_window
 from namepicker import theme
 from namepicker.config_store import (
-    APP_NAME, ConfigStore, migrate_legacy_plaintext, resolve_config_path,
+    ConfigStore, app_name, migrate_legacy_plaintext, resolve_config_path,
 )
 from namepicker.name_engine import NameEngine
 from namepicker.floating_ball import FloatingBall
@@ -34,6 +35,8 @@ from namepicker.main_window import MainWindow
 from namepicker.points_window import PointsWindow
 from namepicker.single_instance import SingleInstance
 from namepicker.stats_store import StatsStore
+from namepicker import wipe_service
+from namepicker.i18n import tr
 
 
 def _get_bundled_path(relative_path: str) -> str:
@@ -54,7 +57,7 @@ def main():
     app = QApplication(sys.argv)
 # 内部（ASCII）标识保持不变，这样在重命名后 QSettings 路径 / 单实例键 后仍能继续正常工作。
     app.setApplicationName("RandomNamePicker")
-    app.setApplicationDisplayName(APP_NAME)
+    app.setApplicationDisplayName(app_name())
     app.setOrganizationName("NamePicker")
 
     # 该应用常驻托盘：悬浮球是一个 Qt.Tool 窗口（Qt 不将其视为“主”窗口），
@@ -70,6 +73,13 @@ def main():
         single.notify_existing()
         sys.exit(0)
 
+    # 界面语言：QSettings 里保存过就用它，否则跟随系统；必须在建窗口之前定好。
+    _ui_settings = QSettings("NamePicker", "Config")
+    _saved_lang = _ui_settings.value("language", "")
+    # CLASSMANAGE_LANG=zh|en 可临时覆盖（截图与自动化测试用），不写回设置
+    _env_lang = os.environ.get("CLASSMANAGE_LANG", "").strip()
+    i18n.set_language(_env_lang or _saved_lang or i18n.system_language())
+
     # 深/浅色自适应：字体、调色板与样式表都由 theme 统一生成（见 namepicker/theme.py）。
     # 必须在创建任何窗口之前应用，否则先建出来的控件会拿到默认字体。
     theme.apply(app)
@@ -79,14 +89,8 @@ def main():
     # regular 策略下窗口会留在桌面 Space，PPT 全屏时必然被盖住。
     macos_window.set_accessory_policy()
 
-    # Qt 自带控件的文案（对话框的 Yes/No/Cancel/OK 等）本地化。
-    # 找不到 .qm 时静默跳过，不影响功能。
-    translator = QTranslator(app)
-    _tr_path = QLibraryInfo.location(QLibraryInfo.TranslationsPath)
-    if translator.load(QLocale(QLocale.Chinese, QLocale.China), "qtbase", "_", _tr_path):
-        app.installTranslator(translator)
-    elif translator.load("qt_zh_CN", _tr_path):
-        app.installTranslator(translator)
+    # Qt 自带控件的文案（对话框按钮等）：zh 装中文翻译，en 用 Qt 默认英文。
+    i18n.translator_for_qt(app, i18n.language())
 
 
     # --- 旧版明文迁移（一次性）---
@@ -113,13 +117,13 @@ def main():
     engine.names_loaded.connect(lambda _count: restore_stats())
     engine.name_drawn.connect(lambda _name: save_stats())
 
-    def wipe_everything() -> None:
-        """彻底重置：config.ini 与 stats.ini 全部回到初始状态。"""
-        store.reset_all()          # 组名 / 分数 → 默认
-        stats.clear()              # 长期抽取次数 → 清空
-        engine.reset_fairness()    # 内存里的次数 / 历史 / 冷却
+    def wipe_everything(parts: dict) -> None:
+        """按勾选项执行彻底重置（实现见 namepicker/wipe_service.py）。"""
+        labels = wipe_service.perform_wipe(store, stats, engine, parts)
         points_win.reload_from_store()
-        main_win.on_wipe_complete()
+        main_win.on_wipe_complete(
+            tr("已重置：{x}", "Reset: {x}", x=tr("、", ", ").join(labels))
+            if labels else "")
 
     # --- UI ---
     ball = FloatingBall()
