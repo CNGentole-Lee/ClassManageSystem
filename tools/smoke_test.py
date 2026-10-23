@@ -372,11 +372,12 @@ def test_popup(engine):
     popup._on_close()
 
     # 名字不能左右被裁掉：格宽要能容下名单里最长的名字
-    popup.set_name_pool(["欧阳娜娜", "1", "2"])
-    popup.show_result("欧阳娜娜")
+    # 老外的名字真的很长，用这个当测试标准稳稳的
+    popup.set_name_pool(["abcdefghijklmn", "1", "2"])
+    popup.show_result("abcdefghijklmn")
     fm = QFontMetrics(QFont("Microsoft YaHei", popup._font_size, QFont.Bold))
     check("long names are not clipped",
-          popup._cell_width >= fm.horizontalAdvance("欧阳娜娜") + 16,
+          popup._cell_width >= fm.horizontalAdvance("abcdefghijklmn") + 16,
           f"cell width {popup._cell_width}px")
     popup._on_close()
 
