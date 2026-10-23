@@ -23,8 +23,24 @@ import os
 APP_NAME = "ClassManageSystem"
 DISPLAY_NAME = "班级多用教学辅助终端"
 
+
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir, os.pardir))
 ICON = os.path.join(SPECPATH, "app.icns")
+
+
+def app_version() -> str:
+    """版本号从 namepicker/about_dialog.py 读取，避免两处手工同步。"""
+    import re
+    source = os.path.join(ROOT, "namepicker", "about_dialog.py")
+    try:
+        with open(source, encoding="utf-8") as fh:
+            match = re.search(r'^VERSION\s*=\s*"([^"]+)"', fh.read(), re.M)
+        return match.group(1) if match else "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+VERSION = app_version()
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
@@ -90,8 +106,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleName": DISPLAY_NAME,
         "CFBundleDisplayName": DISPLAY_NAME,
-        "CFBundleShortVersionString": "1.0.0",
-        "CFBundleVersion": "1.0.0",
+        "CFBundleShortVersionString": VERSION,
+        "CFBundleVersion": VERSION,
         "NSHighResolutionCapable": True,
         # 常驻托盘工具：不占 Dock，只留菜单栏图标
         "LSUIElement": True,

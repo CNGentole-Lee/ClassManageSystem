@@ -23,8 +23,9 @@ from . import theme
 from .config_store import APP_NAME
 from .i18n import tr
 
-#: 版本号（`packaging/windows/version_info.txt` 里也有一份，改动请同步）
-VERSION = "1.1.0"
+#: 版本号 —— 全项目唯一来源。
+#: 打包脚本（spec / version_info.txt）在构建时从这里读取，不必手工同步。
+VERSION = "2.0.0"
 
 #: 「关于」窗口里 GPL 要求的入口
 LICENSE_ACTION = "license"

@@ -34,6 +34,8 @@ MANIFEST
 # 但这两个是我们手写并维护的打包配置，必须提交
 !packaging/windows/ClassManageSystem.spec
 !packaging/macos/ClassManageSystem.spec
+# 构建时由 spec 生成的版本信息（内容来自 about_dialog.VERSION）
+packaging/windows/version_info.generated.txt
 
 # Installer logs
 pip-log.txt

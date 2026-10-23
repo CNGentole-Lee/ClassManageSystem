@@ -13,6 +13,7 @@ Exit code 0 = all passed.
 """
 
 import os
+import re
 import sys
 import tempfile
 
@@ -221,13 +222,23 @@ def main() -> int:
           "WITHOUT ANY WARRANTY" in text.upper())
 
     version_file = os.path.join(_ROOT, "packaging", "windows", "version_info.txt")
-    if os.path.isfile(version_file):
-        with open(version_file, encoding="utf-8") as fh:
-            info = fh.read()
-        major, minor, patch = about_dialog.VERSION.split(".")
-        check("version matches packaging/windows/version_info.txt",
-              f"filevers=({major}, {minor}, {patch}, 0)" in info,
-              f"app says {about_dialog.VERSION}")
+    # 版本号单一来源：模板里的版本号在构建时被替换，所以这里验证的是
+    # 「两个 spec 都从 about_dialog 读版本」，而不是模板里写死的数字。
+    check("version is a plain x.y.z", re.fullmatch(r"\d+\.\d+\.\d+",
+                                                   about_dialog.VERSION) is not None,
+          about_dialog.VERSION)
+    check("version_info.txt is a template (version injected at build time)",
+          os.path.isfile(version_file)
+          and "about_dialog" in open(version_file, encoding="utf-8").read())
+    for spec_path in (os.path.join(_ROOT, "packaging", "windows", "ClassManageSystem.spec"),
+                      os.path.join(_ROOT, "packaging", "macos", "ClassManageSystem.spec")):
+        if not os.path.isfile(spec_path):
+            check(f"spec exists: {os.path.basename(os.path.dirname(spec_path))}", False)
+            continue
+        spec_text = open(spec_path, encoding="utf-8").read()
+        check(f"{os.path.basename(os.path.dirname(spec_path))} spec reads VERSION "
+              "from about_dialog",
+              "about_dialog.py" in spec_text and "app_version" in spec_text)
 
     dlg = about_dialog.AboutDialog()
     check("about dialog builds", dlg.windowTitle() != "")

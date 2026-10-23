@@ -22,7 +22,49 @@ APP_NAME = "ClassManageSystem"
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir, os.pardir))
 ICON = os.path.join(SPECPATH, "app.ico")
-VERSION_FILE = os.path.join(SPECPATH, "version_info.txt")
+
+
+def app_version() -> str:
+    """版本号从 namepicker/about_dialog.py 读取，避免两处手工同步。"""
+    import re
+    source = os.path.join(ROOT, "namepicker", "about_dialog.py")
+    try:
+        with open(source, encoding="utf-8") as fh:
+            match = re.search(r'^VERSION\s*=\s*"([^"]+)"', fh.read(), re.M)
+        return match.group(1) if match else "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+def version_file() -> str:
+    """把 version_info.txt 的版本号替换成当前版本，写到构建目录里。
+
+    模板仍放在 packaging/windows/version_info.txt（便于人工查看），但 EXE 属性里
+    的版本号必须和「关于」窗口一致，所以构建时生成，不靠手改。
+    """
+    version = app_version()
+    parts = (version.split(".") + ["0", "0", "0", "0"])[:4]
+    ints = ", ".join(str(int(p)) for p in parts)
+    dotted = ".".join(parts)
+
+    template_path = os.path.join(SPECPATH, "version_info.txt")
+    with open(template_path, encoding="utf-8") as fh:
+        text = fh.read()
+    import re
+    text = re.sub(r"filevers=\(\s*[\d,\s]+\)", f"filevers=({ints})", text)
+    text = re.sub(r"prodvers=\(\s*[\d,\s]+\)", f"prodvers=({ints})", text)
+    text = re.sub(r"StringStruct\('FileVersion',\s*'[^']*'\)",
+                  f"StringStruct('FileVersion', '{dotted}')", text)
+    text = re.sub(r"StringStruct\('ProductVersion',\s*'[^']*'\)",
+                  f"StringStruct('ProductVersion', '{dotted}')", text)
+
+    generated = os.path.join(SPECPATH, "version_info.generated.txt")
+    with open(generated, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return generated
+
+
+VERSION_FILE = version_file()
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],

@@ -84,6 +84,12 @@
 
 ![结果弹窗](docs/images/draw-popup.png)
 
+### 关于：版本与许可证
+
+版本号、版权、不担保声明，以及可直接滚动的 GPL-3.0 全文。
+
+![关于](docs/images/about-dialog.png)
+
 ### 彻底重置：选择清空范围
 
 组名 / 积分 / 长期公平记录 / 抽取历史可分别勾选，点「重置」后再二次确认。
@@ -246,6 +252,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
 - 「关于」：版本、版权、不担保声明与 GPL-3.0 许可证全文（托盘菜单与悬浮球右键里也有）。
+  版本号只写在 `namepicker/about_dialog.py` 的 `VERSION` 一处，打包脚本构建时自动读取。
 - 托盘「彻底重置...」：组名、积分、长期公平记录、抽取历史全部回到出厂状态。
 
 ---
@@ -427,7 +434,7 @@ python tools/fairness_burnin.py
 
 ```bash
 git push origin main                    # 触发 .github/workflows/build-windows.yml
-git tag v1.0.0 && git push origin v1.0.0   # 打 tag 会自动建 Release 并附上 EXE
+git tag v2.0.0 && git push origin v2.0.0   # 打 tag 会自动建 Release 并附上 EXE
 ```
 
 CI 会依次跑：`tools/windows_check.py`（平台自检，同时验证注册表隐蔽备份与 Win32 置顶是否真的可用）→ 存储/日志验收 → PyInstaller 打包 → 上传 `ClassManageSystem-windows-x64` 产物。**自检失败会中断出包**，所以能下到 EXE 就意味着这些功能在真 Windows 上实测过。
@@ -772,6 +779,12 @@ close it with `✕` or let it disappear after 5 seconds.
 
 ![Result popup](docs/images/draw-popup-en.png)
 
+### About: version and license
+
+Version, copyright, the no-warranty notice and the scrollable GPL-3.0 text.
+
+![About](docs/images/about-dialog.png)
+
 ### Full reset: choose what to clear
 
 Group names, scores, lifetime fairness counts and draw history can be selected
@@ -967,7 +980,8 @@ their custom name, untouched ones show `Group 4/5/6`.
 - "Clear history": clears draw history and cooldowns but **keeps** lifetime fairness
   counts.
 - "About": version, copyright, the no-warranty notice and the full GPL-3.0 text
-  (also available from the tray menu and the ball's right-click menu).
+  (also available from the tray menu and the ball's right-click menu). The version
+  lives only in `VERSION` inside `namepicker/about_dialog.py`; the build scripts read it.
 - Tray → "Full reset...": choose group names, scores, lifetime fairness counts and draw
   history individually.
 
@@ -1190,7 +1204,7 @@ Push to build automatically; grab the artifact from the Actions page:
 
 ```bash
 git push origin main                      # triggers .github/workflows/build-windows.yml
-git tag v1.0.0 && git push origin v1.0.0  # a tag builds a Release with the EXE attached
+git tag v2.0.0 && git push origin v2.0.0  # a tag builds a Release with the EXE attached
 ```
 
 CI runs `tools/windows_check.py` (platform self-check, which also verifies that the
@@ -1429,7 +1443,7 @@ names, returns the actual count and shows a notice.
 
 ### The app seems frozen after clicking rename?
 
-That was a known issue before v1.0: the points panel is a level-25 overlay while the
+That was a known issue before v2.0: the points panel is a level-25 overlay while the
 rename dialog was level 8, so the dialog was covered but still waiting for input. The
 current version raises every dialog to level 26 via
 `macos_window.install_dialog_raiser()`, and section 5 of `python tools/macos_check.py`
