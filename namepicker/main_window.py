@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox,
 )
 
-from . import i18n, theme, wipe_dialog
+from . import about_dialog, i18n, theme, wipe_dialog
 from .config_store import app_name
 from .i18n import tr
 
@@ -224,6 +224,12 @@ class MainWindow(QMainWindow):
         self._lang_combo.currentIndexChanged.connect(self._on_language_changed)
         bottom_layout.addWidget(self._lang_combo)
 
+        about_btn = QPushButton(tr("关于", "About"))
+        about_btn.setToolTip(tr("版本、版权与许可证（GPL-3.0）",
+                                "Version, copyright and license (GPL-3.0)"))
+        about_btn.clicked.connect(self._on_about)
+        bottom_layout.addWidget(about_btn)
+
         clear_btn = QPushButton(tr("清空历史", "Clear history"))
         clear_btn.clicked.connect(self._on_clear_history)
         bottom_layout.addWidget(clear_btn)
@@ -259,6 +265,11 @@ class MainWindow(QMainWindow):
         wipe_action = QAction(tr("彻底重置...", "Full reset..."), self)
         wipe_action.triggered.connect(self._on_wipe_all)
         menu.addAction(wipe_action)
+        menu.addSeparator()
+        # GPL-3.0 要求展示版权与许可信息，这里给出入口
+        about_action = QAction(tr("关于", "About"), self)
+        about_action.triggered.connect(self._on_about)
+        menu.addAction(about_action)
         menu.addSeparator()
         quit_action = QAction(tr("退出", "Quit"), self)
         quit_action.triggered.connect(self._quit_app)
@@ -618,6 +629,10 @@ class MainWindow(QMainWindow):
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.DoubleClick:
             self._show_from_tray()
+
+    def _on_about(self) -> None:
+        """托盘菜单 → 关于（GPL-3.0 要求的 Appropriate Legal Notices）。"""
+        about_dialog.show_about(self)
 
     def _quit_app(self) -> None:
         QApplication.quit()

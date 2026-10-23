@@ -14,7 +14,8 @@
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
+  <img alt="license" src="https://img.shields.io/badge/license-GPLv3-blue">
+  <img alt="PyQt5" src="https://img.shields.io/badge/PyQt5-GPLv3-orange">
 </p>
 
 <p align="center">
@@ -82,6 +83,12 @@
 连抽只弹一个窗口，多个名字同时滚动、一起揭晓，`✕` 关闭或 5 秒后自动消失。
 
 ![结果弹窗](docs/images/draw-popup.png)
+
+### 关于：版本与许可证
+
+版本号、版权、不担保声明，以及可直接滚动的 GPL-3.0 全文。
+
+![关于](docs/images/about-dialog.png)
 
 ### 彻底重置：选择清空范围
 
@@ -244,6 +251,8 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「开机自启动」：写入当前用户的自启动项。
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
+- 「关于」：版本、版权、不担保声明与 GPL-3.0 许可证全文（托盘菜单与悬浮球右键里也有）。
+  版本号只写在 `namepicker/about_dialog.py` 的 `VERSION` 一处，打包脚本构建时自动读取。
 - 托盘「彻底重置...」：组名、积分、长期公平记录、抽取历史全部回到出厂状态。
 
 ---
@@ -425,7 +434,7 @@ python tools/fairness_burnin.py
 
 ```bash
 git push origin main                    # 触发 .github/workflows/build-windows.yml
-git tag v1.0.0 && git push origin v1.0.0   # 打 tag 会自动建 Release 并附上 EXE
+git tag v2.0.0 && git push origin v2.0.0   # 打 tag 会自动建 Release 并附上 EXE
 ```
 
 CI 会依次跑：`tools/windows_check.py`（平台自检，同时验证注册表隐蔽备份与 Win32 置顶是否真的可用）→ 存储/日志验收 → PyInstaller 打包 → 上传 `ClassManageSystem-windows-x64` 产物。**自检失败会中断出包**，所以能下到 EXE 就意味着这些功能在真 Windows 上实测过。
@@ -483,6 +492,7 @@ packaging/macos/build.command        # 双击也可以
 │   ├── points_window.py             # 积分面板 + 操作日志查看器
 │   ├── main_window.py               # 管理面板、托盘、开机自启动、语言切换
 │   ├── i18n.py                      # 中英双语：tr() / both() / Qt 翻译装载
+│   ├── about_dialog.py              # 关于窗口：版权 / 不担保声明 / GPL 全文
 │   ├── widgets.py                   # ElidedLabel：长名字按宽度省略 + tooltip 全名
 │   ├── restart.py                   # 切换语言后的「立即重启」（源码/打包两种参数）
 │   ├── wipe_dialog.py               # 彻底重置：勾选清空范围 + 二次确认
@@ -664,27 +674,37 @@ QSettings 隐蔽备份恢复。
 
 ## 许可证
 
-MIT License
+本项目以 **GNU General Public License v3.0（GPL-3.0）** 发布。
 
-Copyright (c) 2026 Gentole Lee
+```
+Copyright (C) 2026 Gentole Lee
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证
+第 3 版条款，重新分发和/或修改它。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+本程序分发时希望它有用，但不提供任何担保，甚至不提供适销性或特定用途
+适用性的默示担保。详见 GNU 通用公共许可证。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+你应当已收到本程序的 GNU 通用公共许可证副本；若没有，见
+<https://www.gnu.org/licenses/>。
+```
+
+- 完整条款：[`LICENSE`](LICENSE)（GPL-3.0 官方全文，逐字节未经修改）
+- 在线版本：<https://www.gnu.org/licenses/gpl-3.0.html>
+
+**作为使用者你需要知道：**
+
+- 可以自由使用、修改、再分发，包括商用；
+- **分发时必须一并提供完整源代码**（含你对代码的修改），并保留版权声明与许可证；
+- 衍生作品必须同样以 GPL-3.0 授权；
+- 不提供任何担保。
+
+**关于依赖：** 本项目使用 **PyQt5**，其许可证为 **GPL v3**，因此本程序本身也必须以
+GPL 发布 —— 选择 GPL-3.0 与之一致。其余依赖：Qt 5.15（LGPL v3）、PyQt5-sip（BSD-2-Clause）、
+cryptography（Apache-2.0 OR BSD-3-Clause）、cffi（MIT-0）、pycparser（BSD-3-Clause），
+均与 GPL-3.0 兼容。
+
+---
 
 <p align="right"><a href="#english">English version ↓</a> · <a href="#chinese">回到顶部</a></p>
 
@@ -758,6 +778,12 @@ A multi-draw opens a single window where all names roll and are revealed togethe
 close it with `✕` or let it disappear after 5 seconds.
 
 ![Result popup](docs/images/draw-popup-en.png)
+
+### About: version and license
+
+Version, copyright, the no-warranty notice and the scrollable GPL-3.0 text.
+
+![About](docs/images/about-dialog.png)
 
 ### Full reset: choose what to clear
 
@@ -953,6 +979,9 @@ their custom name, untouched ones show `Group 4/5/6`.
 - "Hide ball": temporarily hide or show the ball.
 - "Clear history": clears draw history and cooldowns but **keeps** lifetime fairness
   counts.
+- "About": version, copyright, the no-warranty notice and the full GPL-3.0 text
+  (also available from the tray menu and the ball's right-click menu). The version
+  lives only in `VERSION` inside `namepicker/about_dialog.py`; the build scripts read it.
 - Tray → "Full reset...": choose group names, scores, lifetime fairness counts and draw
   history individually.
 
@@ -1175,7 +1204,7 @@ Push to build automatically; grab the artifact from the Actions page:
 
 ```bash
 git push origin main                      # triggers .github/workflows/build-windows.yml
-git tag v1.0.0 && git push origin v1.0.0  # a tag builds a Release with the EXE attached
+git tag v2.0.0 && git push origin v2.0.0  # a tag builds a Release with the EXE attached
 ```
 
 CI runs `tools/windows_check.py` (platform self-check, which also verifies that the
@@ -1245,6 +1274,7 @@ Apple Silicon; a universal build needs universal2 Python + PyQt5).
 │   ├── points_window.py             # points panel + log viewer
 │   ├── main_window.py               # management panel, tray, autostart, language
 │   ├── i18n.py                      # bilingual: tr() / both() / Qt translators
+│   ├── about_dialog.py              # About: copyright / no-warranty / GPL text
 │   ├── widgets.py                   # ElidedLabel: elide long names + tooltip
 │   ├── restart.py                   # "restart now" after a language change
 │   ├── wipe_dialog.py               # full reset: choose parts + second confirmation
@@ -1413,7 +1443,7 @@ names, returns the actual count and shows a notice.
 
 ### The app seems frozen after clicking rename?
 
-That was a known issue before v1.0: the points panel is a level-25 overlay while the
+That was a known issue before v2.0: the points panel is a level-25 overlay while the
 rename dialog was level 8, so the dialog was covered but still waiting for input. The
 current version raises every dialog to level 26 via
 `macos_window.install_dialog_raiser()`, and section 5 of `python tools/macos_check.py`
@@ -1466,26 +1496,41 @@ ASCII + CRLF.
 
 ## License
 
-MIT License
+This project is released under the **GNU General Public License v3.0 (GPL-3.0)**.
 
-Copyright (c) 2026 Gentole Lee
+```
+Copyright (C) 2026 Gentole Lee
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, version 3 of the License.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+```
+
+- Full terms: [`LICENSE`](LICENSE) — the official GPL-3.0 text, byte-for-byte unmodified
+- Online: <https://www.gnu.org/licenses/gpl-3.0.html>
+
+**What this means for you:**
+
+- You may use, modify and redistribute it, including commercially;
+- **If you distribute it, you must also provide the complete source code**
+  (including your modifications), keeping the copyright and license notices;
+- Derivative works must also be licensed under GPL-3.0;
+- There is no warranty.
+
+**About the dependencies:** this project uses **PyQt5**, which is licensed under
+**GPL v3**, so the program itself must be GPL-licensed — GPL-3.0 is consistent with
+that. The other dependencies are Qt 5.15 (LGPL v3), PyQt5-sip (BSD-2-Clause),
+cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0) and pycparser
+(BSD-3-Clause), all compatible with GPL-3.0.
+
+---
 
 <p align="right"><a href="#chinese">中文版 ↑</a> · <a href="#english">Back to top of English</a></p>
