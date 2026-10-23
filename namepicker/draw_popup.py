@@ -18,7 +18,9 @@ from PyQt5.QtWidgets import (
 
 from . import macos_window
 from . import theme
-from .config_store import APP_NAME
+from .i18n import tr
+from .widgets import ElidedLabel
+from .config_store import app_name
 
 
 class DrawResultPopup(QWidget):
@@ -98,7 +100,7 @@ class DrawResultPopup(QWidget):
         top_bar.addWidget(self._close_btn)
 
         # --- 副标题 ---
-        self._subtitle = QLabel("🎉 恭喜!")
+        self._subtitle = QLabel(tr("🎉 恭喜!", "🎉 Congratulations!"))
         self._subtitle.setAlignment(Qt.AlignCenter)
         self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
 
@@ -109,7 +111,7 @@ class DrawResultPopup(QWidget):
         self._grid.setSpacing(4)
 
         # --- 底部署名 ---
-        self._footer = QLabel(APP_NAME)
+        self._footer = QLabel(app_name())
         self._footer.setAlignment(Qt.AlignCenter)
         self._footer.setStyleSheet("""
             QLabel {
@@ -154,6 +156,12 @@ class DrawResultPopup(QWidget):
         self._columns = columns
         self._font_size = font_size
         self._cell_width, self._cell_height = self._measure_cell(font_size)
+        # 长名字（外国人名动辄 30+ 字符）会把格子撑得比屏幕还宽，
+        # 先缩字号，仍放不下就把格子截到屏幕内、交给 ElidedLabel 省略。
+        self._cell_width, self._cell_height, font_size = self._clamp_to_screen(
+            columns, self._cell_width, self._cell_height, font_size
+        )
+        self._font_size = font_size
 
         self._build_name_labels(len(self._result_names))
         self._resize_for(len(self._result_names))
@@ -172,7 +180,7 @@ class DrawResultPopup(QWidget):
 
         # Start rolling
         self._roll_count = 0
-        self._subtitle.setText("🎉 抽签中...")
+        self._subtitle.setText(tr("🎉 抽签中...", "🎉 Drawing..."))
         self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
         for label in self._name_labels:
             self._style_rolling(label)
@@ -197,6 +205,23 @@ class DrawResultPopup(QWidget):
             return 4, 22
         return 5, 20
 
+    def _clamp_to_screen(self, columns: int, cell_width: int, cell_height: int,
+                         font_size: int) -> tuple[int, int, int]:
+        """把格子限制在屏幕可用宽度内（必要时缩字号，最后才省略）。"""
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return cell_width, cell_height, font_size
+        available = max(320, screen.availableGeometry().width() - 80)
+        max_cell = max(140, available // max(1, columns) - 8)
+        if cell_width <= max_cell:
+            return cell_width, cell_height, font_size
+
+        scaled = max(14, int(font_size * max_cell / cell_width))
+        new_width, new_height = self._measure_cell(scaled)
+        if new_width > max_cell:
+            new_width = max_cell        # 剩余部分由 ElidedLabel 显示“…”
+        return new_width, new_height, scaled
+
     def _measure_cell(self, font_size: int) -> tuple[int, int]:
         """Cell size wide enough for the longest name (rolling shows pool names)."""
         font = theme.font(font_size, bold=True)
@@ -217,8 +242,7 @@ class DrawResultPopup(QWidget):
         self._name_labels = []
 
         for index in range(count):
-            label = QLabel("抽")
-            label.setAlignment(Qt.AlignCenter)
+            label = ElidedLabel(tr("抽", "?"))
             label.setFixedSize(self._cell_width, self._cell_height)
             label.setProperty("base_font_size", self._font_size)
             self._grid.addWidget(
@@ -229,6 +253,9 @@ class DrawResultPopup(QWidget):
     def _resize_for(self, count: int) -> None:
         rows = (count + self._columns - 1) // self._columns
         width = max(380, self._columns * self._cell_width + 56)
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            width = min(width, max(380, screen.availableGeometry().width() - 40))
         height = 104 + rows * self._cell_height + 44
         self.setFixedSize(width, height)
 
@@ -294,7 +321,7 @@ class DrawResultPopup(QWidget):
             label.setText(name)
             self._style_final(label)
 
-        self._subtitle.setText("🎉 恭喜!")
+        self._subtitle.setText(tr("🎉 恭喜!", "🎉 Congratulations!"))
         self._subtitle.setStyleSheet(self.SUBTITLE_QSS % theme.font_family())
 
         # Auto-close after 5 seconds

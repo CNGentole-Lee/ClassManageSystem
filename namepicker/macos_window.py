@@ -39,11 +39,17 @@ NS_SCREEN_SAVER_LEVEL = 1000     # 屏保层级：更高，代价是会盖住菜
 #: 浮层默认层级。25 已实测可进入全屏 Space；如需更强可改 1000。
 DEFAULT_LEVEL = NS_STATUS_WINDOW_LEVEL
 
+#: 对话框层级：必须高于积分面板/弹窗的 25，否则会被面板盖住（表现为「假死」）
+DIALOG_LEVEL = NS_STATUS_WINDOW_LEVEL + 1
+
 #: NSApplicationActivationPolicy
 POLICY_REGULAR = 0
 POLICY_ACCESSORY = 1
 
 _objc = None
+
+#: 事件过滤器必须有人持有，否则会被 Python GC 掉（Qt 的 parent 只管 C++ 侧）
+_dialog_raiser = None
 
 
 def _objc_lib():
@@ -186,6 +192,67 @@ def bring_to_front(widget, level: int = DEFAULT_LEVEL) -> bool:
         return True
     except Exception:
         return False
+
+
+class _DialogRaiser:
+    """把所有 QDialog 抬到浮层之上（macOS）。
+
+    背景：积分面板/结果弹窗被设成 level 25（NSStatusWindowLevel）才能盖住全屏
+    PPT，但 QInputDialog / QMessageBox 这些普通对话框是 level 0 —— 于是被面板
+    盖在下面，而模态框还在等点击，用户看到的就是「点了没反应 / 假死」。
+
+    这里装一个应用级事件过滤器：任何 QDialog 显示时，把它也配成浮层（level 26，
+    高于面板）并置前。集中一处，改名、改组数、确认框、日志查看器全覆盖。
+    """
+
+    def __init__(self):
+        self._filter = None
+
+    def install(self, app) -> bool:
+        global _dialog_raiser
+        if sys.platform != "darwin":
+            return False
+        try:
+            from PyQt5.QtCore import QObject, QEvent
+
+            from PyQt5.QtCore import QTimer
+            from PyQt5.QtWidgets import QDialog
+
+            def raise_dialog(obj) -> None:
+                try:
+                    if not isinstance(obj, QDialog) or not obj.isVisible():
+                        return
+                    make_overlay(obj, DIALOG_LEVEL)
+                    obj.raise_()
+                except (RuntimeError, AttributeError):
+                    pass          # 对话框已经销毁
+
+            class _Filter(QObject):
+                def eventFilter(inner, obj, event):      # noqa: N805
+                    try:
+                        kind = event.type()
+                        if kind == QEvent.Show:
+                            # Qt 在 Show 之后还会把父窗口的 level 传播给子窗口，
+                            # 所以必须等这一轮事件处理完再抬一次。
+                            QTimer.singleShot(0, lambda o=obj: raise_dialog(o))
+                        elif kind == QEvent.WindowActivate:
+                            raise_dialog(obj)
+                    except Exception:
+                        pass
+                    return False
+
+            self._filter = _Filter(app)
+            app.installEventFilter(self._filter)
+            _dialog_raiser = self              # 模块级引用，防止被 GC 回收
+            return True
+        except Exception:
+            return False
+
+
+def install_dialog_raiser(app) -> bool:
+    """让所有对话框都显示在积分面板/结果弹窗之上（仅 macOS 生效）。"""
+    raiser = _DialogRaiser()
+    return raiser.install(app)
 
 
 def window_attrs(widget) -> dict | None:

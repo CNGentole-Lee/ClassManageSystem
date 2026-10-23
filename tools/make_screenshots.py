@@ -22,12 +22,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "docs", "images")
 OFFSCREEN = -5000
 
-#: 运行前用 CLASSMANAGE_THEME=light|dark 指定变体；light 输出常规文件名，
-#: dark 输出 foo-dark.png（README 里并排展示深浅两套）。
-VARIANT = (os.environ.get("CLASSMANAGE_THEME") or "light").lower()
-SUFFIX = "" if VARIANT == "light" else f"-{VARIANT}"
-os.environ["CLASSMANAGE_THEME"] = VARIANT
-
 # 先把项目根目录加进 sys.path，否则 import namepicker 会失败
 sys.path.insert(0, ROOT)
 # 截屏脚本不碰真实的隐蔽备份（Windows 注册表 / macOS plist）
@@ -40,7 +34,7 @@ from PyQt5.QtCore import QRectF, Qt  # noqa: E402
 from PyQt5.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
-from namepicker import theme  # noqa: E402
+from namepicker import i18n, theme  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 from namepicker.draw_popup import DrawResultPopup  # noqa: E402
 from namepicker.floating_ball import FloatingBall  # noqa: E402
@@ -55,8 +49,14 @@ OFFSCREEN = -5000
 #: 运行前用 CLASSMANAGE_THEME=light|dark 指定变体；light 输出常规文件名，
 #: dark 输出 foo-dark.png（README 里并排展示深浅两套）。
 VARIANT = (os.environ.get("CLASSMANAGE_THEME") or "light").lower()
-SUFFIX = "" if VARIANT == "light" else f"-{VARIANT}"
+THEME_SUFFIX = "" if VARIANT == "light" else f"-{VARIANT}"
 os.environ["CLASSMANAGE_THEME"] = VARIANT
+
+#: 语言变体：CLASSMANAGE_LANG=zh|en（默认 zh），英文输出带 -en 后缀
+LANG = (os.environ.get("CLASSMANAGE_LANG") or "zh").lower()
+LANG_SUFFIX = "" if LANG.startswith("zh") else "-en"
+SUFFIX = THEME_SUFFIX + LANG_SUFFIX
+os.environ["CLASSMANAGE_LANG"] = LANG
 
 SAMPLE_NAMES = ["张伟", "李娜", "王强", "刘洋", "陈静", "杨帆", "赵磊", "黄婷",
                 "周涛", "吴敏", "徐鹏", "孙悦", "马超", "朱琳", "胡军", "郭燕"]
@@ -98,12 +98,15 @@ def shot_floating_ball(app) -> None:
     painter.drawLine(0, 26, w, 26)                    # 屏幕右边缘
     painter.setPen(QColor(226, 230, 236) if dark else QColor(120, 126, 136))
     painter.setFont(theme.font(13))
-    painter.drawText(26, 66, "悬浮球：50×50，默认贴在屏幕右侧边缘")
+    painter.drawText(26, 66, i18n.tr("悬浮球：50×50，默认贴在屏幕右侧边缘",
+                                    "Floating ball: 50x50, docked to the right screen edge"))
     painter.setFont(theme.font(12))
     painter.setPen(QColor(168, 176, 186) if dark else QColor(140, 146, 156))
-    painter.drawText(26, 108, "双击 = 抽 1 人")
-    painter.drawText(26, 138, "右键 = 连抽 2~10 人 · 积分管理 · 打开管理面板")
-    painter.drawText(26, 186, "始终置顶、不抢焦点，可在 PPT 全屏放映时操作")
+    painter.drawText(26, 108, i18n.tr("双击 = 抽 1 人", "Double-click = draw one name"))
+    painter.drawText(26, 138, i18n.tr("右键 = 连抽 2~10 人 · 积分管理 · 打开管理面板",
+                                     "Right-click = draw 2-10 · points · open panel"))
+    painter.drawText(26, 186, i18n.tr("始终置顶、不抢焦点，可在 PPT 全屏放映时操作",
+                                     "Always on top, never steals focus, works over full-screen slides"))
     painter.setPen(QColor(70, 74, 82) if dark else QColor(206, 210, 216))
     painter.drawLine(26, 204, w - 26, 204)
     painter.end()
@@ -134,7 +137,7 @@ def scrub_paths(widget) -> None:
     from PyQt5.QtWidgets import QLabel
     for label in widget.findChildren(QLabel):
         text = label.text()
-        if "加密保存于" in text or "配置" in text:
+        if "加密保存于" in text or "配置" in text or "Encrypted at" in text or "Config" in text:
             import re
             text = re.sub(r"(/[^\s（(]+/)([^/\s（(]+\.(?:dat|ini))", r"\2", text)
             label.setText(text)
@@ -143,14 +146,19 @@ def scrub_paths(widget) -> None:
 def main() -> int:
     os.makedirs(OUT_DIR, exist_ok=True)
     app = QApplication(sys.argv)
-    # 与 main.py 一致：字体 + 调色板 + 全局样式表（截图必须反映真实观感）
+    # 与 main.py 一致：语言、字体、调色板、全局样式表，必须在建控件之前
+    i18n.set_language(LANG)
     theme.apply(app)
+    i18n.translator_for_qt(app, LANG)
 
     tmp = tempfile.mkdtemp(prefix="cm_shots_")
 
     # 造一份看起来像真实课堂的数据（临时目录，不影响你的真实数据）
     store = ConfigStore(os.path.join(tmp, "config.ini"))
-    for i, name in enumerate(["第一组", "雄鹰组", "第三组", "飞虎组", "第五组", "第六组"], 1):
+    demo_names = (["第一组", "雄鹰组", "第三组", "飞虎组", "第五组", "第六组"]
+                  if LANG.startswith("zh")
+                  else ["Group 1", "Eagles", "Group 3", "Tigers", "Group 5", "Group 6"])
+    for i, name in enumerate(demo_names, 1):
         store.set_group_name(i, name)
     store.set_score(1, 12, reason="+2")
     store.set_score(2, 8, reason="+3")
@@ -164,7 +172,7 @@ def main() -> int:
     with open(names_file, "w", encoding="utf-8") as f:
         f.write("\n".join(SAMPLE_NAMES))
 
-    print("生成截图：")
+    print("Generating screenshots:")
     shot_floating_ball(app)
 
     points = PointsWindow(store)
@@ -216,7 +224,7 @@ def main() -> int:
     save(popup, "draw-popup.png", scale=1)
     popup._on_close()
 
-    print(f"\n完成，输出目录: {OUT_DIR}")
+    print(f"\nDone, output directory: {OUT_DIR}")
     return 0
 
 

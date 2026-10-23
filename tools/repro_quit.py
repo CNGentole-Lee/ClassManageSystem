@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import QApplication, QWidget
 app = QApplication(sys.argv)
 print("quitOnLastWindowClosed =", app.quitOnLastWindowClosed())
 app.setQuitOnLastWindowClosed(False)   # 修复：托盘应用不该被"最后一个窗口关闭"带崩
-print("修复后 quitOnLastWindowClosed =", app.quitOnLastWindowClosed())
+print("quitOnLastWindowClosed after fix =", app.quitOnLastWindowClosed())
 
 ball = QWidget(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
 ball.show()
@@ -30,8 +30,8 @@ QTimer.singleShot(2000, app.quit)            # 安全网：如果没被关掉，
 
 app.exec_()
 elapsed = time.time() - start
-print(f"exec_ 在 {elapsed:.2f}s 后返回")
+print(f"exec_ returned after {elapsed:.2f}s")
 if elapsed < 1.5:
-    print(">>> 复现成功：关掉面板 = 关掉整个程序（quitOnLastWindowClosed 在起作用）")
+    print(">>> Reproduced: closing the panel quits the whole app (quitOnLastWindowClosed is active)")
 else:
-    print(">>> 未复现：面板关闭后程序仍然存活")
+    print(">>> Not reproduced: the app survives after the panel closes")

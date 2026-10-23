@@ -48,8 +48,12 @@ MAX_TEXT_LEN = 240
 
 
 class LogView(NamedTuple):
-    """一次读取的结果。"""
-    entries: list          # [(时间, 文本)]，旧 → 新
+    """一次读取的结果。
+
+    entries 每条是 ``(时间, 中文, English)``。老日志只有一段文本，
+    读出来时 English 为空串 —— 保证升级后旧记录照常显示。
+    """
+    entries: list          # [(时间, 中文, English)]，旧 → 新
     seq: int               # 累计写入条数（含已被裁剪掉的）
     source: str            # main / bak / hidden / empty —— 数据从哪份副本来的
 
@@ -109,9 +113,12 @@ def _parse(raw) -> tuple | None:
             return None
         clean = []
         for item in entries:
-            if (isinstance(item, (list, tuple)) and len(item) == 2
-                    and isinstance(item[0], str) and isinstance(item[1], str)):
-                clean.append([item[0], item[1]])
+            if not isinstance(item, (list, tuple)):
+                continue
+            if len(item) == 3 and all(isinstance(x, str) for x in item):
+                clean.append([item[0], item[1], item[2]])       # 双语格式
+            elif len(item) == 2 and all(isinstance(x, str) for x in item):
+                clean.append([item[0], item[1], ""])            # 老格式（纯文本）
         # seq 缺失或不合法时退回「条数」，老格式也能读
         try:
             seq = int(data.get("seq"))
@@ -209,22 +216,35 @@ def load(config_path: str = "", repair: bool = True) -> LogView:
     return LogView(entries, seq, source)
 
 
+def _pair(value) -> tuple[str, str]:
+    """把 ("中文","English") / 纯字符串 统一成两条文本。"""
+    if isinstance(value, (tuple, list)) and len(value) == 2:
+        return str(value[0])[:MAX_TEXT_LEN], str(value[1])[:MAX_TEXT_LEN]
+    text = ("" if value is None else str(value))[:MAX_TEXT_LEN]
+    return text, ""
+
+
 def append_many(texts, config_path: str = "") -> bool:
-    """追加若干条日志（旧 → 新），写满三个副本。失败静默返回 False。"""
-    texts = [t[:MAX_TEXT_LEN] for t in texts if t]
-    if not texts:
+    """追加若干条日志（旧 → 新），写满三个副本。失败静默返回 False。
+
+    texts 里的元素可以是纯字符串，也可以是 (中文, English) 二元组。
+    """
+    pairs = [_pair(t) for t in texts]
+    pairs = [p for p in pairs if p[0] or p[1]]
+    if not pairs:
         return False
     try:
         view = load(config_path)
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entries = list(view.entries) + [[stamp, t] for t in texts]
-        return _save(view.seq + len(texts), entries, config_path)
+        entries = list(view.entries) + [[stamp, zh, en] for zh, en in pairs]
+        return _save(view.seq + len(pairs), entries, config_path)
     except Exception:
         return False
 
 
-def append(text: str, config_path: str = "") -> bool:
-    return append_many([text], config_path)
+def append(zh: str, en: str = "", config_path: str = "") -> bool:
+    """追加一条双语日志。"""
+    return append_many([(zh, en)], config_path)
 
 
 def clear(config_path: str = "") -> bool:

@@ -16,6 +16,11 @@ import os
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+try:
+    from .i18n import tr
+except ImportError:  # 允许把 namepicker 目录直接加进 sys.path 的用法
+    from i18n import tr  # type: ignore
+
 #: 密钥文件：~/.classmanage_key（macOS 与 Windows 下 expanduser("~") 都有效）
 KEY_FILENAME = ".classmanage_key"
 KEY_FILE = os.path.join(os.path.expanduser("~"), KEY_FILENAME)
@@ -57,7 +62,7 @@ def _get_key() -> bytes:
         if len(key) == KEY_SIZE:
             _key_error = ""
             return key
-        reason = f"密钥文件长度异常（{len(key)} 字节）"
+        reason = tr("密钥文件长度异常（{n} 字节）", "key file has bad length ({n} bytes)", n=len(key))
     except OSError as e:
         reason = str(e)
 
@@ -77,7 +82,9 @@ def _get_key() -> bytes:
     except OSError as e:
         # 主目录不可写（极少见）：退回内存里的临时密钥，程序照常运行，
         # 但本次写入的数据下次启动读不回来 —— 记录原因便于排查，不直接崩掉。
-        _key_error = f"无法写入密钥文件 {KEY_FILE}: {e}（{reason}）"
+        _key_error = tr("无法写入密钥文件 {p}: {e}（{r}）",
+                        "cannot write key file {p}: {e} ({r})",
+                        p=KEY_FILE, e=e, r=reason)
     return key
 
 
@@ -103,6 +110,6 @@ def encrypt(plaintext: bytes) -> bytes:
 def decrypt(blob: bytes) -> bytes:
     """解密。文件被改过/被截断/为空时抛异常（ValueError 或 InvalidTag）。"""
     if not blob or len(blob) < MIN_BLOB_SIZE:
-        raise ValueError("文件为空或损坏")
+        raise ValueError(tr("文件为空或损坏", "file is empty or corrupt"))
     nonce, ciphertext = blob[:NONCE_SIZE], blob[NONCE_SIZE:]
     return _cipher().decrypt(nonce, ciphertext, None)

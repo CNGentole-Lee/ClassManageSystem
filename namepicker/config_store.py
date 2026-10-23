@@ -40,13 +40,23 @@ from datetime import datetime
 try:  # 包内相对导入（正常运行时）
     from . import backup_store
     from . import crypto_utils
+    from . import i18n
     from . import log_store
+    from .i18n import tr
 except ImportError:  # 允许把 namepicker 目录直接加进 sys.path 的用法
     import backup_store  # type: ignore
     import crypto_utils  # type: ignore
+    import i18n  # type: ignore
     import log_store  # type: ignore
+    from i18n import tr  # type: ignore
 
+#: 产品名（写进 config 的 meta.app，保持稳定，不随界面语言变化）
 APP_NAME = "班级多用教学辅助终端"
+
+
+def app_name() -> str:
+    """界面显示用产品名（双语）。"""
+    return tr(APP_NAME, "Class Management Terminal")
 
 CONFIG_FILENAME = "config.ini"   # 明文查看副本（只写不读）
 DATA_FILENAME = "config.dat"     # 加密主数据源
@@ -58,23 +68,49 @@ MIN_GROUP_COUNT = 1
 MAX_GROUP_COUNT = 24
 
 # 查看副本的标记行：用来区分「程序写的只读副本」和「旧版真正的明文数据」。
+# 中英两行都会写进去：老文件用中文标记识别，新文件两种都认。
 VIEW_MARKER = "# 仅供查看，修改无效"
+VIEW_MARKER_EN = "# view-only copy - edits are ignored"
 VIEW_HEADER = (
     VIEW_MARKER + " —— 分数保存在加密文件 config.dat 中，程序不会读取本文件。\n"
-    "# 手工修改这里不会影响程序里的分数，只作为人工查看/备份用。\n"
+    + VIEW_MARKER_EN + "\n"
+    + "# 手工修改这里不会影响程序里的分数，只作为人工查看/备份用。\n"
 )
 
-# 第一组 … 第六组
+# 第一组 … 第六组（中文） / Group 1 … Group 6（英文）
 DEFAULT_GROUP_NAMES = ["第{}组".format(n) for n in ("一", "二", "三", "四", "五", "六")]
+DEFAULT_GROUP_NAMES_EN = [f"Group {i}" for i in range(1, len(DEFAULT_GROUP_NAMES) + 1)]
 
 _last_io_error = ""
 
 
-def default_group_name(index: int) -> str:
-    """小组 index（1 起）的兜底显示名。"""
+def default_names_for(index: int) -> tuple[str, str]:
+    """小组 index 在中/英两种语言下的默认名（判定「这是不是默认名」用）。"""
     if 1 <= index <= len(DEFAULT_GROUP_NAMES):
-        return DEFAULT_GROUP_NAMES[index - 1]
-    return f"第{index}组"
+        return DEFAULT_GROUP_NAMES[index - 1], DEFAULT_GROUP_NAMES_EN[index - 1]
+    return f"第{index}组", f"Group {index}"
+
+
+def is_default_group_name(name: str, index: int) -> bool:
+    """这个名字是不是「程序给的默认名」（任一种语言都算）。
+
+    默认名不该被当成用户数据固定下来：切到英文后「第一组」应显示为
+    "Group 1"；只有老师自己改过的名字才保持原样。
+    """
+    zh, en = default_names_for(index)
+    return name.strip() in (zh, en)
+
+
+def default_group_name(index: int) -> str:
+    """小组 index（1 起）的兜底显示名（跟随界面语言）。
+
+    注意：组名是**数据**，只在「新建 / 补齐缺失小组」时取默认值；
+    已有配置里的名字不会被语言切换改写。
+    """
+    names = DEFAULT_GROUP_NAMES if i18n.is_zh() else DEFAULT_GROUP_NAMES_EN
+    if 1 <= index <= len(names):
+        return names[index - 1]
+    return tr(f"第{index}组", f"Group {index}")
 
 
 def _shorten(text: str, limit: int = 16) -> str:
@@ -319,7 +355,8 @@ def _looks_like_view_copy(path: str) -> bool:
             head = f.read(512)
     except OSError:
         return False
-    return VIEW_MARKER in head.decode("utf-8", "ignore")
+    text = head.decode("utf-8", "ignore")
+    return VIEW_MARKER in text or VIEW_MARKER_EN in text
 
 
 def _load_legacy_plaintext(config_path: str):
@@ -368,7 +405,7 @@ def save_config(config: configparser.ConfigParser, path: str = "") -> bool:
         plain = _to_bytes(config)
         blob = crypto_utils.encrypt(plain)
     except Exception as e:
-        _last_io_error = f"加密失败: {e}"
+        _last_io_error = tr("加密失败: {e}", "encryption failed: {e}", e=e)
         return False
 
     ok = _atomic_write_bytes(data_path, blob)
@@ -530,10 +567,15 @@ class ConfigStore:
         return count
 
     def get_group_name(self, index: int) -> str:
-        """小组 index（1 起）的显示名。"""
-        fallback = default_group_name(index)
-        name = self._cp.get("points", f"group_{index}", fallback=fallback).strip()
-        return name or fallback
+        """小组 index（1 起）的显示名。
+
+        存的是默认名（`第一组` / `Group 1`）时按当前界面语言返回 —— 这样切到
+        英文后默认组名会变成 "Group 1"，而老师自定义的名字不受影响。
+        """
+        raw = self._cp.get("points", f"group_{index}", fallback="").strip()
+        if not raw or is_default_group_name(raw, index):
+            return default_group_name(index)
+        return raw
 
     def set_group_name(self, index: int, name: str) -> None:
         name = name.strip()
@@ -548,9 +590,10 @@ class ConfigStore:
         except (TypeError, ValueError):
             return 0
 
-    def set_score(self, index: int, value: int, reason: str = "") -> None:
+    def set_score(self, index: int, value: int, reason=None) -> None:
         """改一个小组的分数；值真的变了才写一条操作日志。
 
+        reason 可以是 i18n.Bi / (中文, English) / 纯字符串 —— 会原样附在日志里。
         日志写失败不影响积分（见 _log）。
         """
         try:
@@ -560,32 +603,67 @@ class ConfigStore:
         old = self.get_score(index)
         self._cp.set("points", f"score_{index}", str(value))
         if value != old:
-            suffix = f"｜{reason}" if reason else ""
+            zh_reason, en_reason = i18n.as_pair(reason)
             name = _shorten(self.get_group_name(index))
-            self._log(f"第{index}组（{name}）{old} → {value}{suffix}")
+            zh_suffix = f"｜{zh_reason}" if zh_reason else ""
+            en_suffix = f" | {en_reason}" if en_reason else ""
+            self._log(
+                f"第{index}组（{name}）{old} → {value}{zh_suffix}",
+                f"Group {index} ({name}) {old} → {value}{en_suffix}",
+            )
 
     def all_scores(self) -> list[int]:
         return [self.get_score(i) for i in range(1, self.group_count + 1)]
 
-    def reset_scores(self, reason: str = "全部清零") -> None:
+    def reset_scores(self, reason=None) -> None:
         """所有小组归零，并把这次批量清零记成一条日志（而不是每组一条）。"""
         olds = self.all_scores()
         for i in range(1, self.group_count + 1):
             self._cp.set("points", f"score_{i}", "0")
         if any(olds):
-            self._log(f"{reason}：" + "/".join(str(v) for v in olds) + " → 全 0")
+            zh_reason, en_reason = i18n.as_pair(reason)
+            zh_reason = zh_reason or "全部清零"
+            en_reason = en_reason or "clear all"
+            joined = "/".join(str(v) for v in olds)
+            self._log(f"{zh_reason}：{joined} → 全 0", f"{en_reason}: {joined} -> all 0")
 
-    def _log(self, text: str) -> None:
-        """写一条操作日志；失败静默 —— 日志绝不能影响积分流程。"""
+    # --- 可选清空（彻底重置对话框用） ---
+
+    def wipe_group_names(self) -> None:
+        """只把组名恢复默认，保留分数与小组数量。"""
+        count = self.group_count
+        for i in range(1, count + 1):
+            self._cp.set("points", f"group_{i}", default_group_name(i))
+        self._log("彻底重置：组名已恢复默认", "Full reset: group names restored")
+
+    def wipe_scores(self) -> None:
+        """只把积分归零，保留组名。"""
+        olds = self.all_scores()
+        for i in range(1, self.group_count + 1):
+            self._cp.set("points", f"score_{i}", "0")
+        if any(olds):
+            joined = "/".join(str(v) for v in olds)
+            self._log(f"彻底重置：积分已清零（原 {joined}）",
+                      f"Full reset: scores cleared (was {joined})")
+
+    def log_operation(self, zh: str, en: str = "") -> None:
+        """写一条操作日志（供 main.py 记录公平记录/历史的清空）。"""
+        self._log(zh, en)
+
+    def _log(self, zh: str, en: str = "") -> None:
+        """写一条双语操作日志；失败静默 —— 日志绝不能影响积分流程。"""
         try:
-            log_store.append(text, self.path)
+            log_store.append(zh, en, self.path)
         except Exception:
             pass
 
-    def _write_default_groups(self, count: int, reason: str = "修改小组数量") -> None:
+    def _write_default_groups(self, count: int, reason=None, force_log: bool = False) -> None:
         """把 [points] 整段换成 `count` 个全新小组（默认组名、0 分），并记一条日志。"""
         old_count = self.group_count
         olds = self.all_scores()
+        zh_reason, en_reason = i18n.as_pair(reason)
+        zh_reason = zh_reason or "修改小组数量"
+        en_reason = en_reason or "change group count"
         if self._cp.has_section("points"):
             self._cp.remove_section("points")
         self._cp.add_section("points")
@@ -594,9 +672,14 @@ class ConfigStore:
             self._cp.set("points", f"group_{i}", default_group_name(i))
             self._cp.set("points", f"score_{i}", "0")
 
-        if old_count != count or any(olds) or reason == "彻底重置":
-            detail = f"（原积分 {'/'.join(str(v) for v in olds)}）" if any(olds) else ""
-            self._log(f"{reason}：小组数量 {old_count} → {count}，组名与积分已重置{detail}")
+        if old_count != count or any(olds) or force_log:
+            joined = "/".join(str(v) for v in olds)
+            zh_detail = f"（原积分 {joined}）" if any(olds) else ""
+            en_detail = f" (was {joined})" if any(olds) else ""
+            self._log(
+                f"{zh_reason}：小组数量 {old_count} → {count}，组名与积分已重置{zh_detail}",
+                f"{en_reason}: group count {old_count} -> {count}, names and scores reset{en_detail}",
+            )
 
     def reset_all(self) -> bool:
         """回到出厂状态：组名、分数、组数全部重置（彻底重置用）。
@@ -604,7 +687,11 @@ class ConfigStore:
         长期抽取次数不在这里，它存在 stats.ini（见 stats_store.py）。
         操作日志**不清空**：只追加一条标记，审计记录不能靠一个按钮抹掉。
         """
-        self._write_default_groups(DEFAULT_GROUP_COUNT, reason="彻底重置")
+        self._write_default_groups(
+            DEFAULT_GROUP_COUNT,
+            reason=i18n.both("彻底重置", "full reset"),
+            force_log=True,
+        )
         # 早期版本把抽取次数写在 [stats] 段里，一并删除避免留下误导性残留。
         if self._cp.has_section("stats"):
             self._cp.remove_section("stats")
@@ -629,7 +716,7 @@ class ConfigStore:
             # 保存成功；但如果密钥文件写不进去，留个可排查的痕迹（见 crypto_utils.key_error）
             self._last_error = crypto_utils.key_error()
         else:
-            self._last_error = last_save_error() or "写入失败"
+            self._last_error = last_save_error() or tr("写入失败", "write failed")
         return ok
 
     def last_error(self) -> str:

@@ -12,6 +12,7 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import QWidget, QApplication, QMenu, QAction
 
 from . import theme
+from .i18n import tr
 
 
 # --- 强制置顶（跨平台）-------------------------------------------------
@@ -257,22 +258,22 @@ class FloatingBall(QWidget):
         menu.setStyleSheet(self.menu_stylesheet())
 
         # 连抽 —— 悬停后竖排展开 2~10 人（左键双击本来就能抽一个，不重复放）
-        multi_menu = menu.addMenu("连抽")
+        multi_menu = menu.addMenu(tr("连抽", "Multi-draw"))
         multi_menu.setStyleSheet(self.menu_stylesheet())
         for count in self.MULTI_DRAW_CHOICES:
-            action = QAction(f"{count} 人", self)
+            action = QAction(tr("{n} 人", "{n} names", n=count), self)
             action.triggered.connect(
                 lambda _checked=False, n=count: self.multi_draw_requested.emit(n)
             )
             multi_menu.addAction(action)
 
-        points_action = QAction("积分管理", self)
+        points_action = QAction(tr("积分管理", "Points"), self)
         points_action.triggered.connect(self.points_panel_requested.emit)
         menu.addAction(points_action)
 
         menu.addSeparator()
 
-        open_action = QAction("打开管理面板", self)
+        open_action = QAction(tr("打开管理面板", "Open panel"), self)
         open_action.triggered.connect(self.open_panel_requested.emit)
         menu.addAction(open_action)
 
@@ -280,16 +281,16 @@ class FloatingBall(QWidget):
         # 而菜单栏又可能被系统设为自动隐藏，所以在这里再放一份，保证任何情况下
         # 都能抽人 / 重置 / 退出。
         menu.addSeparator()
-        draw_action = QAction("抽取名字", self)
+        draw_action = QAction(tr("抽取名字", "Draw a name"), self)
         draw_action.triggered.connect(self.ball_clicked.emit)
         menu.addAction(draw_action)
 
-        wipe_action = QAction("彻底重置...", self)
+        wipe_action = QAction(tr("彻底重置...", "Full reset..."), self)
         wipe_action.triggered.connect(self.wipe_requested.emit)
         menu.addAction(wipe_action)
 
         menu.addSeparator()
-        quit_action = QAction("退出", self)
+        quit_action = QAction(tr("退出", "Quit"), self)
         quit_action.triggered.connect(self.quit_requested.emit)
         menu.addAction(quit_action)
 
@@ -334,6 +335,6 @@ class FloatingBall(QWidget):
         # 始终显示「抽」
         painter.setPen(QColor(255, 255, 255, 240))
         painter.setFont(theme.font(20, bold=True))
-        painter.drawText(self.rect(), Qt.AlignCenter, "抽")
+        painter.drawText(self.rect(), Qt.AlignCenter, tr("抽", "P"))
 
         painter.end()

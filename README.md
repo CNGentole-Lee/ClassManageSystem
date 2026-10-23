@@ -1,19 +1,3 @@
-# 班级多用教学辅助终端 / Classroom Multi-Purpose Teaching Assistant Terminal
-
-[![English](https://img.shields.io/badge/English-Jump%20to%20English-blue)](#english)　[中文](#chinese) [English](#english)
-
-> 本文档为中文 + 英文双语版：英文请点击 **English** 按钮
->   
->This document is available in both Chinese and English: for English, please click the **English** button.
->   
-> **注意：** 由于作者时间紧张，全面英配工作量过大，目前程序还是纯中文，望理解
->   
-> **Attention please:** Due to the author's tight schedule, full English localization would require too much work, so the program is currently still available in Chinese only. Thank you for your understanding.
-
----
-
-<a id="chinese"></a>
-
 # 班级多用教学辅助终端
 
 > 面向课堂教学的悬浮式随机点名 + 小组积分工具。
@@ -21,7 +5,7 @@
 
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue)
 ![python](https://img.shields.io/badge/python-3.10%2B-3776AB)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 ![悬浮球](docs/images/floating-ball.png)
 
@@ -34,6 +18,7 @@
 - [功能特性](#功能特性)
 - [快速开始](#快速开始)
 - [使用说明](#使用说明)
+- [界面语言（中文 / English）](#界面语言中文--english)
 - [数据与安全](#数据与安全)
 - [核心设计：为什么不用纯随机](#核心设计为什么不用纯随机)
 - [跨平台支持](#跨平台支持)
@@ -43,6 +28,7 @@
 - [开发注意事项](#开发注意事项)
 - [常见问题](#常见问题)
 - [已知限制](#已知限制)
+- [许可证](#许可证)
 
 ---
 
@@ -68,6 +54,12 @@
 
 ![结果弹窗](docs/images/draw-popup.png)
 
+### 彻底重置：选择清空范围
+
+组名 / 积分 / 长期公平记录 / 抽取历史可分别勾选，点「重置」后再二次确认。
+
+![彻底重置](docs/images/wipe-dialog.png)
+
 ### 管理面板
 
 名单加载、冷却倒计时、抽取历史、开机自启动、托盘入口。
@@ -76,7 +68,7 @@
 
 ### 深色模式
 
-界面跟随系统外观（仅macOS），不是把浅色主题硬套一遍：
+界面跟随系统外观（macOS / Windows 均可），不是把浅色主题硬套一遍：
 卡片、按钮、表格、日志区都有各自的深色配色，文字与背景保持足够对比度。
 也可用环境变量强制预览：`CLASSMANAGE_THEME=dark python main.py`。
 
@@ -127,7 +119,10 @@
 - 单击展开 `-1 / +1 / +2 / +3`；双击组名重命名；右键清零本组。
 - 支持 `Ctrl+Z` 撤销；快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
 - 分数加密保存在 `config.dat`，重启不丢；被改坏或删掉会自动回档。
-- 每次积分变动自动写入加密操作日志，底栏「操作日志」按钮只读查看。
+- 每次积分变动自动写入加密操作日志，底栏「操作日志」按钮只读查看；
+  日志每条同时保存中英两版，切换语言后历史记录依然可读。
+- 「彻底重置」会先弹出**选择清空范围**的对话框：组名 / 积分 / 长期公平记录 /
+  抽取历史可分别勾选，确认后再二次确认，避免误伤不需要清的数据。
 - 改组数会整段重置组名与分数（换组数就是换了一套分组，旧分数没有可挂靠的组）。
 
 ### 公平抽选
@@ -202,7 +197,16 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | `1 / 2 / 3 / 4` | `-1 / +1 / +2 / +3` |
 | 「小组数量...」 | 改组数（需二次确认，会清空组名与分数） |
 | 「全部清零」 | 所有小组归零（不可撤销） |
-| 「操作日志」 | 打开只读日志查看器（唯一入口） |
+| 「操作日志」 | 打开只读日志查看器（唯一入口，中英双语逐条显示） |
+
+小组名支持任意长度的名字（外国人名可能几十个字符）：卡片和抽选弹窗会按宽度
+自动省略显示「…」，完整名字放在 tooltip 里，鼠标悬停可见；抽选弹窗还会先缩小
+字号、再把窗口宽度限制在屏幕内，不会把名字顶出屏幕。
+
+![长名字与英文默认组名](docs/images/long-names-en.png)
+
+上图同时展示了英文模式下的默认组名：只改过名字的小组显示自定义名，
+没改过的显示 `Group 4/5/6`。
 
 ### 管理面板
 
@@ -212,6 +216,36 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
 - 托盘「彻底重置...」：组名、积分、长期公平记录、抽取历史全部回到出厂状态。
+
+---
+
+## 界面语言（中文 / English）
+
+界面、对话框、托盘/悬浮球菜单、操作日志全部支持中英双语。
+
+- **切换方式**：管理面板底栏的语言下拉框（`中文` / `English`）。切换后会询问
+  **是否立即重启**；选「是」会自动退出并重新拉起一个新进程，选「否」则下次启动生效。
+- **生效时机**：界面文字不做热替换（Qt 没有 `retranslateUi`），因此需要重启。
+- **默认值**：首次运行跟随系统语言；之后以保存的选择为准。
+- **临时覆盖**：`CLASSMANAGE_LANG=zh|en` 环境变量，优先级最高，不写回设置
+  （截图与自动化测试用）。
+- **操作日志**：每条记录同时保存中文和 English 两个版本，查看器里两行一起显示，
+  所以切换语言不会让历史记录变成看不懂的语言。
+- **默认组名跟随语言**：还叫默认名的小组会显示为当前语言的默认名
+  （中文 `第一组…` ↔ 英文 `Group 1…`）；**老师自定义过的组名保持原样**，
+  不会被切换语言改写。日志内容同样不会被改写。
+
+| 中文界面 | English UI |
+|---|---|
+| ![中文积分面板](docs/images/points-panel.png) | ![English points panel](docs/images/points-panel-en.png) |
+
+![English full reset dialog](docs/images/wipe-dialog-en.png)
+
+底栏右侧的下拉框就是语言开关：
+
+![English main window with language selector](docs/images/main-window-en.png)
+
+`tools/` 下的脚本统一输出英文，便于把日志贴到 issue 或 CI 里。
 
 ---
 
@@ -269,7 +303,9 @@ Linux   : ~/.config/YourOrg/ClassManageSystem.conf
 - **只增不减**：最多保留最近 400 条（`seq` 是历史累计条数并持续增长），因此
   「哪份副本的 `seq` 最大就用哪份」—— 拿旧密文覆盖主文件这种**回滚式篡改**也会被自动修回；
 - 「彻底重置」不清空日志，只追加一条标记：审计记录不能靠一个按钮抹掉；
-- 磁盘上**没有明文副本**，唯一查看入口是积分面板的「操作日志」按钮。
+- 磁盘上**没有明文副本**，唯一查看入口是积分面板的「操作日志」按钮；
+- 每条记录存 `(时间, 中文, English)` 三元组，旧版纯文本记录也能继续读取
+  （英文侧留空，只显示原文）。
 
 ### `stats.ini`
 
@@ -339,7 +375,7 @@ python tools/fairness_burnin.py
 | 抽选 / 积分 / 日志 | ✅ | ✅ | 未验证 |
 | 盖住全屏应用 | ✅ `SetWindowPos` | ✅ accessory 策略 + 浮层属性（已实测） | 未验证 |
 | 托盘 / 菜单栏图标 | ✅ 彩色托盘图标 | ✅ 模板图；**菜单栏自动隐藏时不显示** | 未验证 |
-| 浅色 / 深色模式 | ❌ 深色未生效 | ✅ 跟随系统 | 未验证 |
+| 浅色 / 深色模式 | ✅ 跟随系统 | ✅ 跟随系统 | ✅ 跟随系统 |
 | 系统级隐蔽备份 | ✅ HKCU 注册表 | ✅ `~/Library/Preferences` plist | ✅ `~/.config` |
 | 悬浮球置顶 | ✅ `SetWindowPos(HWND_TOPMOST)` | ✅ 层级 + `CanJoinAllSpaces`/`FullScreenAuxiliary`/`Stationary` | 未验证 |
 | Dock 图标 | — | ❌ 无（accessory 策略的代价，见下） | — |
@@ -352,9 +388,20 @@ python tools/fairness_burnin.py
 
 ## 打包
 
-> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包（涉及到GUI相关，并且无法通过Somketest， CI无法测试故新Commit取消CI）
+> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包（本地 Windows 或 CI）。
 
-### Windows —— Windows 10及以上电脑+相关依赖
+### Windows —— 方式一：GitHub Actions（推荐）
+
+推送即自动打包，产物在 Actions 页面下载：
+
+```bash
+git push origin main                    # 触发 .github/workflows/build-windows.yml
+git tag v1.0.0 && git push origin v1.0.0   # 打 tag 会自动建 Release 并附上 EXE
+```
+
+CI 会依次跑：`tools/windows_check.py`（平台自检，同时验证注册表隐蔽备份与 Win32 置顶是否真的可用）→ 存储/日志验收 → PyInstaller 打包 → 上传 `ClassManageSystem-windows-x64` 产物。**自检失败会中断出包**，所以能下到 EXE 就意味着这些功能在真 Windows 上实测过。
+
+### Windows —— 方式二：任意一台 Windows
 
 ```bat
 packaging\windows\build.bat
@@ -405,7 +452,14 @@ packaging/macos/build.command        # 双击也可以
 │   ├── floating_ball.py             # 悬浮球（含跨平台强制置顶）
 │   ├── draw_popup.py                # 结果弹窗与滚动动画
 │   ├── points_window.py             # 积分面板 + 操作日志查看器
-│   ├── main_window.py               # 管理面板、托盘、开机自启动
+│   ├── main_window.py               # 管理面板、托盘、开机自启动、语言切换
+│   ├── i18n.py                      # 中英双语：tr() / both() / Qt 翻译装载
+│   ├── widgets.py                   # ElidedLabel：长名字按宽度省略 + tooltip 全名
+│   ├── restart.py                   # 切换语言后的「立即重启」（源码/打包两种参数）
+│   ├── wipe_dialog.py               # 彻底重置：勾选清空范围 + 二次确认
+│   ├── wipe_service.py              # 按勾选项逐项清空（可单测）
+│   ├── theme.py                     # 浅/深色配色 token、跨平台字体、托盘图标
+│   ├── macos_window.py              # macOS 激活策略 + 全屏浮层
 │   ├── single_instance.py           # 单实例守护（QLocalServer 判活）
 │   └── crash_log.py                 # 崩溃日志
 │
@@ -423,7 +477,9 @@ packaging/macos/build.command        # 双击也可以
 │   ├── _fullscreen_helper.py         # 自检用：进入原生全屏的辅助进程
 │   ├── smoke_test.py                # GUI 冒烟测试
 │   ├── group_count_stress.py        # 小组数量功能 + 300 轮压力
-│   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图
+│   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图（中/英、深/浅）
+│   ├── wipe_check.py                # 彻底重置的勾选与逐项清空测试
+│   ├── i18n_check.py                # 双语切换 / 持久化 / 双语日志测试
 │   ├── fairness_burnin.py           # 1 万次单抽烧机 + χ² 检验
 │   ├── fairness_benchmark.py        # 公平性调参基准
 │   ├── reset_fairness_benchmark.py  # 教师清空历史工作流模拟
@@ -431,7 +487,7 @@ packaging/macos/build.command        # 双击也可以
 │   ├── repro_quit.py                # 「关闭面板导致退出」最小复现
 │   └── _settings_isolation.py       # 测试用的 QSettings 命名空间隔离
 │
-└── .github/workflows/build-windows.yml   # CI：x64 Windows 打包 --已弃用
+└── .github/workflows/build-windows.yml   # CI：x64 Windows 打包
 ```
 
 ---
@@ -445,10 +501,12 @@ python tools/config_check.py           # 最快，不依赖 Qt：存储读写/�
 python tools/config_crypto_check.py    # 加密存储：乱码、手改无效、篡改/删除回档、迁移
 python tools/log_crypto_check.py       # 操作日志：自动记录、无明文副本、防回滚、只增不减
 python tools/windows_check.py          # 平台自检（在 Windows 上才跑真实分支）
-python tools/macos_check.py            # 平台自检（菜单栏图标 / 浮层属性 / 深色 / 激活策略）
+python tools/macos_check.py            # 平台自检（菜单栏 / 浮层 / 深色 / 激活策略 / 模态框层级）
 python tools/macos_check.py --fullscreen   # 额外跑一次「真·原生全屏」覆盖测试
 python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、落盘、撤销、连抽
 python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
+python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
+python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志
 ```
 
 - `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PyQt5 时还会验证真实的 QSettings 隐蔽备份。
@@ -546,10 +604,20 @@ QSettings 隐蔽备份恢复。
 
 ---
 
+## 开发注意事项（踩过的坑）
+
+- **浮层会盖住对话框**：积分面板/结果弹窗为了盖住全屏 PPT 被设成
+  `NSStatusWindowLevel(25)`，而模态对话框（改名、确认框）默认是
+  `NSModalPanelWindowLevel(8)` —— 对话框被面板盖住、模态循环还在等点击，
+  表现就是「点改名后整个程序假死」。修复见 `macos_window.install_dialog_raiser()`：
+  应用级事件过滤器把所有 `QDialog` 抬到 level 26 并置前（`tools/macos_check.py`
+  有回归测试，会对比两者的 level 与前后顺序）。
+
 ## 已知限制
 
 - **未做代码签名/公证**：Windows 有 SmartScreen 提示，macOS 拷贝到别的机器需右键打开。
-- **架构跟随构建机**：Apple Silicon 上打出 arm64 的 `.app`，Intel Mac 不能跑，没有写双架构冗余，Intel Mac需要自己运行打包的Shell程序；
+- **架构跟随构建机**：Apple Silicon 上打出 arm64 的 `.app`，Intel Mac 不能跑；
+  Windows CI 产出 x64。
 - **macOS 全屏覆盖靠「应用激活策略」**：窗口层级再高也没用 —— regular 应用自己占着
   一个桌面 Space，别的 App 进全屏后它压根不在那个 Space 里。本程序启动时会切到
   **accessory** 策略（`LSUIElement`，与 Alfred / Raycast 相同），窗口才能加入
@@ -565,561 +633,28 @@ QSettings 隐蔽备份恢复。
   学生理论上可以读取密钥。这是「用户级密钥」方案的固有边界。
 - **Linux 未验证**：代码有平台守卫不会崩，但托盘/置顶行为未测试。
 
-> 许可证（MIT）见文末英文版 [License](#license)。
-
----
 ---
 
-<a id="english"></a>
-
-# Classroom Multi-Purpose Teaching Assistant Terminal
-
-[![中文](https://img.shields.io/badge/中文-回到中文-red)](#chinese)
-
-> A floating random name picker + group scoring tool for classroom teaching.
-> Draw names, run multi-draws, and add or deduct group points **without covering your slides, without stealing focus, and without leaving PowerPoint's full-screen slideshow**.
-
-![platform](https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue)
-![python](https://img.shields.io/badge/python-3.10%2B-3776AB)
-![license](https://img.shields.io/badge/license-MIT-green)
-
-![Floating ball](docs/images/floating-ball.png)
-
----
-
-## Table of Contents
-
-- [Screenshots](#screenshots)
-- [What Problem It Solves](#what-problem-it-solves)
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Data & Security](#data--security)
-- [Core Design: Why Not Pure Randomness](#core-design-why-not-pure-randomness)
-- [Cross-Platform Support](#cross-platform-support)
-- [Packaging](#packaging)
-- [Project Structure](#project-structure)
-- [Testing](#testing)
-- [Development Notes](#development-notes)
-- [FAQ](#faq)
-- [Known Limitations](#known-limitations)
-- [License](#license)
-
----
-
-## Screenshots
-
-> The images below are generated by `python tools/make_screenshots.py`, which captures the real widgets. Re-run it after any UI change to keep them in sync — they are not hand-drawn mockups.
-
-### Group Points Panel
-
-Single-click a card to expand its action buttons, double-click a group name to rename it, undo and keyboard shortcuts are supported. The "Activity Log" button in the bottom bar is the only entry point to the log.
-
-![Points panel](docs/images/points-panel.png)
-
-### Activity Log
-
-Every points change is recorded automatically: encrypted, append-only, and able to roll back by itself. Read-only, not editable.
-
-![Activity log](docs/images/log-viewer.png)
-
-### Draw Result Popup
-
-A multi-draw opens only one window; several names scroll at the same time and are revealed together. Close it with `✕` or let it disappear automatically after 5 seconds.
-
-![Result popup](docs/images/draw-popup.png)
-
-### Management Panel
-
-Roster loading, cooldown countdown, draw history, launch-at-startup, tray entry.
-
-![Management panel](docs/images/main-window.png)
-
-### Dark Mode
-
-The UI follows the system appearance (macOS only) — it is not just the light theme inverted:
-cards, buttons, tables and the log area each have their own dark palette, and text keeps sufficient contrast against the background.
-You can also force a preview with an environment variable: `CLASSMANAGE_THEME=dark python main.py`.
-
-| Points panel | Activity log |
-|---|---|
-| ![Dark points panel](docs/images/points-panel-dark.png) | ![Dark activity log](docs/images/log-viewer-dark.png) |
-
-![Dark management panel](docs/images/main-window-dark.png)
-
----
-
-## What Problem It Solves
-
-In scenarios such as group collaborative learning, classroom competitions, random name picking, and task assignment, teachers frequently need to:
-
-- randomly pick one student to answer a question;
-- pick 2–10 students at once for group activities or task assignment;
-- add or deduct points for each study group and record classroom performance;
-- **do all of the above during a full-screen PowerPoint slideshow, without quitting the slides, switching screens, or interrupting the lesson**.
-
-By default the program shows a 50×50 floating ball docked at the right edge of the screen: double-click to draw one name, right-click for multi-draw / points panel / management panel. All key windows stay on top but never steal focus, popups close themselves, and closing the points panel does not quit the program — the teacher can stay inside the full-screen presentation and run classroom interactions like using a remote control.
-
-### Key Highlights
-
-| Highlight | Description |
-|---|---|
-| **Never blocks the slides** | The floating ball is only 50×50, docked to the right screen edge by default, and can be dragged anywhere |
-| **No need to leave the slides** | The floating ball is force-pinned on top (`SetWindowPos(HWND_TOPMOST)` on Windows; NSWindow level and Space behavior on macOS), so it can overlay PowerPoint |
-| **Never steals focus** | The floating ball and popups use `Qt.WindowDoesNotAcceptFocus`, so keyboard input and PowerPoint operation are never interrupted |
-| **Fair drawing** | Not `random.choice`, but "weighted least-drawn-first + per-person cooldown", so draw counts stay balanced over the long run |
-| **Tamper-resistant points** | AES-256-GCM encryption + three-level automatic rollback — students cannot change scores by editing files |
-| **Resident in tray** | Closing the main window or points panel does not quit; only "Quit" in the tray menu ends the process |
-
----
-
-## Features
-
-### Classroom Operations (Without Interrupting the Lesson)
-
-- Double-click the floating ball → draw 1 name; right-click → multi-draw 2–10 names / points management / open management panel.
-- A scrolling animation (1.8 s) plays before the reveal; the result popup is centered, has a `✕`, and closes automatically after 5 seconds.
-- A multi-draw opens only one window; several names scroll at the same time and are revealed together.
-- Neither the floating ball nor the popups steal focus.
-
-### Study Group Points
-
-- 6 groups by default, adjustable from 1 to 24; one card per group.
-- Single-click to expand `-1 / +1 / +2 / +3`; double-click the group name to rename; right-click to reset the group to zero.
-- `Ctrl+Z` undo supported; shortcuts `1/2/3/4` map to `-1/+1/+2/+3`.
-- Scores are saved encrypted in `config.dat` and survive restarts; if corrupted or deleted, the data rolls back automatically.
-- Every points change is appended to the encrypted activity log, viewable read-only via the "Activity Log" button in the bottom bar.
-- Changing the group count resets group names and scores entirely (changing the group count means a whole new grouping, so old scores have no group to attach to).
-
-### Fair Drawing
-
-- "Weighted least-drawn-first": the fewer times a student has been drawn in total, the higher their weight.
-- Recently drawn students are temporarily down-weighted to avoid back-to-back picks.
-- Long-term counts live in `stats.ini` and remain effective across restarts.
-- "Clear history" before class clears only history and cooldowns and keeps long-term counts; only "Full reset" zeroes the long-term counts.
-
-### Management Panel
-
-- Roster sources: a `.txt` file (one name per line, `#` comments supported), or generate by numeric range (1–99 by default).
-- The roster list shows cooldown countdowns; students in cooldown are greyed out.
-- Draw history table, per-person cooldown time (1–60 minutes, default 10).
-- Launch-at-startup toggle (writes the registry Run key on Windows; a LaunchAgent on macOS).
-- Tray menu: show main window / points management / draw a name / full reset / quit.
-
----
-
-## Quick Start
-
-### Requirements
-
-- Windows 10 or later (primary target platform), macOS 11 or later; Linux unverified.
-- Python 3.10+, PyQt5, cryptography (only needed when running from source).
-
-```bash
-pip install -r requirements.txt
-```
-
-### Run From Source
-
-```bash
-python main.py
-```
-
-If you don't want a console window:
-
-```bash
-pythonw main.py          # Windows: pythonw does not pop up a console
-```
-
-On macOS just run `python main.py`; to make it a double-clickable app, see [Packaging](#packaging).
-
-The first launch creates the encrypted config next to the program directory; if there is no stored roster, a numeric roster 1–99 is generated automatically.
-
-### Download a Runnable Build
-
-Get it from **GitHub Releases** (if not published yet, build it yourself — see [Packaging](#packaging)).
-
----
-
-## Usage
-
-### Floating Ball
-
-| Action | Effect |
-|---|---|
-| Left double-click | Draw 1 person |
-| Left drag | Move the floating ball |
-| Right-click | Menu: multi-draw 2–10 names / points management / open management panel / draw a name / full reset / quit |
-| On draw | Briefly flashes gold |
-
-### Points Panel
-
-| Action | Effect |
-|---|---|
-| Single-click a card | Expand the action buttons |
-| Double-click a group name | Rename |
-| Right-click a card | Reset that group's points to zero |
-| `Ctrl+Z` | Undo the most recent point change |
-| `1 / 2 / 3 / 4` | `-1 / +1 / +2 / +3` |
-| "Group count..." | Change the group count (requires confirmation; clears group names and scores) |
-| "Reset all" | Zero every group (not undoable) |
-| "Activity Log" | Open the read-only log viewer (the only entry point) |
-
-### Management Panel
-
-- "Roster source": browse for a `.txt` roster, or generate from a numeric range; "Reset to student numbers" restores the default 1–99.
-- "Per-person cooldown": 1–60 minutes.
-- "Launch at startup": writes the auto-start entry for the current user.
-- "Hide floating ball": temporarily hide/show the floating ball.
-- "Clear history": clears draw history and cooldowns, **keeping** the long-term fairness counters.
-- Tray "Full reset...": group names, points, long-term fairness records and draw history all return to factory state.
-
----
-
-## Data & Security
-
-Both points and the activity log use **tamper-resistant storage**: each dataset has four copies and reads fall back level by level.
-
-| File / location | Role | Program behavior |
-|---|---|---|
-| `config.dat` | Primary points data source (AES-256-GCM) | Read + write |
-| `config.dat.bak` | Encrypted backup in the same directory | Read (rollback) + write |
-| `QSettings` hidden backup | Windows registry / macOS plist / Linux conf | Read (rollback) + write |
-| `config.ini` | Plaintext copy for viewing | **Write only, never read** |
-
-Points read order:
-
-```text
-config.dat → config.dat.bak → QSettings hidden backup → legacy plaintext (one-time migration) → defaults
-```
-
-Whenever any level reads successfully, the successful data is written back to the earlier copies (automatic repair).
-
-### `config.dat` / `config.dat.bak`
-
-- Content is `nonce(12B) + ciphertext + GCM tag(16B)`, so it looks like garbage in Notepad;
-- GCM is authenticated encryption: change any single byte and decryption must fail, after which the program rolls back to the next copy.
-
-### Key
-
-- On first run, a 32-byte key is generated automatically to `~/.classmanage_key` (permissions `600` on macOS/Linux);
-- it is never hard-coded in the source, and is isolated per user account;
-- if the key file cannot be written, the program does not crash — it degrades to a "temporary key for this run" and records the reason in
-  `crypto_utils.key_error()` (you can diagnose it with `tools/config_crypto_check.py`).
-
-### `config.ini` (Viewing Copy)
-
-Regenerated on every save; its first line is `# 仅供查看，修改无效` ("for viewing only, edits have no effect"). **The program never reads it**, so editing it by hand will not change scores — use the UI instead.
-
-### `QSettings` Hidden Backup
-
-The same ciphertext is stored once more in a system-level location that students can hardly find or delete:
-
-```text
-Windows : HKCU\Software\YourOrg\ClassManageSystem
-macOS   : ~/Library/Preferences/com.yourorg.ClassManageSystem.plist
-Linux   : ~/.config/YourOrg/ClassManageSystem.conf
-```
-
-`QSettings` is used instead of `winreg` so one code path works on all three platforms and no `ModuleNotFoundError` occurs on macOS. Write failures are silently ignored and never affect the main flow.
-
-### `points_log.dat` (Activity Log)
-
-- Automatically records: point add/deduct, undo, reset one group, reset all, group count change, full reset;
-- nothing is recorded when a score does not change; renaming a group is not recorded (it is not a points change);
-- **append-only**: at most the latest 400 entries are kept (`seq` is a cumulative counter that keeps growing), so
-  "whichever copy has the largest `seq` wins" — a **rollback-style tamper** (overwriting the main file with older ciphertext) is also repaired automatically;
-- "Full reset" does not clear the log, it only appends a marker: audit records must not be wiped by a single button;
-- there is **no plaintext copy on disk**; the only way to view it is the "Activity Log" button in the points panel.
-
-### `stats.ini`
-
-Long-term draw counts, stored in plaintext in the same directory as the config (contains no points).
-
-```ini
-[counts]
-张三 = 5
-李四 = 3
-```
-
-Reason for keeping it in a separate file: if it lived together with the points, "Clear history" before class would wipe the long-term counts too, and the weighting would degrade into "independent randomness for each lesson".
-
-### `crash.log`
-
-Stored in the same directory as the config; records Python tracebacks and native crashes, up to 200 entries. **0 bytes means no crash has occurred.**
-
-### Where Data Lives
-
-Config and logs are written next to the **program directory** (after packaging, alongside the EXE / `.app`, not inside the `.app` bundle); if that directory is not writable, everything falls back to:
-
-```text
-Windows        : %APPDATA%\ClassTerminal2411\
-macOS / Linux  : ~/ClassTerminal2411/
-```
-
----
-
-## Core Design: Why Not Pure Randomness
-
-`random.choice` is uniform for "each individual draw", but not for "each student over a semester". In a class of 40 it is very common to see clustering — someone drawn twice while someone else never gets drawn — and what students perceive is "the teacher always picks him".
-
-So `NameEngine` uses a weighted least-drawn-first model:
-
-```text
-weight = (max_count - count + 1) ** FAIRNESS_STRENGTH
-         * recency_penalty
-```
-
-Parameters live at the top of `namepicker/name_engine.py`:
-
-| Parameter | Default | Description |
-|---|---:|---|
-| `FAIRNESS_STRENGTH` | `4.0` | Strength of the tilt toward the least-drawn students. Set it to 9 to approach fixed rotation. |
-| `RECENT_GAP` | `4` | Lower the weight if drawn within the last N draws. |
-| `RECENT_PENALTY` | `0.35` | Weight floor for the just-drawn student, to avoid back-to-back picks. |
-| `MIN_WEIGHT` | `0.01` | Guarantees every eligible person can still be drawn. |
-
-Two semantically different resets:
-
-- `clear_history()`: clears draw history and cooldowns, **keeping** the long-term cumulative counts — this is the teacher's "Clear history" before class.
-- `reset_fairness()`: also zeroes the long-term cumulative counts — for a new semester, a new class, or "Full reset".
-
-After changing fairness parameters, re-run the benchmarks:
-
-```bash
-python tools/fairness_benchmark.py
-python tools/fairness_burnin.py
-```
-
----
-
-## Cross-Platform Support
-
-| Capability | Windows | macOS | Linux |
-|---|---|---|---|
-| Draw / points / log | ✅ | ✅ | Unverified |
-| Cover full-screen apps | ✅ `SetWindowPos` | ✅ accessory policy + floating-window attributes (tested) | Unverified |
-| Tray / menu bar icon | ✅ Color tray icon | ✅ Template image; **not shown when the menu bar auto-hides** | Unverified |
-| Light / dark mode | ❌ Dark not working | ✅ Follows system | Unverified |
-| System-level hidden backup | ✅ HKCU registry | ✅ `~/Library/Preferences` plist | ✅ `~/.config` |
-| Floating ball pinned on top | ✅ `SetWindowPos(HWND_TOPMOST)` | ✅ Window level + `CanJoinAllSpaces`/`FullScreenAuxiliary`/`Stationary` | Unverified |
-| Dock icon | — | ❌ None (the cost of the accessory policy, see below) | — |
-| Launch at startup | ✅ Registry Run key | ✅ LaunchAgent | ❌ (returns failure) |
-| Data location when frozen | ✅ Alongside the EXE | ✅ **Alongside** the `.app` (not inside the bundle) | — |
-
-Design conventions: **never `import winreg` directly** (use `try/except ImportError`), wrap every platform-specific call in `try/except` with silent degradation; the storage layer always goes through PyQt5's built-in `QSettings`; colors and fonts are provided centrally by `namepicker/theme.py`.
-
----
-
-## Packaging
-
-> **PyInstaller does not support cross-compiling**: on macOS you can only produce a macOS app, and the `.exe` must be built on Windows (it involves GUI specifics and cannot pass a smoke test, so CI cannot test it — CI was removed in a newer commit)
-
-### Windows — Windows 10 or later + required dependencies
-
-```bat
-packaging\windows\build.bat
-```
-
-The script automatically creates a `.venv-build` virtual environment, installs dependencies, runs self-checks, and packages; the output is `dist\ClassManageSystem.exe`. It uses the Tsinghua PyPI mirror by default (much faster for downloading PyQt5 in China); you can switch mirrors:
-
-```bat
-packaging\windows\build.bat official                                 :: official PyPI
-packaging\windows\build.bat https://mirrors.aliyun.com/pypi/simple/  :: Aliyun
-```
-
-The mirror applies only to that command — it does **not** write `pip.ini` or change your global pip configuration.
-
-### macOS
-
-```bash
-packaging/macos/build.command        # double-clicking works too
-```
-
-The output is `dist/ClassManageSystem.app`. It is a native binary for the **current CPU architecture** (arm64 on Apple Silicon; a universal build requires a universal2 Python + PyQt5).
-
-### Build Notes
-
-- Single-file windowed program; the target machine does not need Python installed;
-- Config and logs are written alongside the EXE / `.app` (if read-only, it falls back to `%APPDATA%\ClassTerminal2411`), and the key lives in the user's home directory;
-- **No code signing**: on Windows the first run triggers SmartScreen's "Unknown publisher" warning — click "More info → Run anyway"; on macOS, after copying to another machine the first launch requires **right-click → Open**.
-
----
-
-## Project Structure
-
-```text
-.
-├── main.py                          # Entry: assemble components, connect signals, start event loop
-├── requirements.txt
-├── names.txt                        # Sample roster
-├── docs/images/                     # README screenshots (generated by tools/make_screenshots.py)
-│
-├── namepicker/                      # Main program package
-│   ├── _init_.md                    # Description of responsibilities of files in the package
-│   ├── config_store.py              # config.dat: encrypted config + three-level rollback
-│   ├── crypto_utils.py              # AES-256-GCM and ~/.classmanage_key key management
-│   ├── log_store.py                 # points_log.dat: encrypted activity log + rollback protection
-│   ├── backup_store.py              # QSettings system-level hidden backup (cross-platform)
-│   ├── stats_store.py               # stats.ini: long-term draw counts
-│   ├── name_engine.py               # Draw logic: fair weighting, cooldown, history
-│   ├── floating_ball.py             # Floating ball (incl. cross-platform force-on-top)
-│   ├── draw_popup.py                # Result popup and scrolling animation
-│   ├── points_window.py             # Points panel + activity log viewer
-│   ├── main_window.py               # Management panel, tray, launch at startup
-│   ├── single_instance.py           # Single-instance guard (QLocalServer liveness check)
-│   └── crash_log.py                 # Crash log
-│
-├── packaging/
-│   ├── windows/                     # PyInstaller spec, icons, version info, build.bat
-│   ├── macos/                       # PyInstaller spec, icns, build.command
-│   └── make_icon.py                 # Generates the Windows icon (Qt rendering, no Pillow needed)
-│
-├── tools/                           # Test and development scripts (not shipped with the program)
-│   ├── config_check.py              # Storage round-trip test (no Qt dependency)
-│   ├── config_crypto_check.py       # Encrypted storage / tamper rollback / migration self-check
-│   ├── log_crypto_check.py          # Activity log: auto-recording / tamper rollback / rollback protection
-│   ├── windows_check.py             # Windows platform self-check (registry / on-top / encoding / file locks)
-│   ├── macos_check.py               # macOS platform self-check (menu bar / floating window / dark mode / full-screen overlay)
-│   ├── _fullscreen_helper.py        # Self-check helper: subprocess that enters native full screen
-│   ├── smoke_test.py                # GUI smoke test
-│   ├── group_count_stress.py        # Group count feature + 300-round stress test
-│   ├── make_screenshots.py          # Generates README screenshots under docs/images
-│   ├── fairness_burnin.py           # 10,000 single-draw burn-in + χ² test
-│   ├── fairness_benchmark.py        # Fairness parameter tuning benchmark
-│   ├── reset_fairness_benchmark.py  # Simulates the teacher's "clear history" workflow
-│   ├── weighting_demo.py            # Old vs. new algorithm distribution comparison
-│   ├── repro_quit.py                # Minimal repro of "closing the panel quits the app"
-│   └── _settings_isolation.py       # QSettings namespace isolation for tests
-│
-└── .github/workflows/build-windows.yml   # CI: x64 Windows packaging --deprecated
-```
-
----
-
-## Testing
-
-Run all tests from the project root.
-
-```bash
-python tools/config_check.py           # Fastest, no Qt: storage read/write/merge/reset-all/full-reset
-python tools/config_crypto_check.py    # Encrypted storage: garbage bytes, manual edits ineffective, tamper/delete rollback, migration
-python tools/log_crypto_check.py       # Activity log: auto-recording, no plaintext copy, rollback protection, append-only
-python tools/windows_check.py          # Platform self-check (real branches only run on Windows)
-python tools/macos_check.py            # Platform self-check (menu bar icon / floating window attributes / dark mode / activation policy)
-python tools/macos_check.py --fullscreen   # Additionally runs a "true native full screen" overlay test
-python tools/smoke_test.py             # GUI smoke: signal wiring, layout, persistence, undo, multi-draw
-python tools/group_count_stress.py     # Group count feature + 300-round stress test
-```
-
-- `config_crypto_check` / `log_crypto_check` run under a temporary HOME and **never touch your real data**; if PyQt5 is installed they also verify the real QSettings hidden backup.
-- The smoke test constructs `MainWindow`, which reads and writes the real registry (Windows); the script backs up the launch-at-startup entry first and restores it afterwards, and skips this on macOS/Linux.
-- Tests use an isolated QSettings namespace, so they never pollute the real registry / plist.
-
-Fairness-specific:
-
-```bash
-python tools/fairness_burnin.py        # Cold-start long run, skew catch-up, χ² test, back-to-back rate…
-python tools/fairness_benchmark.py     # Compares FAIRNESS_STRENGTH = 2/4/6/9 vs. pure randomness
-python tools/reset_fairness_benchmark.py   # Simulates the "clear history before each lesson" workflow
-python tools/weighting_demo.py         # Old vs. new algorithm distribution comparison
-```
-
-Regenerate README screenshots:
-
-```bash
-python tools/make_screenshots.py                          # Light (default)
-CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # Dark, outputs *-dark.png
-```
-
-The screenshot script moves windows off-screen before `grab()`, so nothing flashes on your desktop; it uses a temp directory for data and never touches the real config.
-
----
-
-## Development Notes
-
-- After changing the fairness parameters at the top of `name_engine.py`, re-run the fairness benchmark and burn-in test.
-- `clear_history()` and `reset_fairness()` have different semantics — confirm which one you want before changing them.
-- In `points_window.py`, old cards must be `hide()`-ed before being destroyed, otherwise they flash as independent top-level windows.
-- Point card styles are cached by `(selected state, color)` to avoid high-frequency repaints on repeated clicks.
-- Create the badge timer once and reuse it — do not rebuild a `QTimer` on every click.
-- When running normally with no console, check `crash.log` first when troubleshooting.
-- The single-instance guard **must not rely on `QSharedMemory` alone**: on Unix a shared memory segment is not released when a process disappears, so an orphaned segment after `kill -9` makes every later launch exit silently forever. Liveness is now determined by whether `QLocalServer` can connect, with shared memory only as a fallback.
-- Packaging related: `config_store._app_dir()` handles `.app` specially to avoid writing data inside the app bundle;
-  the Windows `.bat` must be **pure ASCII + CRLF** (`.gitattributes` already enforces `eol=crlf`),
-  and `REM` lines must not contain unmatched parentheses — cmd's parenthesis counter would otherwise truncate the command mid-line.
-
----
-
-## FAQ
-
-### Nothing happens when I double-click the icon; the process flashes and exits?
-
-The old single-instance implementation refused to start forever once shared memory was left behind (see "Development Notes"). The current version uses a `QLocalServer` liveness check and restarts normally after being force-killed. If it still happens, first confirm no other instance is running:
-
-```bash
-pgrep -fl ClassManageSystem        # macOS
-tasklist | findstr ClassManage     # Windows
-```
-
-### The program disappears after I close the points panel?
-
-Fixed — `main.py` now calls `app.setQuitOnLastWindowClosed(False)`. Repro script: `python tools/repro_quit.py`.
-
-### Scores are not being saved?
-
-Check whether the program directory (the one holding `config.dat`) is writable; if read-only, it falls back to
-`%APPDATA%\ClassTerminal2411\` (macOS/Linux: `~/ClassTerminal2411/`).
-`python tools/config_crypto_check.py` can pinpoint whether the problem is the key, the ciphertext, or directory permissions.
-
-### A student edited the scores in `config.ini`; why did it not take effect?
-
-Because the program never reads `config.ini`, and it is overwritten by the encrypted data on every save. What really takes effect is `config.dat`
-(plus `.bak` and the system-level hidden backup). Editing `config.dat` fails too: GCM authenticated encryption makes decryption fail,
-and the program rolls back from the backup automatically. Deleting the data does not work either — delete the main file and it is restored from `.bak`; delete both and it is restored from the QSettings hidden backup.
-
-### Can the activity log be deleted?
-
-No, by design. The log is append-only, and even "Full reset" only appends a marker. To keep an archive, take a screenshot or copy the text from the viewer.
-
-### Does "Clear history" break fairness?
-
-No. It clears only history and cooldowns; long-term counts stay in `stats.ini`. Only "Full reset" zeroes the long-term counts.
-
-### Why were fewer names drawn than requested in a multi-draw?
-
-Because some students are still in cooldown. A multi-draw picks only from the currently available roster, returns the number actually drawn, and shows a hint.
-
-### The program exits without any message — what should I do?
-
-Check `crash.log`. A size of 0 bytes usually means it was not a crash (it may have been force-killed or exited normally).
-
-### Packaging fails with `'xxx' 不是内部或外部命令`?
-
-The `.bat` was saved as UTF-8/LF, or a `REM` line contains unmatched parentheses. This repo's `build.bat` has been fixed and a `.gitattributes` was added;
-when editing it yourself, keep it pure ASCII + CRLF.
-
----
-
-## Known Limitations
-
-- **No code signing / notarization**: Windows shows a SmartScreen warning, and on macOS you must right-click → Open after copying to another machine.
-- **Architecture follows the build machine**: on Apple Silicon the `.app` is arm64 and cannot run on Intel Macs; there is no dual-architecture fallback, so Intel Mac users need to run the packaging shell script themselves;
-- **macOS full-screen coverage relies on the "app activation policy"**: a higher window level alone is useless — a regular app occupies its own desktop Space, and once another app goes full screen it is simply not in that Space. This program switches to the
-  **accessory** policy at startup (`LSUIElement`, same as Alfred / Raycast) so the window can join the full-screen Space. The cost is **no Dock icon**; entry points become the floating ball + the menu bar icon.
-  This was verified against a real native full-screen window with `CGWindowList onScreenOnly`:
-  `python tools/macos_check.py --fullscreen` reports "the floating ball can overlay native full-screen apps ✅".
-- **macOS menu bar icon**: the icon itself is a template image and the status item is indeed created (the self-check verifies
-  `NSStatusBarWindow`). If the system has "automatically hide and show the menu bar" enabled (`_HIHideMenuBar=1`), the status item is by design not shown while the menu bar is collapsed — that is not a program bug. In that case use the floating ball's right-click menu,
-  which already contains every tray action (draw a name / points management / open panel / full reset / quit).
-  If you want it permanently visible, turn off "Automatically hide and show the menu bar" in System Settings → Appearance (or Desktop & Dock).
-- **Key shares the account's permissions**: the key lives in the user's home directory, so if a teacher and students share the same system login account, a student can theoretically read the key. This is an inherent boundary of the "user-level key" approach.
-- **Linux unverified**: the code has platform guards so it won't crash, but tray and always-on-top behavior are untested.
-
----
-
-## License
-
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+## 许可证
+
+MIT License
+
+Copyright (c) 2026 Gentole Lee
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -60,34 +60,34 @@ def describe(person_draws):
 
 def experiment_long_run(total_draws=400):
     print("=" * 66)
-    print(f"实验 1：长期分布 — {len(NAMES)} 人抽 {total_draws} 次"
-          f"（每人理想 {total_draws // len(NAMES)} 次）")
+    print(f"Experiment 1: long-run distribution - {len(NAMES)} names, {total_draws} draws"
+          f"(ideal {total_draws // len(NAMES)} per person)")
     print("=" * 66)
-    print(f"{'算法':<22}{'最少':>6}{'最多':>6}{'极差':>8}{'标准差':>10}")
+    print(f"{'algorithm':<22}{'min':>6}{'max':>6}{'range':>8}{'stddev':>10}")
     print("-" * 66)
 
     pure = collections.Counter(
         random.choice(NAMES) for _ in range(total_draws)
     )
     lo, hi, sd = describe(pure)
-    print(f"{'纯随机(旧)':<22}{lo:>6}{hi:>6}{hi - lo:>8}{sd:>10.2f}")
+    print(f"{'pure random (old)':<22}{lo:>6}{hi:>6}{hi - lo:>8}{sd:>10.2f}")
 
     for strength in STRENGTHS:
         weighted = collections.Counter(
             draw_with_engine(total_draws, strength=strength)
         )
         lo, hi, sd = describe(weighted)
-        marker = "  <- 当前" if strength == NameEngine.FAIRNESS_STRENGTH else ""
-        print(f"{('加权少抽 P=' + str(strength)):<22}"
+        marker = "  <- current" if strength == NameEngine.FAIRNESS_STRENGTH else ""
+        print(f"{('weighted P=' + str(strength)):<22}"
               f"{lo:>6}{hi:>6}{hi - lo:>8}{sd:>10.2f}{marker}")
     print()
 
 
 def experiment_per_session():
     print("=" * 66)
-    print("实验 2：单节课重复情况 — 平均重复人次（越低越好，理想 0）")
+    print("Experiment 2: repeats within one lesson - mean duplicate draws (lower is better, ideal 0)")
     print("=" * 66)
-    header = f"{'一节课抽几次':<14}{'纯随机':>10}" + "".join(
+    header = f"{'draws per lesson':<18}{'pure random':>12}" + "".join(
         f"{'P=' + str(s):>10}" for s in STRENGTHS
     )
     print(header)
@@ -106,7 +106,7 @@ def experiment_per_session():
             ) / TRIALS
             row += f"{weighted_total:>10.2f}"
         print(row)
-    print(f"  （name_engine.py 当前使用 FAIRNESS_STRENGTH = "
+    print(f"  (name_engine.py currently uses FAIRNESS_STRENGTH = "
           f"{NameEngine.FAIRNESS_STRENGTH}）")
     print()
 
@@ -115,4 +115,4 @@ if __name__ == "__main__":
     print()
     experiment_long_run()
     experiment_per_session()
-    print(f"（实验 2 每组参数模拟 {TRIALS} 次，取平均）")
+    print(f"(experiment 2 averages {TRIALS} simulations per parameter set)")

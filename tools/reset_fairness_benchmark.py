@@ -55,34 +55,34 @@ def simulate(keep_counts: bool) -> tuple[list[int], list[int]]:
 def describe(label: str, counts: list[int]) -> None:
     total = sum(counts)
     never = sum(1 for c in counts if c == 0)
-    print(f"  {label:<22} 总抽次={total:<5} 每人 {min(counts)}~{max(counts)} 次 "
-          f"σ={statistics.pstdev(counts):.2f}  从没抽到={never} 人")
+    print(f"  {label:<22} total_draws={total:<5} each {min(counts)}~{max(counts)} draws "
+          f"σ={statistics.pstdev(counts):.2f}  never_drawn={never}")
 
 
 def main() -> int:
     expected = SESSIONS * DRAWS_PER_SESSION * TRIALS / NAMES
-    print(f"模拟 {TRIALS} 轮 × {SESSIONS} 次课 × 每课抽 {DRAWS_PER_SESSION} 人 "
-          f"（{NAMES} 人名单，每人理想值 ≈ {expected:.0f} 次）\n")
+    print(f"Simulating {TRIALS} trials × {SESSIONS} sessions × {DRAWS_PER_SESSION} draws per session "
+          f"({NAMES} names, ideal ≈ {expected:.0f} per person)\n")
 
-    print("每次课前都「清空历史」后：")
+    print("After clearing history before every session:")
     cur_counts, cur_firsts = simulate(keep_counts=False)
-    describe("现在的行为", cur_counts)
-    print(f"    『第一个被抽到』的次数分布: {min(cur_firsts)}~{max(cur_firsts)} "
+    describe("current behaviour", cur_counts)
+    print(f"    times drawn first: {min(cur_firsts)}~{max(cur_firsts)} "
           f"σ={statistics.pstdev(cur_firsts):.2f}")
 
     fixed_counts, fixed_firsts = simulate(keep_counts=True)
-    describe("长期次数保留后", fixed_counts)
-    print(f"    『第一个被抽到』的次数分布: {min(fixed_firsts)}~{max(fixed_firsts)} "
+    describe("with long-term counts kept", fixed_counts)
+    print(f"    times drawn first: {min(fixed_firsts)}~{max(fixed_firsts)} "
           f"σ={statistics.pstdev(fixed_firsts):.2f}")
 
-    print("\n结论:")
+    print("\nConclusion:")
     spread_now = max(cur_counts) - min(cur_counts)
     spread_fix = max(fixed_counts) - min(fixed_counts)
-    print(f"  每人总次数极差:  现在 {spread_now}  ->  保留后 {spread_fix}")
+    print(f"  spread of per-person totals:  now {spread_now}  ->  after fix {spread_fix}")
     if spread_fix < spread_now:
-        print("  >>> 长期保留抽取次数确实让分布更平均，问题确认")
+        print("  >>> Keeping draw counts long-term does even out the distribution; issue confirmed")
         return 0
-    print("  >>> 没有改善，需要重新分析")
+    print("  >>> No improvement; needs re-analysis")
     return 1
 
 

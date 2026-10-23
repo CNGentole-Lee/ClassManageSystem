@@ -8,7 +8,7 @@ try:  # 注册表模块只在 Windows 上存在；macOS/Linux 下没有它
 except ImportError:  # pragma: no cover - 取决于运行平台
     winreg = None
 
-from PyQt5.QtCore import Qt, QSettings, QTimer
+from PyQt5.QtCore import Qt, QSettings, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -16,11 +16,12 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
     QSpinBox, QGroupBox, QSplitter, QHeaderView,
     QSystemTrayIcon, QMenu, QAction, QMessageBox,
-    QApplication, QAbstractItemView, QCheckBox,
+    QApplication, QAbstractItemView, QCheckBox, QComboBox,
 )
 
-from . import theme
-from .config_store import APP_NAME
+from . import i18n, theme, wipe_dialog
+from .config_store import app_name
+from .i18n import tr
 
 
 class MainWindow(QMainWindow):
@@ -32,6 +33,9 @@ class MainWindow(QMainWindow):
     # macOS 用 LaunchAgent 实现同一功能（winreg 在 macOS 上不存在）
     AUTOSTART_LABEL = "com.namepicker.randomnamepicker"
     MACOS_AGENT_DIR = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents")
+
+    #: 用户选择「立即重启」时发出；由 main.py 负责真正拉起新进程
+    restart_requested = pyqtSignal()
 
     def __init__(self, engine, app_path: str = "", parent=None):
         super().__init__(parent)
@@ -66,7 +70,7 @@ class MainWindow(QMainWindow):
     # --- UI Construction ---
 
     def _init_ui(self) -> None:
-        self.setWindowTitle(f"{APP_NAME} — 管理面板")
+        self.setWindowTitle(f"{app_name()} — " + tr("管理面板", "Management"))
         self.setMinimumSize(700, 500)
 
         central = QWidget()
@@ -77,7 +81,7 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(12, 12, 12, 12)
 
         # --- Source section ---
-        source_group = QGroupBox("名单来源")
+        source_group = QGroupBox(tr("名单来源", "Name source"))
         source_layout = QVBoxLayout(source_group)
         source_layout.setSpacing(6)
 
@@ -85,19 +89,19 @@ class MainWindow(QMainWindow):
         file_row = QHBoxLayout()
         self._file_path_edit = QLineEdit()
         self._file_path_edit.setReadOnly(True)
-        self._file_path_edit.setPlaceholderText("选择名单文件 (.txt)...")
+        self._file_path_edit.setPlaceholderText(tr("选择名单文件 (.txt)...", "Choose a name list (.txt)..."))
 
-        browse_btn = QPushButton("浏览...")
+        browse_btn = QPushButton(tr("浏览...", "Browse..."))
         browse_btn.clicked.connect(self._browse_file)
 
-        file_row.addWidget(QLabel("文件:"))
+        file_row.addWidget(QLabel(tr("文件:", "File:")))
         file_row.addWidget(self._file_path_edit, 1)
         file_row.addWidget(browse_btn)
         source_layout.addLayout(file_row)
 
         # Row 2: Number range
         range_row = QHBoxLayout()
-        self._range_label_from = QLabel("人数范围: 从")
+        self._range_label_from = QLabel(tr("人数范围: 从", "Range: from"))
         range_row.addWidget(self._range_label_from)
         self._range_start = QSpinBox()
         self._range_start.setRange(1, 9999)
@@ -105,7 +109,7 @@ class MainWindow(QMainWindow):
         self._range_start.setFixedWidth(80)
         range_row.addWidget(self._range_start)
 
-        self._range_label_to = QLabel("到")
+        self._range_label_to = QLabel(tr("到", "to"))
         range_row.addWidget(self._range_label_to)
         self._range_end = QSpinBox()
         self._range_end.setRange(1, 9999)
@@ -113,13 +117,13 @@ class MainWindow(QMainWindow):
         self._range_end.setFixedWidth(80)
         range_row.addWidget(self._range_end)
 
-        self._gen_range_btn = QPushButton("确认")
-        self._gen_range_btn.setToolTip("按数字范围生成名单（覆盖当前名单）")
+        self._gen_range_btn = QPushButton(tr("确认", "Apply"))
+        self._gen_range_btn.setToolTip(tr("按数字范围生成名单（覆盖当前名单）", "Generate a numeric name list (replaces the current list)"))
         self._gen_range_btn.clicked.connect(self._on_generate_range)
         range_row.addWidget(self._gen_range_btn)
 
-        self._reset_btn = QPushButton("重置为学号")
-        self._reset_btn.setToolTip("重置为默认 1-99 数字学号名单")
+        self._reset_btn = QPushButton(tr("重置为学号", "Reset to IDs"))
+        self._reset_btn.setToolTip(tr("重置为默认 1-99 数字学号名单", "Reset to the default 1-99 numeric list"))
         self._reset_btn.clicked.connect(self._on_reset_to_numbers)
         range_row.addWidget(self._reset_btn)
         range_row.addStretch()
@@ -129,7 +133,7 @@ class MainWindow(QMainWindow):
 
         # --- Status ---
         status_layout = QHBoxLayout()
-        self._status_label = QLabel("未加载名单")
+        self._status_label = QLabel(tr("未加载名单", "No list loaded"))
         self._status_label.setStyleSheet(f"color: {theme.c('muted')};")
         self._cooldown_hint = QLabel("")
         self._cooldown_hint.setStyleSheet(
@@ -143,7 +147,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
 
         # Name list (with per-name cooldown shown)
-        name_group = QGroupBox("名单列表（灰色=冷却中）")
+        name_group = QGroupBox(tr("名单列表（灰色=冷却中）", "Names (grey = cooling down)"))
         name_layout = QVBoxLayout(name_group)
         self._name_list_widget = QListWidget()
         self._name_list_widget.setFont(theme.font(11))
@@ -152,11 +156,11 @@ class MainWindow(QMainWindow):
         splitter.addWidget(name_group)
 
         # History
-        hist_group = QGroupBox("抽取历史")
+        hist_group = QGroupBox(tr("抽取历史", "Draw history"))
         hist_layout = QVBoxLayout(hist_group)
         self._history_table = QTableWidget()
         self._history_table.setColumnCount(2)
-        self._history_table.setHorizontalHeaderLabels(["时间", "名字"])
+        self._history_table.setHorizontalHeaderLabels([tr("时间", "Time"), tr("名字", "Name")])
         self._history_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeToContents
         )
@@ -178,11 +182,11 @@ class MainWindow(QMainWindow):
         bottom_layout = QHBoxLayout()
         bottom_layout.setSpacing(12)
 
-        bottom_layout.addWidget(QLabel("每人冷却:"))
+        bottom_layout.addWidget(QLabel(tr("每人冷却:", "Cooldown:")))
         self._cooldown_spin = QSpinBox()
         self._cooldown_spin.setRange(1, 60)
         self._cooldown_spin.setValue(10)
-        self._cooldown_spin.setSuffix(" 分钟")
+        self._cooldown_spin.setSuffix(tr(" 分钟", " min"))
         self._cooldown_spin.setFixedWidth(100)
         self._cooldown_spin.valueChanged.connect(self._on_cooldown_changed)
         bottom_layout.addWidget(self._cooldown_spin)
@@ -190,25 +194,37 @@ class MainWindow(QMainWindow):
         bottom_layout.addSpacing(16)
 
         # Auto-start checkbox
-        self._autostart_checkbox = QCheckBox("开机自启动")
-        self._autostart_checkbox.setToolTip("勾选后程序将在 Windows 启动时自动运行")
+        self._autostart_checkbox = QCheckBox(tr("开机自启动", "Start at login"))
+        self._autostart_checkbox.setToolTip(tr("勾选后程序将在 Windows 启动时自动运行", "Launch the app automatically when Windows starts"))
         self._autostart_checkbox.toggled.connect(self._on_autostart_toggled)
         bottom_layout.addWidget(self._autostart_checkbox)
 
         bottom_layout.addStretch()
 
-        self._points_btn = QPushButton("积分管理")
-        self._points_btn.setToolTip("打开小组积分面板（也可右键悬浮球 → 积分管理）")
+        self._points_btn = QPushButton(tr("积分管理", "Points"))
+        self._points_btn.setToolTip(tr("打开小组积分面板（也可右键悬浮球 → 积分管理）", "Open the points panel (or right-click the ball → Points)"))
         self._points_btn.clicked.connect(self._on_open_points)
         bottom_layout.addWidget(self._points_btn)
 
-        self._ball_toggle_btn = QPushButton("隐藏悬浮球")
+        self._ball_toggle_btn = QPushButton(tr("隐藏悬浮球", "Hide ball"))
         self._ball_toggle_btn.setCheckable(True)
         self._ball_toggle_btn.setChecked(True)
         self._ball_toggle_btn.toggled.connect(self._on_toggle_ball)
         bottom_layout.addWidget(self._ball_toggle_btn)
 
-        clear_btn = QPushButton("清空历史")
+        # 语言切换（保存到 QSettings，重启后生效 —— 界面文字没法热替换）
+        self._lang_combo = QComboBox()
+        for code, label in i18n.SUPPORTED.items():
+            self._lang_combo.addItem(label, code)
+        index = self._lang_combo.findData(i18n.language())
+        if index >= 0:
+            self._lang_combo.setCurrentIndex(index)
+        self._lang_combo.setToolTip(tr("切换界面语言（重启后生效）",
+                                      "Switch UI language (takes effect after restart)"))
+        self._lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        bottom_layout.addWidget(self._lang_combo)
+
+        clear_btn = QPushButton(tr("清空历史", "Clear history"))
         clear_btn.clicked.connect(self._on_clear_history)
         bottom_layout.addWidget(clear_btn)
 
@@ -224,27 +240,27 @@ class MainWindow(QMainWindow):
         # 菜单栏里既糊又可能压根不显示。theme.tray_icon() 在 macOS 上返回
         # setIsMask(True) 的「抽」字，Windows 上返回钢蓝圆底图标。
         self._tray_icon.setIcon(theme.tray_icon())
-        self._tray_icon.setToolTip(APP_NAME)
+        self._tray_icon.setToolTip(app_name())
 
         menu = QMenu()
-        show_action = QAction("显示主窗口", self)
+        show_action = QAction(tr("显示主窗口", "Show window"), self)
         show_action.triggered.connect(self._show_from_tray)
         menu.addAction(show_action)
 
-        points_action = QAction("积分管理", self)
+        points_action = QAction(tr("积分管理", "Points"), self)
         points_action.triggered.connect(self._on_open_points)
         menu.addAction(points_action)
 
         menu.addSeparator()
-        draw_action = QAction("抽取名字", self)
+        draw_action = QAction(tr("抽取名字", "Draw a name"), self)
         draw_action.triggered.connect(self._tray_draw)
         menu.addAction(draw_action)
         menu.addSeparator()
-        wipe_action = QAction("彻底重置...", self)
+        wipe_action = QAction(tr("彻底重置...", "Full reset..."), self)
         wipe_action.triggered.connect(self._on_wipe_all)
         menu.addAction(wipe_action)
         menu.addSeparator()
-        quit_action = QAction("退出", self)
+        quit_action = QAction(tr("退出", "Quit"), self)
         quit_action.triggered.connect(self._quit_app)
         menu.addAction(quit_action)
 
@@ -256,22 +272,24 @@ class MainWindow(QMainWindow):
 
     def on_name_drawn(self, name: str) -> None:
         self._refresh_history()
-        self._status_label.setText(f"本次抽中: {name}")
+        self._status_label.setText(tr("本次抽中: {n}", "Drawn: {n}", n=name))
         self._status_label.setStyleSheet(f"color: {theme.c('success')}; font-weight: bold;")
 
     def on_names_drawn(self, names: list) -> None:
         """连抽结果 — show a short preview in the status line."""
         self._refresh_history()
-        preview = "、".join(names[:8])
+        preview = tr("、", ", ").join(names[:8])
         if len(names) > 8:
-            preview += f" … 共 {len(names)} 人"
-        self._status_label.setText(f"本次抽中: {preview}")
+            preview += tr(" … 共 {n} 人", " ... {n} total", n=len(names))
+        self._status_label.setText(tr("本次抽中: {n}", "Drawn: {n}", n=preview))
         self._status_label.setStyleSheet(f"color: {theme.c('success')}; font-weight: bold;")
 
     def on_partial_multi_draw(self, drawn: int, requested: int) -> None:
         """连抽时可用人数不足（其余都在冷却中）。"""
         self._status_label.setText(
-            f"⚠️ 只抽到 {drawn} 人（请求 {requested} 人，其余仍在冷却中）"
+            tr("⚠️ 只抽到 {d} 人（请求 {r} 人，其余仍在冷却中）",
+               "⚠️ Only {d} drawn ({r} requested; the rest are cooling down)",
+               d=drawn, r=requested)
         )
         self._status_label.setStyleSheet(f"color: {theme.c('warning')}; font-weight: bold;")
 
@@ -279,7 +297,7 @@ class MainWindow(QMainWindow):
         self._refresh_cooldown_display()
 
     def on_names_loaded(self, count: int) -> None:
-        self._status_label.setText(f"已加载 {count} 个名字")
+        self._status_label.setText(tr("已加载 {n} 个名字", "{n} names loaded", n=count))
         self._status_label.setStyleSheet(f"color: {theme.c('success')}; font-weight: bold;")
 
         self._name_list_widget.clear()
@@ -300,18 +318,19 @@ class MainWindow(QMainWindow):
         self._refresh_cooldown_display()
 
     def on_pool_refilled(self, count: int) -> None:
-        self._status_label.setText(f"🔄 全员已抽过一轮（共 {count} 人），开始新一轮")
+        self._status_label.setText(tr("🔄 全员已抽过一轮（共 {n} 人），开始新一轮",
+                                      "🔄 Everyone drawn once ({n} names) — new round", n=count))
         self._status_label.setStyleSheet(f"color: {theme.c('accent')}; font-weight: bold;")
 
     def on_cooldown_blocked(self, remaining: int) -> None:
         """Show brief cooldown reminder (for per-name case this is less common)."""
         m = remaining // 60
         s = remaining % 60
-        self._status_label.setText(f"⏳ 冷却中: {m:02d}:{s:02d}")
+        self._status_label.setText(tr("⏳ 冷却中: {m:02d}:{s:02d}", "⏳ Cooling: {m:02d}:{s:02d}", m=m, s=s))
         self._status_label.setStyleSheet(f"color: {theme.c('warning')}; font-weight: bold;")
 
     def on_error(self, message: str) -> None:
-        QMessageBox.warning(self, "提示", message)
+        QMessageBox.warning(self, tr("提示", "Notice"), message)
 
     def on_history_cleared(self) -> None:
         self._refresh_history()
@@ -337,15 +356,15 @@ class MainWindow(QMainWindow):
                 item.setForeground(QBrush(QColor(theme.c("text"))))
 
         if cooling_count > 0:
-            self._cooldown_hint.setText(f"{cooling_count} 人在冷却中")
+            self._cooldown_hint.setText(tr("{n} 人在冷却中", "{n} cooling down", n=cooling_count))
         else:
-            self._cooldown_hint.setText("全部就绪")
+            self._cooldown_hint.setText(tr("全部就绪", "Ready"))
 
     def _browse_file(self) -> None:
         last_dir = self._settings.value("last_dir", "")
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "选择名单文件", last_dir,
-            "文本文件 (*.txt);;所有文件 (*)"
+            self, tr("选择名单文件", "Choose a name list"), last_dir,
+            tr("文本文件 (*.txt);;所有文件 (*)", "Text files (*.txt);;All files (*)")
         )
         if filepath:
             self._file_path_edit.setText(filepath)
@@ -358,7 +377,8 @@ class MainWindow(QMainWindow):
         start = self._range_start.value()
         end = self._range_end.value()
         if start > end:
-            QMessageBox.warning(self, "提示", "起始数字不能大于结束数字。")
+            QMessageBox.warning(self, tr("提示", "Notice"),
+                                tr("起始数字不能大于结束数字。", "The start must not exceed the end."))
             return
         self._engine.generate_number_list(start, end)
         # Clear file path display since we're using a generated list
@@ -388,7 +408,8 @@ class MainWindow(QMainWindow):
 
     def _on_open_points(self) -> None:
         if self._points_window is None:
-            QMessageBox.information(self, "提示", "积分面板尚未就绪。")
+            QMessageBox.information(self, tr("提示", "Notice"),
+                                    tr("积分面板尚未就绪。", "The points panel is not ready."))
             return
         self._points_window.show_and_activate()
 
@@ -397,10 +418,10 @@ class MainWindow(QMainWindow):
             return
         if checked:
             self._ball.show()
-            self._ball_toggle_btn.setText("隐藏悬浮球")
+            self._ball_toggle_btn.setText(tr("隐藏悬浮球", "Hide ball"))
         else:
             self._ball.hide()
-            self._ball_toggle_btn.setText("显示悬浮球")
+            self._ball_toggle_btn.setText(tr("显示悬浮球", "Show ball"))
 
     def _on_autostart_toggled(self, checked: bool) -> None:
         """Enable or disable auto-start with Windows."""
@@ -410,7 +431,9 @@ class MainWindow(QMainWindow):
                 self._autostart_checkbox.blockSignals(True)
                 self._autostart_checkbox.setChecked(False)
                 self._autostart_checkbox.blockSignals(False)
-                QMessageBox.warning(self, "错误", "设置开机自启动失败，请检查权限。")
+                QMessageBox.warning(self, tr("错误", "Error"),
+                                    tr("设置开机自启动失败，请检查权限。",
+                                       "Failed to enable start at login. Check permissions."))
         else:
             self._set_autostart(False)
 
@@ -528,38 +551,54 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _on_language_changed(self, _index: int) -> None:
+        """语言选择：写入 QSettings，并询问是否立即重启。"""
+        code = self._lang_combo.currentData()
+        self._settings.setValue("language", code)
+        reply = QMessageBox.question(
+            self,
+            tr("语言已保存", "Language saved"),
+            tr("语言已保存，需要重启程序才能完全生效。\n\n是否立即重启？",
+               "Language saved. A restart is needed for it to take effect.\n\nRestart now?"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply == QMessageBox.Yes:
+            self.restart_requested.emit()
+
     def _on_clear_history(self) -> None:
         reply = QMessageBox.question(
-            self, "确认",
-            "确定要清空抽取历史与冷却状态吗？",
+            self, tr("确认", "Confirm"),
+            tr("确定要清空抽取历史与冷却状态吗？",
+               "Clear the draw history and cooldowns?"),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if reply == QMessageBox.Yes:
             self._engine.clear_history()
 
     def _on_wipe_all(self) -> None:
-        """托盘菜单 → 彻底重置：config.ini 与 stats.ini 全部清空。"""
-        reply = QMessageBox.warning(
-            self, "彻底重置",
-            "将清空所有数据并恢复到出厂状态：\n\n"
-            "  · 小组名称与积分\n"
-            "  · 长期公平记录（抽取次数）\n"
-            "  · 抽取历史与冷却状态\n\n"
-            "此操作不可撤销，确定继续吗？",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if reply != QMessageBox.Yes:
-            return
-        if self._wipe_handler is None:
-            QMessageBox.information(self, "提示", "重置功能尚未就绪。")
-            return
-        self._wipe_handler()
+        """托盘 / 悬浮球菜单 → 彻底重置。
 
-    def on_wipe_complete(self) -> None:
+        先弹「选择清空范围」对话框（组名 / 积分 / 长期公平记录 / 抽取历史），
+        点重置后对话框内部还会再弹一次确认。
+        """
+        if self._wipe_handler is None:
+            QMessageBox.information(
+                self, tr("提示", "Notice"),
+                tr("重置功能尚未就绪。", "Reset is not ready."))
+            return
+        parts = wipe_dialog.ask(self)
+        if parts is None:
+            return
+        self._wipe_handler(parts)
+
+    def on_wipe_complete(self, detail: str = "") -> None:
         """Refresh everything the wipe just invalidated."""
         self._refresh_history()
         self._refresh_cooldown_display()
-        self._status_label.setText("已彻底重置，所有数据恢复出厂状态")
+        self._status_label.setText(
+            detail or tr("已彻底重置，所有数据恢复出厂状态",
+                         "Full reset completed; all data restored to factory state"))
         self._status_label.setStyleSheet(f"color: {theme.c('accent')}; font-weight: bold;")
 
     def _refresh_history(self) -> None:
@@ -587,8 +626,9 @@ class MainWindow(QMainWindow):
         if self._tray_icon and self._tray_icon.isVisible():
             self.hide()
             self._tray_icon.showMessage(
-                APP_NAME,
-                "程序已最小化到系统托盘，点击托盘图标可重新打开。",
+                app_name(),
+                tr("程序已最小化到系统托盘，点击托盘图标可重新打开。",
+                   "Minimized to the tray. Click the tray icon to reopen."),
                 QSystemTrayIcon.Information,
                 2000,
             )

@@ -88,62 +88,65 @@ def _write_autostart(value):
 
 
 def test_points_window(store, config_path):
-    print("--- 积分面板 ---")
+    print("--- Points panel ---")
     points = PointsWindow(store)
-    check("6 个小组卡片", len(points._cards) == 6, f"实际 {len(points._cards)}")
-    check("默认组名", store.get_group_name(1) == "第一组"
+    check("6 group cards", len(points._cards) == 6, f"actual {len(points._cards)}")
+    check("default group names", store.get_group_name(1) == "第一组"
           and store.get_group_name(6) == "第六组")
-    check("初始只展开第 1 组",
+    check("only group 1 is expanded initially",
           points._cards[0].is_selected()
           and not points._cards[1].is_selected())
 
     # 点第 3 组 → 应该展开它、收起第 1 组
     points._cards[2].selected.emit(3)
-    check("单击第 3 组后展开并选中",
+    check("clicking group 3 expands and selects it",
           points._cards[2].is_selected() and not points._cards[0].is_selected())
-    check("展开后加减按钮可见", points._cards[2]._ops.isVisibleTo(points._cards[2]))
+    check("add/subtract buttons visible when expanded", points._cards[2]._ops.isVisibleTo(points._cards[2]))
 
     # 加分：+2 +2 -1 = 3
     points.apply_delta(3, 2)
     points.apply_delta(3, 2)
     points.apply_delta(3, -1)
-    check("第 3 组 = 3 (+2+2-1)", store.get_score(3) == 3,
-          f"实际 {store.get_score(3)}")
+    check("group 3 = 3 (+2+2-1)", store.get_score(3) == 3,
+          f"actual {store.get_score(3)}")
 
     # 撤销最后一次 -1 → 4
     points.undo()
-    check("撤销后 = 4", store.get_score(3) == 4, f"实际 {store.get_score(3)}")
+    check("after undo = 4", store.get_score(3) == 4, f"actual {store.get_score(3)}")
 
-    check("其余小组仍为 0",
+    check("other groups are still 0",
           all(store.get_score(i) == 0 for i in (1, 2, 4, 5, 6)))
 
     store.set_group_name(2, "雄鹰组")
     points.save_now()
-    check("重命名落盘", ConfigStore(config_path).get_group_name(2) == "雄鹰组")
+    check("rename persisted", ConfigStore(config_path).get_group_name(2) == "雄鹰组")
 
     reloaded = ConfigStore(config_path)
-    check("积分持久化到 config.ini", reloaded.get_score(3) == 4,
-          f"实际 {reloaded.get_score(3)}")
+    check("scores persisted to config.ini", reloaded.get_score(3) == 4,
+          f"actual {reloaded.get_score(3)}")
 
     store.reset_scores()
     points.save_now()
-    check("全部清零", ConfigStore(config_path).all_scores() == [0] * 6)
+    check("all scores cleared", ConfigStore(config_path).all_scores() == [0] * 6)
 
     # --- 操作日志（唯一入口是底栏按钮）---
-    check("底栏「小组数量...」旁边有 操作日志 按钮",
+    check("bottom bar has an Operation log button next to the group-count button",
           points._log_btn.text() == "操作日志")
     entries = log_store.load(config_path).entries
-    check("日志已自动记录了刚才的加减分清零",
-          len(entries) > 0 and any("清零" in b for _s, b in entries),
-          f"实际 {len(entries)} 条")
-    check("日志密文不含明文",
+    check("log auto-recorded the add/subtract/clear above",
+          len(entries) > 0 and any("清零" in zh for _s, zh, _en in entries),
+          f"actual {len(entries)} entries")
+    check("log ciphertext contains no plaintext",
           b"group" not in open(log_store.log_path_for(config_path), "rb").read())
     dialog = _LogViewerDialog(config_path)
     shown = dialog.findChild(QPlainTextEdit).toPlainText()
-    check("查看器能显示出记录内容",
-          "第" in shown and "→" in shown, f"实际 {shown[:40]!r}")
-    check("查看器是只读的", dialog.findChild(QPlainTextEdit).isReadOnly())
-    check("日志没有明文副本（只有 .dat / .dat.bak）",
+    check("viewer displays the entries",
+          "第" in shown and "→" in shown, f"actual {shown[:40]!r}")
+    check("viewer is read-only", dialog.findChild(QPlainTextEdit).isReadOnly())
+    check("every log entry has both Chinese and English",
+          all(zh and en for _s, zh, en in entries),
+          f"actual {entries[0] if entries else None}")
+    check("no plaintext log copy (only .dat / .dat.bak)",
           sorted(n for n in os.listdir(os.path.dirname(config_path)) if "log" in n)
           == ["points_log.dat", "points_log.dat.bak"])
     dialog.close()
@@ -155,14 +158,14 @@ def test_points_window(store, config_path):
         app_process()
     points.close()
     app_process()
-    check("边加分边关面板：分数已落盘",
+    check("adding points then closing the panel: scores persisted",
           ConfigStore(config_path).get_score(4) == 100,
-          f"实际 {ConfigStore(config_path).get_score(4)}")
-    check("边加分边关面板：面板没有被销毁",
+          f"actual {ConfigStore(config_path).get_score(4)}")
+    check("adding points then closing the panel: panel not destroyed",
           not sip.isdeleted(points) and points.isHidden())
     points.show()
     app_process()
-    check("关掉后还能重新打开", points.isVisible())
+    check("reopens after closing", points.isVisible())
     return points
 
 
@@ -172,35 +175,35 @@ def app_process():
 
 
 def test_engine_single(stats_path):
-    print("\n--- 单抽 + 长期次数落盘 ---")
+    print("\n--- Single draw + long-term counts persisted ---")
     stats = StatsStore(stats_path)
     engine = NameEngine()
     engine.generate_number_list(1, 10)
     drawn = [engine.draw_name() for _ in range(10)]
-    check("抽 10 次得到 10 个结果", len(drawn) == 10 and all(drawn))
-    check("抽到的都在名单里", all(d in engine.get_names() for d in drawn))
-    check("10 人名单抽 10 次无重复",
-          len(set(drawn)) == 10, f"重复: {len(drawn) - len(set(drawn))} 次")
+    check("10 draws produce 10 results", len(drawn) == 10 and all(drawn))
+    check("every draw comes from the name list", all(d in engine.get_names() for d in drawn))
+    check("10 draws from 10 names without repeats",
+          len(set(drawn)) == 10, f"duplicates: {len(drawn) - len(set(drawn))}")
 
     stats.save(engine.get_draw_counts())
     loaded = StatsStore(stats_path).load()
-    check("长期次数写入 stats.ini", loaded.get("1") == 1 and len(loaded) == 10,
-          f"{len(loaded)} 条")
+    check("long-term counts written to stats.ini", loaded.get("1") == 1 and len(loaded) == 10,
+          f"{len(loaded)} entries")
 
     engine2 = NameEngine()
     engine2.generate_number_list(1, 10)
     engine2.set_draw_counts(loaded)
-    check("长期次数可恢复", engine2.get_draw_count("1") == 1
+    check("long-term counts can be restored", engine2.get_draw_count("1") == 1
           and engine2.get_total_draws() == 10)
 
     # 核心：清空历史不能把长期次数一起抹掉
     before = dict(loaded)
     engine2.clear_history()
-    check("清空历史后长期次数保留",
+    check("long-term counts survive clearing history",
           engine2.get_draw_counts() == before,
-          f"清空后 {engine2.get_draw_counts()}")
-    check("清空历史后冷却是空的", engine2.get_per_name_cooldowns() == {})
-    check("清空历史不会误报『全员已抽过一轮』",
+          f"after clear: {engine2.get_draw_counts()}")
+    check("cooldowns are empty after clearing history", engine2.get_per_name_cooldowns() == {})
+    check("clearing history does not falsely report that everyone was drawn already",
           engine2._last_round_min == min(before.values()),
           f"_last_round_min={engine2._last_round_min}")
 
@@ -212,20 +215,20 @@ def test_engine_single(stats_path):
     engine3.clear_history()
     weights = [engine3._weight(n, max(engine3._draw_counts.values()))
                for n in engine3.get_names()]
-    check("清空历史后权重全为正数", all(w > 0 for w in weights),
-          f"最小权重 {min(weights)}")
+    check("all weights positive after clearing history", all(w > 0 for w in weights),
+          f"min weight {min(weights)}")
 
     # 彻底重置才清长期次数
     loaded2 = dict(engine2.get_draw_counts())
     engine2.reset_fairness()
-    check("彻底重置清零长期次数", engine2.get_total_draws() == 0,
-          f"实际 {engine2.get_total_draws()}")
-    check("彻底重置前的确有时数", sum(loaded2.values()) == 10)
+    check("full reset zeroes long-term counts", engine2.get_total_draws() == 0,
+          f"actual {engine2.get_total_draws()}")
+    check("long-term counts existed before the full reset", sum(loaded2.values()) == 10)
     return engine
 
 
 def test_multi_draw():
-    print("\n--- 连抽 ---")
+    print("\n--- Multi draw ---")
     engine = NameEngine()
     engine.generate_number_list(1, 10)
 
@@ -243,48 +246,48 @@ def test_multi_draw():
     engine.error_occurred.connect(lambda msg: events["errors"].append(msg))
 
     picked = engine.draw_names(5)
-    check("连抽 5 人得到 5 个", len(picked) == 5, f"实际 {len(picked)}")
-    check("连抽 5 人互不重复", len(set(picked)) == 5, f"结果 {picked}")
-    check("连抽结果都在名单内", all(p in engine.get_names() for p in picked))
+    check("multi draw of 5 returns 5", len(picked) == 5, f"actual {len(picked)}")
+    check("5 multi-drawn names are distinct", len(set(picked)) == 5, f"result {picked}")
+    check("multi-draw results are all in the name list", all(p in engine.get_names() for p in picked))
 
-    check("names_drawn 只发一次且带全部结果",
+    check("names_drawn fires once with all results",
           len(events["names_drawn"]) == 1
           and events["names_drawn"][0] == picked,
-          f"{len(events['names_drawn'])} 次")
-    check("multi_rolling_start 只发一次",
+          f"{len(events['names_drawn'])} times")
+    check("multi_rolling_start fires once",
           len(events["multi_rolling"]) == 1
           and events["multi_rolling"][0] == picked)
-    check("连抽不触发单抽信号（避免弹两个窗）",
+    check("multi draw does not fire single-draw signals (avoids two popups)",
           not events["single_rolling"] and not events["single_drawn"])
 
     cooldowns = engine.get_per_name_cooldowns()
-    check("连抽的每个人都进入冷却",
+    check("everyone multi-drawn goes on cooldown",
           all(n in cooldowns for n in picked),
-          f"冷却中 {len(cooldowns)} 人")
+          f"{len(cooldowns)} on cooldown")
 
     # 核对历史记录 — 连抽的 5 条都要落进历史表
-    check("连抽 5 人全部写入历史",
-          len(engine.get_history()) == 5, f"实际 {len(engine.get_history())}")
+    check("all 5 multi-drawn names enter history",
+          len(engine.get_history()) == 5, f"actual {len(engine.get_history())}")
 
     # 剩余 5 人可用 → 请求 6 人只能给 5 人（正常冷却，不做特殊处理）
     picked2 = engine.draw_names(6)
-    check("可用不足时只给能抽到的人（请求 6 → 得到 5）",
-          len(picked2) == 5, f"实际 {len(picked2)}")
-    check("第二轮与第一轮不重叠",
+    check("when availability is short, only eligible names are returned (asked 6 -> got 5)",
+          len(picked2) == 5, f"actual {len(picked2)}")
+    check("second round does not overlap the first",
           not (set(picked) & set(picked2)))
 
     # 全员冷却中 → 空结果 + 错误提示
     events["errors"].clear()
     picked3 = engine.draw_names(2)
-    check("全员冷却时连抽返回空", picked3 == [], f"实际 {picked3}")
-    check("全员冷却时给出提示", len(events["errors"]) == 1,
+    check("multi draw returns empty when everyone is cooling down", picked3 == [], f"actual {picked3}")
+    check("an error is reported when everyone is cooling down", len(events["errors"]) == 1,
           f"{events['errors']}")
     return engine
 
 
 def test_wipe(store, config_path, stats_path):
     """彻底重置：config.ini 与 stats.ini 都要回到初始状态。"""
-    print("\n--- 彻底重置 ---")
+    print("\n--- Full reset ---")
     # 先弄脏两个文件
     store.set_score(2, 7)
     store.set_group_name(1, "雄鹰组")
@@ -300,143 +303,144 @@ def test_wipe(store, config_path, stats_path):
     engine.reset_fairness()
 
     fresh_cfg = ConfigStore(config_path)
-    check("重置后积分归零", fresh_cfg.all_scores() == [0] * 6,
-          f"实际 {fresh_cfg.all_scores()}")
-    check("重置后组名恢复默认",
+    check("scores zeroed after reset", fresh_cfg.all_scores() == [0] * 6,
+          f"actual {fresh_cfg.all_scores()}")
+    check("group names back to defaults after reset",
           fresh_cfg.get_group_name(1) == "第一组"
           and fresh_cfg.get_group_name(2) == "第二组")
-    check("重置后 stats.ini 清空", StatsStore(stats_path).load() == {},
-          f"实际 {StatsStore(stats_path).load()}")
-    check("重置后内存次数清零", engine.get_total_draws() == 0)
+    check("stats.ini cleared after reset", StatsStore(stats_path).load() == {},
+          f"actual {StatsStore(stats_path).load()}")
+    check("in-memory counts zeroed after reset", engine.get_total_draws() == 0)
 
 
 def test_floating_ball():
-    print("\n--- 悬浮球右键菜单 ---")
+    print("\n--- Floating ball context menu ---")
     ball = FloatingBall()
-    check("有 积分管理 信号", hasattr(ball, "points_panel_requested"))
-    check("有 打开管理面板 信号", hasattr(ball, "open_panel_requested"))
-    check("有 连抽 信号", hasattr(ball, "multi_draw_requested"))
-    check("连抽档位为 2~10 人", ball.MULTI_DRAW_CHOICES == tuple(range(2, 11)),
-          f"实际 {ball.MULTI_DRAW_CHOICES}")
+    check("has a points-panel signal", hasattr(ball, "points_panel_requested"))
+    check("has an open-panel signal", hasattr(ball, "open_panel_requested"))
+    check("has a multi-draw signal", hasattr(ball, "multi_draw_requested"))
+    check("multi-draw choices are 2..10", ball.MULTI_DRAW_CHOICES == tuple(range(2, 11)),
+          f"actual {ball.MULTI_DRAW_CHOICES}")
 
     menu = ball.build_context_menu()
     texts = [a.text() for a in menu.actions()]
-    check("菜单含连抽 / 积分管理 / 打开管理面板",
-          texts[:4] == ["连抽", "积分管理", "", "打开管理面板"], f"实际 {texts}")
+    check("menu contains multi draw / points / open panel",
+          texts[:4] == ["连抽", "积分管理", "", "打开管理面板"], f"actual {texts}")
     # 托盘在 macOS 上可能不可见（无 Dock 图标 + 菜单栏自动隐藏），
     # 这些动作必须能通过悬浮球右键菜单触达
-    check("菜单兜底含 抽取名字 / 彻底重置 / 退出",
+    check("menu fallback contains draw name / full reset / quit",
           "抽取名字" in texts and "彻底重置..." in texts and "退出" in texts,
-          f"实际 {texts}")
-    check("有 彻底重置 / 退出 信号",
+          f"actual {texts}")
+    check("has full-reset / quit signals",
           hasattr(ball, "wipe_requested") and hasattr(ball, "quit_requested"))
 
     multi = menu.actions()[0].menu()
     sub_texts = [a.text() for a in multi.actions()]
-    check("连抽子菜单竖排 9 个档位",
-          sub_texts == [f"{n} 人" for n in range(2, 11)], f"实际 {sub_texts}")
-    check("不再有画蛇添足的 抽取一个", "抽取一个" not in texts)
+    check("multi-draw submenu lists 9 choices",
+          sub_texts == [f"{n} 人" for n in range(2, 11)], f"actual {sub_texts}")
+    check("no redundant single-draw entry any more", "抽取一个" not in texts)
 
     grabbed = []
     ball.multi_draw_requested.connect(grabbed.append)
     multi.actions()[3].trigger()  # “5 人”
-    check("点 5 人 → 发出 multi_draw_requested(5)", grabbed == [5],
-          f"实际 {grabbed}")
+    check("clicking 5 people emits multi_draw_requested(5)", grabbed == [5],
+          f"actual {grabbed}")
 
     ball.points_panel_requested.connect(lambda: grabbed.append("points"))
     menu.actions()[1].trigger()
-    check("点 积分管理 → 发出 points_panel_requested",
-          grabbed[-1] == "points", f"实际 {grabbed}")
+    check("clicking points emits points_panel_requested",
+          grabbed[-1] == "points", f"actual {grabbed}")
     ball.close()
 
 
 def test_popup(engine):
-    print("\n--- 结果弹窗 ---")
+    print("\n--- Result popup ---")
     app = QApplication.instance()
     popup = DrawResultPopup()
-    check("弹窗底部显示终端名称", popup._footer.text() == APP_NAME,
-          f"实际 {popup._footer.text()!r}")
+    check("popup footer shows the app name", popup._footer.text() == APP_NAME,
+          f"actual {popup._footer.text()!r}")
 
-    check("1 人 → 1 列", popup._grid_shape(1) == (1, 40))
-    check("10 人 → 5 列 2 行", popup._grid_shape(10)[0] == 5)
+    check("1 name -> 1 column", popup._grid_shape(1) == (1, 40))
+    check("10 names -> 5 columns, 2 rows", popup._grid_shape(10)[0] == 5)
 
     popup.set_name_pool(engine.get_names())
 
     # 单抽走的是 show_results([name])，先确认它确实只建一个格子
     popup.show_result("7")
-    check("单抽只建 1 个名字格", len(popup._name_labels) == 1,
-          f"实际 {len(popup._name_labels)}")
+    check("single draw creates only 1 name cell", len(popup._name_labels) == 1,
+          f"actual {len(popup._name_labels)}")
     popup._on_close()
 
     # 名字不能左右被裁掉：格宽要能容下名单里最长的名字
-    popup.set_name_pool(["欧阳娜娜", "1", "2"])
-    popup.show_result("欧阳娜娜")
+    # 老外的名字真的很长，用这个当测试标准稳稳的
+    popup.set_name_pool(["abcdefghijklmn", "1", "2"])
+    popup.show_result("abcdefghijklmn")
     fm = QFontMetrics(QFont("Microsoft YaHei", popup._font_size, QFont.Bold))
-    check("长名字不被裁切",
-          popup._cell_width >= fm.horizontalAdvance("欧阳娜娜") + 16,
-          f"格宽 {popup._cell_width}px")
+    check("long names are not clipped",
+          popup._cell_width >= fm.horizontalAdvance("abcdefghijklmn") + 16,
+          f"cell width {popup._cell_width}px")
     popup._on_close()
 
     # 连抽：一个大弹窗，N 个人同时滚动
     results = ["1", "2", "3", "4", "5"]
     popup.show_results(results)
-    check("连抽建 5 个名字格", len(popup._name_labels) == 5,
-          f"实际 {len(popup._name_labels)}")
-    check("连抽弹窗按人数放大", popup.width() >= 380 and popup.height() > 208,
+    check("multi draw creates 5 name cells", len(popup._name_labels) == 5,
+          f"actual {len(popup._name_labels)}")
+    check("multi-draw popup scales with the number of names", popup.width() >= 380 and popup.height() > 208,
           f"{popup.width()}x{popup.height()}")
 
     QTimer.singleShot(3000, app.quit)
     app.exec_()
     shown = [lb.text() for lb in popup._name_labels]
-    check("滚动结束后同时揭晓 5 个结果", shown == results, f"实际 {shown}")
+    check("all 5 results revealed together when rolling stops", shown == results, f"actual {shown}")
     popup._on_close()
 
 
 def test_main_window(engine):
-    print("\n--- 主窗口 ---")
+    print("\n--- Main window ---")
     backup = _read_autostart()
     try:
         win = MainWindow(engine, app_path=os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "main.py")))
-        check("窗口标题带终端名称", APP_NAME in win.windowTitle(),
-              f"实际 {win.windowTitle()!r}")
-        check("底栏有 积分管理 按钮", win._points_btn.text() == "积分管理")
+        check("window title contains the app name", APP_NAME in win.windowTitle(),
+              f"actual {win.windowTitle()!r}")
+        check("bottom bar has a points button", win._points_btn.text() == "积分管理")
         win._points_window = None
         win.set_points_window("dummy")
-        check("能挂上积分窗口", win._points_window == "dummy")
+        check("points window can be attached", win._points_window == "dummy")
 
         tray = win._tray_icon
         if tray is not None and tray.contextMenu() is not None:
             tray_texts = [a.text() for a in tray.contextMenu().actions()]
-            check("托盘菜单有 彻底重置", "彻底重置..." in tray_texts,
-                  f"实际 {tray_texts}")
+            check("tray menu has full reset", "彻底重置..." in tray_texts,
+                  f"actual {tray_texts}")
         else:
-            print("[SKIP] 本机没有系统托盘，跳过托盘菜单检查")
+            print("[SKIP] no system tray on this machine; skipping tray menu checks")
 
         # 未接 handler 时不能崩，应给出提示
         called = []
         win.set_wipe_handler(lambda: called.append(True))
         win._wipe_handler = lambda: called.append(True)
-        check("能挂上彻底重置回调", callable(win._wipe_handler))
+        check("full-reset callback can be attached", callable(win._wipe_handler))
         win.on_wipe_complete()
-        check("重置后状态栏更新", "重置" in win._status_label.text(),
-              f"实际 {win._status_label.text()!r}")
+        check("status bar updates after reset", "重置" in win._status_label.text(),
+              f"actual {win._status_label.text()!r}")
         win.hide()
         win.deleteLater()
     finally:
         if _read_autostart() != backup:
             _write_autostart(backup)
-            print("  (已还原注册表自启动项)")
+            print("  (autostart registry entry restored)")
 
 
 def test_crash_log():
     """A traceback must end up in crash.log (no console in the real app)."""
-    print("\n--- 崩溃日志 ---")
+    print("\n--- Crash log ---")
     log_dir = tempfile.mkdtemp()
     saved_hook = sys.excepthook
     try:
         path = crash_log.install(log_dir)
-        check("日志写在指定目录", os.path.dirname(path) == log_dir, path)
+        check("log written to the specified directory", os.path.dirname(path) == log_dir, path)
 
         # The hook also forwards to the console, which is what we want in the
         # real app but is just noise here — swallow it for this check.
@@ -447,8 +451,8 @@ def test_crash_log():
                 sys.excepthook(*sys.exc_info())
 
         content = open(path, encoding="utf-8").read() if os.path.isfile(path) else ""
-        check("异常写进 crash.log", "模拟错误" in content and "ValueError" in content)
-        check("日志带堆栈", "Traceback" in content)
+        check("exception written to crash.log", "模拟错误" in content and "ValueError" in content)
+        check("log contains a stack trace", "Traceback" in content)
     finally:
         sys.excepthook = saved_hook
 
@@ -474,9 +478,9 @@ def main():
 
     print()
     if failures:
-        print(f"失败 {len(failures)} 项: {failures}")
+        print(f"failed {len(failures)}: {failures}")
         return 1
-    print("全部通过")
+    print("ALL PASSED")
     return 0
 
 

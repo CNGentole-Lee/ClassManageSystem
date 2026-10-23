@@ -16,9 +16,9 @@ from PyQt5.QtWidgets import (
     QScrollArea, QLayout, QDialog, QPlainTextEdit,
 )
 
-from . import macos_window
-from . import theme
-from . import log_store
+from . import i18n, log_store, macos_window, theme
+from .i18n import tr
+from .widgets import ElidedLabel
 from .config_store import MAX_GROUP_COUNT, MIN_GROUP_COUNT
 
 # 每个操作按钮对应的增减量，按显示顺序。
@@ -137,9 +137,8 @@ class GroupCard(QFrame):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(2)
 
-        self._name_label = QLabel(group_name)
+        self._name_label = ElidedLabel(group_name)
         self._name_label.setObjectName("groupName")
-        self._name_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._name_label)
 
         # 分数行：大数字 + 短暂闪现的 "+2" 徽标
@@ -181,7 +180,7 @@ class GroupCard(QFrame):
         self._ops.hide()
         layout.addWidget(self._ops)
 
-        self._hint_label = QLabel("点击展开操作")
+        self._hint_label = QLabel(tr("点击展开操作", "Click to expand"))
         self._hint_label.setObjectName("hint")
         self._hint_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._hint_label)
@@ -253,11 +252,11 @@ class GroupCard(QFrame):
 
     def _show_context_menu(self, pos) -> None:
         menu = QMenu(self)
-        rename_action = QAction("重命名此组...", self)
+        rename_action = QAction(tr("重命名此组...", "Rename group..."), self)
         rename_action.triggered.connect(lambda: self.rename_requested.emit(self._index))
         menu.addAction(rename_action)
 
-        zero_action = QAction("清零此组积分", self)
+        zero_action = QAction(tr("清零此组积分", "Clear this group"), self)
         zero_action.triggered.connect(lambda: self.reset_requested.emit(self._index))
         menu.addAction(zero_action)
 
@@ -316,7 +315,7 @@ class PointsWindow(QWidget):
     # --- 构建界面 ---
 
     def _init_ui(self) -> None:
-        self.setWindowTitle("积分管理 — 小组加减分")
+        self.setWindowTitle(tr("积分管理 — 小组加减分", "Points — group scores"))
         self.setMinimumSize(760, 560)
 
         layout = QVBoxLayout(self)
@@ -325,11 +324,13 @@ class PointsWindow(QWidget):
 
         # 顶栏
         header = QHBoxLayout()
-        title = QLabel("小组积分")
+        title = QLabel(tr("小组积分", "Group points"))
         title.setFont(theme.font(15, bold=True))
         header.addWidget(title)
         header.addStretch()
-        hint = QLabel("单击小组展开操作 · 双击组名可重命名 · 快捷键 1/2/3/4 = -1/+1/+2/+3")
+        hint = QLabel(tr(
+            "单击小组展开操作 · 双击组名可重命名 · 快捷键 1/2/3/4 = -1/+1/+2/+3",
+            "Click a group to expand · double-click the name to rename · keys 1/2/3/4 = -1/+1/+2/+3"))
         hint.setStyleSheet(f"color: {theme.c('muted')}; font-size: 12px;")
         header.addWidget(hint)
         layout.addLayout(header)
@@ -354,24 +355,26 @@ class PointsWindow(QWidget):
 
         # 底栏
         footer = QHBoxLayout()
-        self._undo_btn = QPushButton("撤销 (Ctrl+Z)")
+        self._undo_btn = QPushButton(tr("撤销 (Ctrl+Z)", "Undo (Ctrl+Z)"))
         self._undo_btn.setEnabled(False)
         self._undo_btn.clicked.connect(self.undo)
         footer.addWidget(self._undo_btn)
 
-        reset_btn = QPushButton("全部清零")
+        reset_btn = QPushButton(tr("全部清零", "Clear all"))
         reset_btn.clicked.connect(self._on_reset_all)
         footer.addWidget(reset_btn)
 
-        count_btn = QPushButton("小组数量...")
-        count_btn.setToolTip("修改显示的小组数量（会清空所有小组的名称和积分）")
+        count_btn = QPushButton(tr("小组数量...", "Group count..."))
+        count_btn.setToolTip(tr("修改显示的小组数量（会清空所有小组的名称和积分）",
+                                "Change the number of groups (clears all names and scores)"))
         count_btn.clicked.connect(self._on_change_group_count)
         footer.addWidget(count_btn)
 
         # 操作日志的唯一入口：紧挨着「小组数量...」。除此之外程序里没有任何
         # 地方能读到日志（磁盘上只有密文，也没有明文副本）。
-        self._log_btn = QPushButton("操作日志")
-        self._log_btn.setToolTip("查看小组积分变动记录（加密存储，只读，可自动回档）")
+        self._log_btn = QPushButton(tr("操作日志", "Log"))
+        self._log_btn.setToolTip(tr("查看小组积分变动记录（加密存储，只读，可自动回档）",
+                                    "View score changes (encrypted, read-only, auto-restored)"))
         self._log_btn.clicked.connect(self.show_log_viewer)
         footer.addWidget(self._log_btn)
 
@@ -383,7 +386,7 @@ class PointsWindow(QWidget):
 
         self._config_label = QLabel("")
         self._config_label.setStyleSheet(f"color: {theme.c('faint')}; font-size: 11px;")
-        self._config_label.setToolTip("积分数据保存在此文件中")
+        self._config_label.setToolTip(tr("积分数据保存在此文件中", "Scores are stored in this file"))
         footer.addWidget(self._config_label)
 
         layout.addLayout(footer)
@@ -391,8 +394,8 @@ class PointsWindow(QWidget):
     def _load_from_store(self) -> None:
         """按当前配置值创建卡片。"""
         self._build_cards()
-        self._config_label.setText(f"配置: {self._store.path}")
-        self._set_status("已就绪", ok=True)
+        self._config_label.setText(tr("配置: {p}", "Config: {p}", p=self._store.path))
+        self._set_status(tr("已就绪", "Ready"), ok=True)
         self._select_card(1)
 
     def _build_cards(self) -> None:
@@ -443,7 +446,7 @@ class PointsWindow(QWidget):
         用重建而非原地修补：彻底重置会把小组数量打回出厂默认值，卡片数可能变化。
         """
         self._rebuild_cards()
-        self._set_status("已重置", ok=True)
+        self._set_status(tr("已重置", "Reset"), ok=True)
 
     def apply_delta(self, index: int, delta: int) -> None:
         """给小组 index（1 起）加分 delta 并落盘。"""
@@ -473,7 +476,8 @@ class PointsWindow(QWidget):
             return
 
         new_score = card.score() - delta
-        self._store.set_score(index, new_score, reason=f"撤销 {delta:+d}")
+        self._store.set_score(index, new_score,
+                                  reason=i18n.both("撤销 {d:+d}", "undo {d:+d}", d=delta))
         card.set_score(new_score)
         card.flash(-delta)
 
@@ -513,7 +517,8 @@ class PointsWindow(QWidget):
             return
         current = self._store.get_group_name(index)
         name, ok = QInputDialog.getText(
-            self, "重命名小组", "新的小组名称:", text=current
+            self, tr("重命名小组", "Rename group"), tr("新的小组名称:", "New group name:"),
+            text=current
         )
         if not ok:
             return
@@ -530,23 +535,27 @@ class PointsWindow(QWidget):
             return
         name = self._store.get_group_name(index)
         reply = QMessageBox.question(
-            self, "确认", f"确定要把「{name}」的积分清零吗？",
+            self, tr("确认", "Confirm"),
+            tr("确定要把「{n}」的积分清零吗？", "Clear the score of \"{n}\"?", n=name),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if reply != QMessageBox.Yes:
             return
-        self._store.set_score(index, 0, reason="清零此组")
+        self._store.set_score(index, 0,
+                                  reason=i18n.both("清零此组", "clear group"))
         card.set_score(0)
         self._schedule_save()
 
     def _on_reset_all(self) -> None:
         reply = QMessageBox.question(
-            self, "确认", "确定要把所有小组的积分清零吗？此操作不可撤销。",
+            self, tr("确认", "Confirm"),
+            tr("确定要把所有小组的积分清零吗？此操作不可撤销。",
+               "Clear all group scores? This cannot be undone."),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if reply != QMessageBox.Yes:
             return
-        self._store.reset_scores(reason="全部清零")
+        self._store.reset_scores(reason=i18n.both("全部清零", "clear all"))
         for card in self._cards:
             card.set_score(0)
         self._undo_stack.clear()
@@ -562,15 +571,17 @@ class PointsWindow(QWidget):
         """
         current = len(self._cards)
         count, ok = QInputDialog.getInt(
-            self, "小组数量", "显示几个小组？",
+            self, tr("小组数量", "Group count"), tr("显示几个小组？", "How many groups?"),
             current, MIN_GROUP_COUNT, MAX_GROUP_COUNT, 1,
         )
         if not ok or count == current:
             return
 
         reply = QMessageBox.question(
-            self, "确认",
-            f"改为 {count} 个小组？\n\n所有小组的名称和积分都会被清空。",
+            self, tr("确认", "Confirm"),
+            tr("改为 {n} 个小组？\n\n所有小组的名称和积分都会被清空。",
+               "Switch to {n} groups?\n\nAll group names and scores will be cleared.",
+               n=count),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if reply != QMessageBox.Yes:
@@ -579,11 +590,11 @@ class PointsWindow(QWidget):
         applied = self._store.set_group_count(count)
         self._rebuild_cards()
         self._schedule_save()
-        self._set_status(f"已改为 {applied} 个小组", ok=True)
+        self._set_status(tr("已改为 {n} 个小组", "Now {n} groups", n=applied), ok=True)
 
     def _schedule_save(self) -> None:
         """把快速连点合并成一次写入。"""
-        self._set_status("保存中...", ok=True)
+        self._set_status(tr("保存中...", "Saving..."), ok=True)
         if self._save_timer is None:
             # 只建一次、永久复用 —— 不要每次点击都重建 QTimer。
             self._save_timer = QTimer(self)
@@ -600,9 +611,9 @@ class PointsWindow(QWidget):
         ok = self._store.save()
         if update_status and not self._closing:
             if ok:
-                self._set_status("已保存", ok=True)
+                self._set_status(tr("已保存", "Saved"), ok=True)
             else:
-                self._set_status(f"保存失败: {self._store.last_error()}", ok=False)
+                self._set_status(tr("保存失败: {e}", "Save failed: {e}", e=self._store.last_error()), ok=False)
         return ok
 
     def _set_status(self, text: str, ok: bool = True) -> None:
@@ -649,7 +660,7 @@ class _LogViewerDialog(QDialog):
 
     def __init__(self, config_path: str, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("操作日志 — 只读")
+        self.setWindowTitle(tr("操作日志 — 只读", "Operation log — read-only"))
         self.setMinimumSize(660, 460)
 
         layout = QVBoxLayout(self)
@@ -660,26 +671,37 @@ class _LogViewerDialog(QDialog):
         entries = list(reversed(view.entries))   # 最新的排在最前面
 
         if view.entries:
-            title_text = f"共 {len(view.entries)} 条记录"
+            title_text = tr("共 {n} 条记录", "{n} entries", n=len(view.entries))
             if view.seq > len(view.entries):
-                title_text += f"（历史累计 {view.seq} 条，只保留最近 {len(view.entries)} 条）"
+                title_text += tr(
+                    "（历史累计 {s} 条，只保留最近 {n} 条）",
+                    " ({s} total, showing the latest {n})",
+                    s=view.seq, n=len(view.entries))
         else:
-            title_text = "暂无记录"
+            title_text = tr("暂无记录", "No entries yet")
         title = QLabel(title_text)
         title.setFont(theme.font(12, bold=True))
         layout.addWidget(title)
 
         # 数据来源与自动回档提示
-        source_names = {"main": "加密主文件", "bak": "同目录加密备份",
-                        "hidden": "系统级隐蔽备份", "empty": "无"}
+        source_names = {
+            "main": tr("加密主文件", "encrypted main file"),
+            "bak": tr("同目录加密备份", "encrypted .bak"),
+            "hidden": tr("系统级隐蔽备份", "system-level hidden backup"),
+            "empty": tr("无", "none"),
+        }
         info = QLabel(
-            f"加密保存于 {log_store.log_path_for(config_path)}"
-            "（另有同目录 .bak 与系统级隐蔽备份，可自动回档）\n"
-            f"本次读取自：{source_names.get(view.source, view.source)}"
+            tr("加密保存于 {p}", "Encrypted at {p}",
+               p=log_store.log_path_for(config_path))
+            + tr("（另有同目录 .bak 与系统级隐蔽备份，可自动回档）",
+                " (plus a .bak and a system-level hidden backup for auto-restore)")
+            + "\n" + tr("本次读取自：{s}", "Read from: {s}",
+                          s=source_names.get(view.source, view.source))
         )
         if view.source in ("bak", "hidden"):
-            info.setText(info.text() +
-                          "\n⚠ 主日志被篡改、丢失或回滚过，已自动从更新的一份副本恢复。")
+            info.setText(info.text() + "\n" + tr(
+                "⚠ 主日志被篡改、丢失或回滚过，已自动从更新的一份副本恢复。",
+                "⚠ The main log was tampered with, lost or rolled back; restored from a newer copy."))
         info.setStyleSheet(f"color: {theme.c('muted')}; font-size: 12px;")
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -694,20 +716,29 @@ class _LogViewerDialog(QDialog):
             f" border: 1px solid {theme.c('view_border')};"
         )
         if entries:
-            text.setPlainText("\n".join(f"[{stamp}] {body}" for stamp, body in entries))
+            lines = []
+            for stamp, zh, en in entries:
+                # 双语条目：中文一行，英文紧跟在下一行；老记录只有一段文本
+                lines.append(f"[{stamp}] {zh}")
+                if en and en != zh:
+                    lines.append(f"           {en}")
+            text.setPlainText("\n".join(lines))
         else:
-            text.setPlainText("还没有任何积分变动记录。\n"
-                              "每次加分 / 减分 / 撤销 / 清零 / 改组数都会自动记一条。")
+            text.setPlainText(tr(
+                "还没有任何积分变动记录。\n每次加分 / 减分 / 撤销 / 清零 / 改组数都会自动记一条。",
+                "No score changes yet.\nEvery add / subtract / undo / clear / group-count change is logged."))
         layout.addWidget(text, 1)
 
-        tip = QLabel("日志只增不减：修改或删除都会被下一份副本修回来，「彻底重置」也不会清空它。")
+        tip = QLabel(tr(
+            "日志只增不减：修改或删除都会被下一份副本修回来，「彻底重置」也不会清空它。",
+            "The log is append-only: edits or deletions are repaired from a copy, and even a full reset keeps it."))
         tip.setStyleSheet(f"color: {theme.c('faint')}; font-size: 11px;")
         tip.setWordWrap(True)
         layout.addWidget(tip)
 
         buttons = QHBoxLayout()
         buttons.addStretch()
-        close_btn = QPushButton("关闭")
+        close_btn = QPushButton(tr("关闭", "Close"))
         close_btn.setDefault(True)
         close_btn.clicked.connect(self.accept)
         buttons.addWidget(close_btn)

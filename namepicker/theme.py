@@ -27,6 +27,8 @@ import sys
 from PyQt5.QtCore import QSize
 from PyQt5.QtGui import QColor, QFont, QFontDatabase, QFontInfo, QPalette
 
+from .i18n import tr
+
 ENV_NAME = "CLASSMANAGE_THEME"
 
 #: 深浅两套 token。命名按用途，不按颜色 —— 换主题只换值。
@@ -323,14 +325,14 @@ def tray_icon():
             # 模板图：纯黑 + alpha，系统自动反色
             p.setPen(QColor(0, 0, 0, 255))
             p.setFont(font(int(size * 0.80), bold=True))
-            p.drawText(pm.rect(), Qt.AlignCenter, "抽")
+            p.drawText(pm.rect(), Qt.AlignCenter, tr("抽", "P"))
         else:
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(70, 130, 180, 255))
             p.drawEllipse(0, 0, size, size)
             p.setPen(QColor(255, 255, 255))
             p.setFont(font(int(size * 0.62), bold=True))
-            p.drawText(pm.rect(), Qt.AlignCenter, "抽")
+            p.drawText(pm.rect(), Qt.AlignCenter, tr("抽", "P"))
         p.end()
         icon.addPixmap(pm)
 
