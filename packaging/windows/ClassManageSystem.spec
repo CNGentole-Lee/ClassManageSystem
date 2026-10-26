@@ -141,3 +141,29 @@ else:
         upx=False,
         name=APP_NAME,
     )
+
+
+# ============================================================
+#  GPL-3.0：把 LICENSE 放到分发包里
+# ============================================================
+# 1) a.datas 已经把 LICENSE 打进 EXE（单文件）/ 程序目录（目录模式），
+#    程序内「关于」窗口能读到；
+# 2) GPL 还要求随分发的副本能看到许可证文本，所以在构建结束时再往
+#    dist 目录放一份明文，用户直接打开 dist 就能看到。
+# 复制失败不影响出包（程序内仍有内置回退文本）。
+def _ship_license() -> None:
+    import shutil
+    src = os.path.join(ROOT, "LICENSE")
+    if not os.path.isfile(src):
+        print("[w] LICENSE not found in the project root")
+        return
+    dist_dir = os.path.join(ROOT, "dist")
+    try:
+        os.makedirs(dist_dir, exist_ok=True)
+        shutil.copy2(src, os.path.join(dist_dir, "LICENSE"))
+        print("[i] shipped LICENSE ->", os.path.join(dist_dir, "LICENSE"))
+    except OSError as exc:
+        print("[w] could not copy LICENSE:", exc)
+
+
+_ship_license()
