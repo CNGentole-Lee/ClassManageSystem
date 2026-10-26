@@ -98,9 +98,20 @@ coll = COLLECT(
     name=APP_NAME,
 )
 
+# GPL-3.0 要求分发时附带许可证全文。
+# 放两个位置：
+#   1) Resources/LICENSE —— .app 包内部，「关于」窗口通过
+#      sys._MEIPASS / Contents/Resources 都能找到，单拷贝 .app 也不缺；
+#   2) .app 同级的 LICENSE —— 用户不打开包也能直接看到。
+LICENSE_SRC = os.path.join(ROOT, "LICENSE")
+LICENSE_IN_BUNDLE = ("Resources/LICENSE", LICENSE_SRC, "DATA") \
+    if os.path.isfile(LICENSE_SRC) else None
+LICENSE_LIST = [LICENSE_IN_BUNDLE] if LICENSE_IN_BUNDLE else []
+
 app = BUNDLE(
     coll,
     name=f"{APP_NAME}.app",
+    resources=LICENSE_LIST,
     icon=ICON if os.path.isfile(ICON) else None,
     bundle_identifier="com.yourorg.classmanagesystem",
     info_plist={

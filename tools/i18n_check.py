@@ -374,6 +374,21 @@ def main() -> int:
 
     dlg = about_dialog.AboutDialog()
     check("about dialog builds", dlg.windowTitle() != "")
+
+    # 分发的 EXE / .app 旁边没有 LICENSE 时，窗口也必须能显示许可证
+    real_path_fn = about_dialog.license_path
+    try:
+        about_dialog.license_path = lambda: ""
+        fallback = about_dialog.license_text()
+    finally:
+        about_dialog.license_path = real_path_fn
+    check("missing LICENSE falls back to the embedded text",
+          "GNU GENERAL PUBLIC LICENSE" in fallback
+          and "WITHOUT ANY WARRANTY" in fallback
+          and "Gentole Lee" in fallback,
+          f"len={len(fallback)}")
+    check("fallback mentions the online copy",
+          "gnu.org/licenses" in fallback)
     dlg.close()
 
     print("\n" + "=" * 60)
