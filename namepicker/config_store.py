@@ -170,6 +170,19 @@ def backup_path_for(config_path: str) -> str:
     return data_path_for(config_path) + BAK_SUFFIX
 
 
+def read_saved_language(path: str = "") -> str:
+    """从 config.dat 的 meta.language 读取界面语言；读不到返回空串。
+
+    为什么语言要存两份：QSettings 在 Windows 上可能受注册表重定向/权限影响，
+    而 config.dat 是已经实测可用的加密存储。启动时优先用它，QSettings 兜底。
+    """
+    try:
+        config = load_config(path, repair=False)
+        return (config.get("meta", "language", fallback="") or "").strip().lower()
+    except Exception:
+        return ""
+
+
 def resolve_config_path() -> str:
     """优先用程序旁的 config.ini，只读目录则退到 %APPDATA%。
 
@@ -582,6 +595,14 @@ class ConfigStore:
         if not name:
             return
         self._cp.set("points", f"group_{index}", name)
+
+    def get_language(self) -> str:
+        """已保存的界面语言（meta.language）。"""
+        return (self._cp.get("meta", "language", fallback="") or "").strip().lower()
+
+    def set_language(self, lang: str) -> None:
+        """记录界面语言；随下一次 save() 落盘。"""
+        self._cp.set("meta", "language", (lang or "").strip().lower())
 
     def get_score(self, index: int) -> int:
         raw = self._cp.get("points", f"score_{index}", fallback="0")

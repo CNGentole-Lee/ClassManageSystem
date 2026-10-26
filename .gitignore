@@ -232,6 +232,7 @@ points_log.dat
 points_log.dat.bak
 stats.ini
 crash.log
+startup.log
 *.tmp
 .~write_probe
 

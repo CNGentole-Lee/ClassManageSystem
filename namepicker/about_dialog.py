@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QPushButton, QTextBrowser, QVBoxLayout,
 )
 
-from . import theme
+from . import dialogs, theme
 from .config_store import APP_NAME
 from .i18n import tr
 
@@ -84,10 +84,21 @@ def _bold(text: str) -> str:
 class AboutDialog(QDialog):
     """关于窗口：版权 + 不担保声明 + 许可证全文。"""
 
+    def showEvent(self, event) -> None:
+        """显示时居中；macOS 上用 level 25 的浮层（低于抽选弹窗）。"""
+        super().showEvent(event)
+        dialogs.center_on_screen(self)
+        if sys.platform == "darwin":
+            from . import macos_window
+            macos_window.make_overlay(self, macos_window.NS_STATUS_WINDOW_LEVEL)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("关于", "About"))
         self.setMinimumSize(640, 520)
+        # 关于窗口不参与 macOS 的「对话框抬升到 26」：它要低于抽选弹窗(25)，
+        # 这样用户一边看许可证、一边双击悬浮球抽人时，抽选结果仍在最上面。
+        self.setProperty("cmd_skip_raise", True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 14)
@@ -144,6 +155,37 @@ class AboutDialog(QDialog):
         layout.addLayout(buttons)
 
 
+#: 当前打开的关于窗口（非模态，需要自己持有引用，否则会被 GC 掉）
+_open_about = None
+
+
+def _forget_about(*_args) -> None:
+    global _open_about
+    _open_about = None
+
+
 def show_about(parent=None) -> None:
-    """弹出关于窗口（模态）。"""
-    AboutDialog(parent).exec_()
+    """显示关于窗口。
+
+    **非模态**：模态对话框会拦截整个程序的输入 —— 之前的版本用 exec_()，
+    打开许可证之后悬浮球双击抽人完全失效。GPL 只要求能查看许可证，
+    不要求模态，所以改成 show()。
+
+    parent 固定为 None：这个窗口可能从托盘/悬浮球打开，那时主窗口是隐藏的，
+    以它为父窗口在 Windows 上会把对话框定位到屏幕外。
+    """
+    global _open_about
+    if _open_about is not None:
+        try:
+            if _open_about.isVisible():
+                dialogs.reveal(_open_about)
+                return
+        except RuntimeError:          # C++ 侧已销毁
+            _open_about = None
+
+    dialog = AboutDialog(None)
+    dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+    dialog.setWindowModality(Qt.NonModal)
+    dialog.destroyed.connect(_forget_about)
+    _open_about = dialog
+    dialogs.reveal(dialog)

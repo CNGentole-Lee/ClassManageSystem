@@ -222,6 +222,9 @@ class _DialogRaiser:
                 try:
                     if not isinstance(obj, QDialog) or not obj.isVisible():
                         return
+                    # 关于窗口自己要低于抽选弹窗，这里跳过
+                    if obj.property("cmd_skip_raise"):
+                        return
                     make_overlay(obj, DIALOG_LEVEL)
                     obj.raise_()
                 except (RuntimeError, AttributeError):
