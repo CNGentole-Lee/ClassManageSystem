@@ -440,13 +440,14 @@ class PointsWindow(QWidget):
         super().showEvent(event)
         macos_window.make_overlay(self)
 
-    def reload_from_store(self) -> None:
+    def reload_from_store(self, ok: bool = True) -> None:
         """从 store 重新读取组名、分数和小组数量。
 
         用重建而非原地修补：彻底重置会把小组数量打回出厂默认值，卡片数可能变化。
         """
         self._rebuild_cards()
-        self._set_status(tr("已重置", "Reset"), ok=True)
+        self._set_status(tr("已重置", "Reset") if ok
+                         else tr("重置未生效", "Reset did not apply"), ok=ok)
 
     def apply_delta(self, index: int, delta: int) -> None:
         """给小组 index（1 起）加分 delta 并落盘。"""

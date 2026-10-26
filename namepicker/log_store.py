@@ -29,9 +29,11 @@ from typing import NamedTuple
 try:  # 包内相对导入（正常运行时）
     from . import backup_store
     from . import crypto_utils
+    from .atomic import replace_with_retry
 except ImportError:  # 允许把 namepicker 目录直接加进 sys.path 的用法
     import backup_store  # type: ignore
     import crypto_utils  # type: ignore
+    from atomic import replace_with_retry  # type: ignore
 
 LOG_FILENAME = "points_log.dat"
 BAK_SUFFIX = ".bak"
@@ -90,7 +92,7 @@ def _atomic_write_bytes(path: str, blob: bytes) -> bool:
                 os.fsync(f.fileno())
             except OSError:
                 pass
-        os.replace(tmp_path, path)
+        replace_with_retry(tmp_path, path)
         return True
     except OSError:
         try:

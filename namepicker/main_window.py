@@ -608,13 +608,17 @@ class MainWindow(QMainWindow):
             return
         self._wipe_handler(parts)
 
-    def on_wipe_complete(self, detail: str = "") -> None:
+    def on_wipe_complete(self, detail: str = "", ok: bool = True) -> None:
         """Refresh everything the wipe just invalidated."""
         self._refresh_history()
         self._refresh_cooldown_display()
         self._status_label.setText(
-            detail or tr("已彻底重置，所有数据恢复出厂状态",
-                         "Full reset completed; all data restored to factory state"))
+            detail or (tr("已彻底重置，所有数据恢复出厂状态",
+                          "Full reset completed; all data restored to factory state")
+                       if ok else tr("重置未生效", "Reset did not apply")))
+        self._status_label.setStyleSheet(
+            f"color: {theme.c('success') if ok else theme.c('danger')}; "
+            "font-weight: bold;")
         self._status_label.setStyleSheet(f"color: {theme.c('accent')}; font-weight: bold;")
 
     def _refresh_history(self) -> None:

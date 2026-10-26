@@ -126,13 +126,13 @@ class _DialogRaiser:
                     try:
                         kind = event.type()
                         if kind == QEvent.Show:
-                            # Qt 显示之后还会调整 z-order/几何，延后一拍再处理
+                            # Qt 显示之后还会调整 z-order/几何，延后一拍再处理。
+                            #
+                            # 不在 WindowActivate 时再抬：对话框弹出自己的二次
+                            # 确认框会触发 WindowActivate，raise() 会把父对话框
+                            # 盖到确认框上，表现为「点了重置没反应」。
                             QTimer.singleShot(
                                 0, lambda o=obj: raise_dialog(o, center=True))
-                        elif kind == QEvent.WindowActivate:
-                            # 只重新置顶，不要重新居中 —— 否则用户移动过窗口后，
-                            # 一切回来就被弹回屏幕中央。
-                            raise_dialog(obj, center=False)
                     except Exception:
                         pass
                     return False

@@ -150,11 +150,39 @@ def main():
 
     def wipe_everything(parts: dict) -> None:
         """按勾选项执行彻底重置（实现见 namepicker/wipe_service.py）。"""
-        labels = wipe_service.perform_wipe(store, stats, engine, parts)
-        points_win.reload_from_store()
-        main_win.on_wipe_complete(
-            tr("已重置：{x}", "Reset: {x}", x=tr("、", ", ").join(labels))
-            if labels else "")
+        report = wipe_service.perform_wipe(store, stats, engine, parts)
+        if not report.ok():
+            # 没写进磁盘就别在界面上假装已清空：回到磁盘上的真实数据
+            store.reload_from_disk()
+        points_win.reload_from_store(ok=report.ok())
+        if report.ok():
+            main_win.on_wipe_complete(
+                tr("已重置：{x}", "Reset: {x}",
+                   x=tr("、", ", ").join(report.labels))
+                if report.labels else "")
+        else:
+            main_win.on_wipe_complete(
+                tr("重置未生效：{e}", "Reset did not apply: {e}",
+                   e=report.error or "unknown"), ok=False)
+
+        # 关键：写入失败/读回校验失败必须让用户看见，不能静默装作成功。
+        # （Windows 上文件被占用/目录只读时 os.replace 会失败，以前是静默的。）
+        startup_log.record([
+            f"wipe parts={parts} saved={report.saved} "
+            f"verified={report.verified} error={report.error!r}",
+        ])
+        if not report.ok():
+            from namepicker import dialogs as _dialogs
+            QMessageBox.warning(
+                _dialogs.visible_parent(main_win),
+                tr("重置没有完全生效", "Reset did not fully apply"),
+                tr("部分数据没能写入磁盘，或写入后校验不一致。\n\n"
+                   "原因：{e}\n\n请确认程序所在目录可写、文件没有被其它程序占用后重试。",
+                   "Some data could not be written to disk, or did not verify.\n\n"
+                   "Reason: {e}\n\nMake sure the program directory is writable and "
+                   "the files are not locked by another program, then try again.",
+                   e=report.error or "unknown"),
+            )
 
     # --- UI ---
     ball = FloatingBall()

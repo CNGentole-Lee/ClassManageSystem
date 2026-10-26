@@ -39,12 +39,14 @@ from datetime import datetime
 
 try:  # 包内相对导入（正常运行时）
     from . import backup_store
+    from .atomic import replace_with_retry
     from . import crypto_utils
     from . import i18n
     from . import log_store
     from .i18n import tr
 except ImportError:  # 允许把 namepicker 目录直接加进 sys.path 的用法
     import backup_store  # type: ignore
+    from atomic import replace_with_retry  # type: ignore
     import crypto_utils  # type: ignore
     import i18n  # type: ignore
     import log_store  # type: ignore
@@ -235,7 +237,7 @@ def _atomic_write_bytes(path: str, blob: bytes) -> bool:
                 os.fsync(f.fileno())
             except OSError:
                 pass  # 某些文件系统不支持 fsync，不影响正确性
-        os.replace(tmp_path, path)
+        replace_with_retry(tmp_path, path)
         return True
     except OSError as e:
         _last_io_error = f"{path}: {e}"
@@ -595,6 +597,14 @@ class ConfigStore:
         if not name:
             return
         self._cp.set("points", f"group_{index}", name)
+
+    def reload_from_disk(self) -> bool:
+        """丢弃内存改动，重新从磁盘加载（写盘失败后让界面回到真实状态）。"""
+        try:
+            self._cp = load_config(self.path)
+            return True
+        except Exception:
+            return False
 
     def get_language(self) -> str:
         """已保存的界面语言（meta.language）。"""

@@ -15,6 +15,11 @@
 """
 
 import configparser
+
+try:
+    from .atomic import replace_with_retry
+except ImportError:  # 顶层导入（tools）
+    from atomic import replace_with_retry  # type: ignore
 import os
 
 from .config_store import resolve_config_path
@@ -99,7 +104,7 @@ class StatsStore:
                 os.makedirs(directory, exist_ok=True)
             with open(tmp_path, "w", encoding="utf-8") as f:
                 self._cp.write(f)
-            os.replace(tmp_path, self.path)
+            replace_with_retry(tmp_path, self.path)
             self._last_error = ""
             return True
         except OSError as e:
