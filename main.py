@@ -12,20 +12,28 @@
   - config.ini 只是明文查看副本，程序永不读取
   - 每次积分变动自动写入加密操作日志（points_log.dat），唯一查看入口是
     积分面板底栏「操作日志」按钮
+    
   - config.ini 旁边生成 crash.log，以便在没有控制台的情况下诊断故障
 """
 
 import sys
 import os
 
-from PyQt5.QtCore import Qt, QSettings, QTimer, QLibraryInfo, QLocale, QTranslator
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt, QSettings, QTimer
+from PyQt5.QtWidgets import QApplication, QMessageBox
 
+from namepicker import about_dialog
+from namepicker.about_dialog import VERSION
 from namepicker import crash_log
+from namepicker import i18n
 from namepicker import macos_window
+from namepicker import restart as restart_service
+from namepicker import startup_log
+from namepicker import win_window
 from namepicker import theme
 from namepicker.config_store import (
-    APP_NAME, ConfigStore, migrate_legacy_plaintext, resolve_config_path,
+    ConfigStore, app_name, migrate_legacy_plaintext, read_saved_language,
+    resolve_config_path,
 )
 from namepicker.name_engine import NameEngine
 from namepicker.floating_ball import FloatingBall
@@ -34,6 +42,8 @@ from namepicker.main_window import MainWindow
 from namepicker.points_window import PointsWindow
 from namepicker.single_instance import SingleInstance
 from namepicker.stats_store import StatsStore
+from namepicker import wipe_service
+from namepicker.i18n import tr
 
 
 def _get_bundled_path(relative_path: str) -> str:
@@ -54,7 +64,7 @@ def main():
     app = QApplication(sys.argv)
 # 内部（ASCII）标识保持不变，这样在重命名后 QSettings 路径 / 单实例键 后仍能继续正常工作。
     app.setApplicationName("RandomNamePicker")
-    app.setApplicationDisplayName(APP_NAME)
+    app.setApplicationDisplayName(app_name())
     app.setOrganizationName("NamePicker")
 
     # 该应用常驻托盘：悬浮球是一个 Qt.Tool 窗口（Qt 不将其视为“主”窗口），
@@ -64,11 +74,27 @@ def main():
     app.setQuitOnLastWindowClosed(False)
 
 # --- 单实例守护 ---
+    # 由「切换语言 → 立即重启」拉起来的新进程带 --restarted：旧进程可能还在
+    # 收尾（保存配置、销毁窗口），这里多等几秒，避免误判「已有实例」而自杀。
+    _restarted = restart_service.RESTART_FLAG in sys.argv
     single = SingleInstance()
-    if not single.try_acquire():
+    _retry = restart_service.RETRY_SECONDS if _restarted else 0.0
+    if not single.try_acquire(retry_seconds=_retry):
 # 已有另一个实例正在运行——唤醒它并退出
         single.notify_existing()
+        startup_log.record([f"exit: another instance is running "
+                            f"(restarted={_restarted})"])
         sys.exit(0)
+
+    # 界面语言：环境变量 > config.dat > QSettings > 系统语言。
+    # config.dat 是已在 Windows 上实测可靠的存储，QSettings 作为兜底。
+    # 必须在建窗口之前定好。
+    _ui_settings = QSettings("NamePicker", "Config")
+    _cfg_lang = read_saved_language()
+    _qsettings_lang = str(_ui_settings.value("language", "") or "")
+    _env_lang = os.environ.get("CLASSMANAGE_LANG", "").strip()
+    i18n.set_language(_env_lang or _cfg_lang or _qsettings_lang
+                      or i18n.system_language())
 
     # 深/浅色自适应：字体、调色板与样式表都由 theme 统一生成（见 namepicker/theme.py）。
     # 必须在创建任何窗口之前应用，否则先建出来的控件会拿到默认字体。
@@ -79,14 +105,23 @@ def main():
     # regular 策略下窗口会留在桌面 Space，PPT 全屏时必然被盖住。
     macos_window.set_accessory_policy()
 
-    # Qt 自带控件的文案（对话框的 Yes/No/Cancel/OK 等）本地化。
-    # 找不到 .qm 时静默跳过，不影响功能。
-    translator = QTranslator(app)
-    _tr_path = QLibraryInfo.location(QLibraryInfo.TranslationsPath)
-    if translator.load(QLocale(QLocale.Chinese, QLocale.China), "qtbase", "_", _tr_path):
-        app.installTranslator(translator)
-    elif translator.load("qt_zh_CN", _tr_path):
-        app.installTranslator(translator)
+    # Qt 自带控件的文案（对话框按钮等）：zh 装中文翻译，en 用 Qt 默认英文。
+    i18n.translator_for_qt(app, i18n.language())
+
+    # macOS：积分面板/弹窗是 level 25 的浮层，普通对话框（改名、确认框）会被
+    # 它盖住并表现为假死。这里统一把对话框抬到 level 26。
+    macos_window.install_dialog_raiser(app)
+    # Windows：同样的问题换了个形式 —— 对话框是普通窗口，会被全屏 PPT 盖住，
+    # 用户看到的是「点了没弹出窗口」。这里把它们钉到 topmost 层。
+    win_window.install_dialog_raiser(app)
+
+    # 启动事实（诊断「重启失败 / 语言没生效」用），失败静默
+    startup_log.record([
+        f"start version={VERSION} frozen={getattr(sys, 'frozen', False)}"
+        f" restarted={_restarted}",
+        f"lang env={_env_lang!r} config={_cfg_lang!r} "
+        f"qsettings={_qsettings_lang!r} -> {i18n.language()!r}",
+    ])
 
 
     # --- 旧版明文迁移（一次性）---
@@ -113,13 +148,41 @@ def main():
     engine.names_loaded.connect(lambda _count: restore_stats())
     engine.name_drawn.connect(lambda _name: save_stats())
 
-    def wipe_everything() -> None:
-        """彻底重置：config.ini 与 stats.ini 全部回到初始状态。"""
-        store.reset_all()          # 组名 / 分数 → 默认
-        stats.clear()              # 长期抽取次数 → 清空
-        engine.reset_fairness()    # 内存里的次数 / 历史 / 冷却
-        points_win.reload_from_store()
-        main_win.on_wipe_complete()
+    def wipe_everything(parts: dict) -> None:
+        """按勾选项执行彻底重置（实现见 namepicker/wipe_service.py）。"""
+        report = wipe_service.perform_wipe(store, stats, engine, parts)
+        if not report.ok():
+            # 没写进磁盘就别在界面上假装已清空：回到磁盘上的真实数据
+            store.reload_from_disk()
+        points_win.reload_from_store(ok=report.ok())
+        if report.ok():
+            main_win.on_wipe_complete(
+                tr("已重置：{x}", "Reset: {x}",
+                   x=tr("、", ", ").join(report.labels))
+                if report.labels else "")
+        else:
+            main_win.on_wipe_complete(
+                tr("重置未生效：{e}", "Reset did not apply: {e}",
+                   e=report.error or "unknown"), ok=False)
+
+        # 关键：写入失败/读回校验失败必须让用户看见，不能静默装作成功。
+        # （Windows 上文件被占用/目录只读时 os.replace 会失败，以前是静默的。）
+        startup_log.record([
+            f"wipe parts={parts} saved={report.saved} "
+            f"verified={report.verified} error={report.error!r}",
+        ])
+        if not report.ok():
+            from namepicker import dialogs as _dialogs
+            QMessageBox.warning(
+                _dialogs.visible_parent(main_win),
+                tr("重置没有完全生效", "Reset did not fully apply"),
+                tr("部分数据没能写入磁盘，或写入后校验不一致。\n\n"
+                   "原因：{e}\n\n请确认程序所在目录可写、文件没有被其它程序占用后重试。",
+                   "Some data could not be written to disk, or did not verify.\n\n"
+                   "Reason: {e}\n\nMake sure the program directory is writable and "
+                   "the files are not locked by another program, then try again.",
+                   e=report.error or "unknown"),
+            )
 
     # --- UI ---
     ball = FloatingBall()
@@ -135,6 +198,32 @@ def main():
     main_win.set_ball(ball)
     main_win.set_points_window(points_win)
     main_win.set_wipe_handler(wipe_everything)
+
+    def restart_app() -> None:
+        """切换语言后立即重启：先释放单实例锁，再拉起新进程，最后退出自己。"""
+        single.release()
+        started = restart_service.restart()
+        startup_log.record([f"restart requested -> started={started}"])
+        if not started:
+            QMessageBox.warning(
+                main_win,
+                tr("重启失败", "Restart failed"),
+                tr("无法自动重启，请手动关闭后重新打开。",
+                   "Could not restart automatically. Please close and reopen the app."),
+            )
+            return
+        app.quit()
+
+    def save_language(code: str) -> None:
+        """语言写入 config.dat（QSettings 之外的第二份保险）。"""
+        try:
+            store.set_language(code)
+            store.save()
+        except Exception:
+            pass
+
+    main_win.language_saved.connect(save_language)
+    main_win.restart_requested.connect(restart_app)
 
 # --- 信号连接 ---
 
@@ -153,6 +242,7 @@ def main():
 
     # 右键菜单里的兜底动作（macOS 没有 Dock 图标、菜单栏可能自动隐藏）
     ball.wipe_requested.connect(main_win._on_wipe_all)
+    ball.about_requested.connect(lambda: about_dialog.show_about(main_win))
     ball.quit_requested.connect(app.quit)
 
     # 滚动开始 → 显示带滚动动画的弹窗

@@ -125,9 +125,11 @@ def main() -> int:
     print("\n--- 2. Names only ---")
     seed()
     before = state()
-    wipe_service.perform_wipe(store, stats, engine,
-                              {"names": True, "scores": False,
-                               "fairness": False, "history": False})
+    report = wipe_service.perform_wipe(
+        store, stats, engine,
+        {"names": True, "scores": False, "fairness": False, "history": False})
+    check("names-only wipe is saved and verified", report.ok(),
+          f"saved={report.saved} verified={report.verified} err={report.error!r}")
     after = state()
     check("group names restored", after["name2"] != before["name2"], after["name2"])
     check("scores untouched", after["scores"] == before["scores"], f"{after['scores']}")
@@ -137,9 +139,11 @@ def main() -> int:
     print("\n--- 3. Scores only ---")
     seed()
     before = state()
-    wipe_service.perform_wipe(store, stats, engine,
-                              {"names": False, "scores": True,
-                               "fairness": False, "history": False})
+    report = wipe_service.perform_wipe(
+        store, stats, engine,
+        {"names": False, "scores": True, "fairness": False, "history": False})
+    check("scores-only wipe is saved and verified", report.ok(),
+          f"saved={report.saved} verified={report.verified} err={report.error!r}")
     after = state()
     check("scores zeroed", after["scores"] == [0] * store.group_count,
           f"actual {after['scores']}")
@@ -194,6 +198,74 @@ def main() -> int:
           any("彻底重置" in zh for _s, zh, _en in entries))
     check("English side uses 'Full reset'",
           any("Full reset" in en for _s, _zh, en in entries))
+
+    print("\n--- 8. A failed write is reported, not silently ignored ---")
+    import os as _os, stat as _stat
+    ro_dir = tempfile.mkdtemp(prefix="cm_wipe_ro_")
+    ro_store = ConfigStore(os.path.join(ro_dir, "config.ini"))
+    ro_store.set_score(1, 5)
+    ro_store.save()
+    ro_stats = StatsStore(os.path.join(ro_dir, "stats.ini"))
+    ro_engine = NameEngine()
+    ro_engine.generate_number_list(1, 3)
+    mode = _os.stat(ro_dir).st_mode
+    _os.chmod(ro_dir, _stat.S_IRUSR | _stat.S_IXUSR)      # 只读目录
+    try:
+        failed = wipe_service.perform_wipe(
+            ro_store, ro_stats, ro_engine,
+            {"names": False, "scores": True, "fairness": False, "history": False})
+        check("failed save is reported as not ok", not failed.ok(),
+              f"saved={failed.saved} verified={failed.verified}")
+        check("failure carries a reason", bool(failed.error), failed.error)
+        # 失败后界面应回到磁盘上的真实数据，而不是继续显示“已清空”
+        ro_store.reload_from_disk()
+        check("reload_from_disk restores the on-disk values",
+              ro_store.get_score(1) == 5, f"actual {ro_store.get_score(1)}")
+    finally:
+        _os.chmod(ro_dir, mode)
+
+    print("\n--- 9. Windows file locks are retried ---")
+    import os as _os2
+    from namepicker import atomic as _atomic
+    retry_dir = tempfile.mkdtemp(prefix="cm_retry_")
+    src = _os2.path.join(retry_dir, "a.tmp")
+    dst = _os2.path.join(retry_dir, "a.dat")
+    with open(src, "w", encoding="utf-8") as fh:
+        fh.write("x")
+    real_replace = _os2.replace
+    calls = {"n": 0}
+
+    def flaky_replace(a, b):
+        calls["n"] += 1
+        if calls["n"] < 3:                 # 前两次模拟被杀软/索引占用
+            raise PermissionError("file is locked")
+        return real_replace(a, b)
+
+    _os2.replace = flaky_replace
+    try:
+        _atomic.replace_with_retry(src, dst, attempts=3, base_delay=0.01)
+        check("transient lock is retried and succeeds",
+              calls["n"] == 3 and _os2.path.isfile(dst), f"calls={calls['n']}")
+    finally:
+        _os2.replace = real_replace
+
+    calls["n"] = 0
+
+    def always_fail(a, b):
+        calls["n"] += 1
+        raise PermissionError("still locked")
+
+    _os2.replace = always_fail
+    try:
+        failed_retry = False
+        try:
+            _atomic.replace_with_retry(src, dst, attempts=2, base_delay=0.01)
+        except OSError:
+            failed_retry = True
+        check("permanent lock still raises after the attempts",
+              failed_retry and calls["n"] == 2, f"calls={calls['n']}")
+    finally:
+        _os2.replace = real_replace
 
     print("\n" + "=" * 60)
     if failures:

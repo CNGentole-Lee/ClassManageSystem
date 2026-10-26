@@ -39,12 +39,14 @@ from datetime import datetime
 
 try:  # 包内相对导入（正常运行时）
     from . import backup_store
+    from .atomic import replace_with_retry
     from . import crypto_utils
     from . import i18n
     from . import log_store
     from .i18n import tr
 except ImportError:  # 允许把 namepicker 目录直接加进 sys.path 的用法
     import backup_store  # type: ignore
+    from atomic import replace_with_retry  # type: ignore
     import crypto_utils  # type: ignore
     import i18n  # type: ignore
     import log_store  # type: ignore
@@ -170,6 +172,19 @@ def backup_path_for(config_path: str) -> str:
     return data_path_for(config_path) + BAK_SUFFIX
 
 
+def read_saved_language(path: str = "") -> str:
+    """从 config.dat 的 meta.language 读取界面语言；读不到返回空串。
+
+    为什么语言要存两份：QSettings 在 Windows 上可能受注册表重定向/权限影响，
+    而 config.dat 是已经实测可用的加密存储。启动时优先用它，QSettings 兜底。
+    """
+    try:
+        config = load_config(path, repair=False)
+        return (config.get("meta", "language", fallback="") or "").strip().lower()
+    except Exception:
+        return ""
+
+
 def resolve_config_path() -> str:
     """优先用程序旁的 config.ini，只读目录则退到 %APPDATA%。
 
@@ -222,7 +237,7 @@ def _atomic_write_bytes(path: str, blob: bytes) -> bool:
                 os.fsync(f.fileno())
             except OSError:
                 pass  # 某些文件系统不支持 fsync，不影响正确性
-        os.replace(tmp_path, path)
+        replace_with_retry(tmp_path, path)
         return True
     except OSError as e:
         _last_io_error = f"{path}: {e}"
@@ -582,6 +597,22 @@ class ConfigStore:
         if not name:
             return
         self._cp.set("points", f"group_{index}", name)
+
+    def reload_from_disk(self) -> bool:
+        """丢弃内存改动，重新从磁盘加载（写盘失败后让界面回到真实状态）。"""
+        try:
+            self._cp = load_config(self.path)
+            return True
+        except Exception:
+            return False
+
+    def get_language(self) -> str:
+        """已保存的界面语言（meta.language）。"""
+        return (self._cp.get("meta", "language", fallback="") or "").strip().lower()
+
+    def set_language(self, lang: str) -> None:
+        """记录界面语言；随下一次 save() 落盘。"""
+        self._cp.set("meta", "language", (lang or "").strip().lower())
 
     def get_score(self, index: int) -> int:
         raw = self._cp.get("points", f"score_{index}", fallback="0")

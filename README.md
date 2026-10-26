@@ -258,12 +258,21 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
 - 「关于」：版本、版权、不担保声明与 GPL-3.0 许可证全文（托盘菜单与悬浮球右键里也有）。
-  版本号实际写在**三处**，升级时需同步修改（当前三处不一致）：
+  ~~版本号实际写在**三处**，升级时需同步修改（当前三处不一致）：
   `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `2.0.0`）、
   `packaging/windows/version_info.txt` 的 `filevers`/`prodvers`（EXE 属性，现为 `1.0.0.0`）、
   `packaging/macos/ClassManageSystem.spec` 的 `CFBundleShortVersionString`（.app 版本，现为 `1.0.0`）。
-  打包脚本读的是 `version_info.txt`，**不会**从 `about_dialog.py` 读取。
+  打包脚本读的是 `version_info.txt`，**不会**从 `about_dialog.py` 读取。~~
+  （删除缘由：2.0.0 起版本号已收敛为**单一来源**，上面的“三处同步”描述不再成立。）
+  现在只改 `namepicker/about_dialog.py` 的 `VERSION` 一处即可：
+  - Windows 打包时 spec 会把 `version_info.txt` 模板里的版本号替换掉，生成
+    `version_info.generated.txt` 再交给 PyInstaller（模板不再手改）；
+  - macOS 打包时 spec 直接读取 `VERSION`，填进 `CFBundleShortVersionString` / `CFBundleVersion`。
 - 托盘「彻底重置...」：组名、积分、长期公平记录、抽取历史全部回到出厂状态。
+- 「关于」窗口是**非模态**的：打开许可证时仍可双击悬浮球抽人；抽选结果会盖在它上面。
+  （GPL 只要求许可证可查看，不要求阻塞整个程序。）
+- 重置会**校验写盘**：若磁盘写入失败（Windows 上文件被占用/只读时 `os.replace` 会失败），
+  会弹出「重置没有完全生效」并给出系统原因，界面回退到磁盘上的真实数据，不再假装成功。
 
 ---
 
@@ -282,6 +291,13 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - **默认组名跟随语言**：还叫默认名的小组会显示为当前语言的默认名
   （中文 `第一组…` ↔ 英文 `Group 1…`）；**老师自定义过的组名保持原样**，
   不会被切换语言改写。日志内容同样不会被改写。
+- **语言存两份**：`config.dat` 的 `meta.language` 与 `QSettings` 各存一份。启动顺序为
+  `CLASSMANAGE_LANG` 环境变量 > `config.dat` > `QSettings` > 系统语言。
+  （缘由：Windows 上注册表可能被重定向或受权限限制，只靠 QSettings 会出现“切了没生效”。）
+- **立即重启防竞态**：新进程带 `--restarted` 启动，单实例会最多等 6 秒让旧进程退出；
+  `QProcess.startDetached` 失败时退回 `subprocess`（Windows 带 `DETACHED_PROCESS`）。
+- **启动诊断**：配置同目录的 `startup.log` 记录每次启动的版本、是否 frozen/restarted、
+  三个来源读到的语言、最终语言、单实例结果与重启结果（最近 40 行，失败静默）。
 
 | 中文界面 | English UI |
 |---|---|
@@ -371,6 +387,13 @@ Linux   : ~/.config/YourOrg/ClassManageSystem.conf
 
 与配置同目录，记录 Python traceback 与原生崩溃，最多 200 条。**0 字节表示没有崩溃**。
 
+### `startup.log`
+
+与配置同目录，**只为诊断启动/重启问题**：每次启动追加几行（版本、是否 frozen、
+是否由「立即重启」拉起、环境变量/`config.dat`/`QSettings` 三种来源读到的语言、
+最终生效语言、单实例是否抢到、重启是否成功），只保留最近 40 行。
+不参与任何业务判断，写入失败一律静默；`.gitignore` 已忽略该文件。
+
 ### 数据放在哪
 
 配置与日志写在**程序所在目录**旁（打包后是 EXE / `.app` 同级目录，不在 `.app` 包内部）；若该目录不可写，则整体回退到：
@@ -422,6 +445,8 @@ python tools/fairness_burnin.py
 |---|---|---|---|
 | 抽选 / 积分 / 日志 | ✅ | ✅ | 未验证 |
 | 盖住全屏应用 | ✅ `SetWindowPos` | ✅ accessory 策略 + 浮层属性（已实测） | 未验证 |
+| 对话框显示在全屏应用之上 | ✅ `SetWindowPos(HWND_TOPMOST)`（2.0.0 起） | ✅ 对话框抬到 level 26（已实测） | 未验证 |
+| 对话框定位（主窗口隐藏时） | ✅ 按鼠标所在屏幕居中 | ✅ 按鼠标所在屏幕居中 | 未验证 |
 | 托盘 / 菜单栏图标 | ✅ 彩色托盘图标 | ✅ 模板图；**菜单栏自动隐藏时不显示** | 未验证 |
 | 浅色 / 深色模式 | ❌ 不自动跟随（可环境变量强制） | ✅ 跟随系统 | 未验证 |
 | 系统级隐蔽备份 | ✅ HKCU 注册表 | ✅ `~/Library/Preferences` plist | ✅ `~/.config` |
@@ -507,6 +532,10 @@ packaging/macos/build.command        # 双击也可以
 │   ├── points_window.py             # 积分面板 + 操作日志查看器
 │   ├── main_window.py               # 管理面板、托盘、开机自启动、语言切换
 │   ├── i18n.py                      # 中英双语：tr() / both() / Qt 翻译装载
+│   ├── atomic.py                    # 原子替换 + Windows 占用重试
+│   ├── dialogs.py                   # 对话框定位：隐藏父窗口、屏幕居中、延后打开
+│   ├── win_window.py                # Windows：对话框置顶（SetWindowPos）
+│   ├── startup_log.py               # 启动/重启诊断日志（startup.log）
 │   ├── about_dialog.py              # 关于窗口：版权 / 不担保声明 / GPL 全文
 │   ├── widgets.py                   # ElidedLabel：长名字按宽度省略 + tooltip 全名
 │   ├── restart.py                   # 切换语言后的「立即重启」（源码/打包两种参数）
@@ -563,6 +592,11 @@ python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空
 python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志(需要GUI)
 ```
 
+- `wipe_check` 现在覆盖：写盘失败必须被报告（只读目录）、失败后界面回退到磁盘真实数据、
+  `os.replace` 遇到 Windows 占用时的重试与最终失败。
+- `i18n_check` 现在覆盖：关于窗口非模态时悬浮球仍可抽人、隐藏父窗口下的对话框定位、
+  语言双写、`--restarted` 参数、单实例重试（跨进程）。
+- `windows_check` 现在覆盖：对话框置顶（`WS_EX_TOPMOST`）、语言写入 `config.dat`。
 - `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PyQt5 时还会验证真实的 QSettings 隐蔽备份。
 - 冒烟测试构造 `MainWindow` 会读写真实注册表（Windows），脚本会先备份开机自启动项、跑完还原；macOS/Linux 自动跳过。
 - 测试统一使用隔离的 QSettings 命名空间，不会污染真实注册表 / plist。
@@ -599,6 +633,16 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
 - 单实例守护**不能只看 `QSharedMemory`**：Unix 上共享内存段不随进程消失而释放，
   被 `kill -9` 后残留的孤儿段会让下次启动永远静默退出。现在以 `QLocalServer`
   能否连通作为存活判据，共享内存仅作兜底。
+- 对话框抬升器分平台：macOS `macos_window.install_dialog_raiser()`（level 26）、
+  Windows `win_window.install_dialog_raiser()`（`SetWindowPos(HWND_TOPMOST)`）。
+  **只在 Show 时抬，不要在 WindowActivate 时再抬** —— 对话框弹出自己的二次确认框会触发
+  WindowActivate，再 `raise_()` 会把父框盖到确认框上，表现成“点了没反应”。
+- 从 `QMenu` 动作里开对话框要用 `dialogs.defer()` 延后一拍；Windows 上同步打开不会被激活。
+- 对话框的父窗口不可见/最小化时传 `None`，并用 `dialogs.center_on_screen()` 定位。
+- 所有磁盘写入走 `atomic.replace_with_retry()`：Windows 上目标被占用时 `os.replace` 会失败，
+  重试 3 次（0.12s / 0.24s 退避）能吃掉杀软与索引服务的瞬时锁。
+- 「彻底重置」必须检查 `store.save()` 的返回值并读回校验；失败时先 `reload_from_disk()`
+  让界面回到磁盘真实数据，再弹错误 —— **不要只刷内存**，否则界面和磁盘会长期不一致。
 - 打包相关：`config_store._app_dir()` 对 `.app` 有专门处理，避免把数据写进应用包内部；
   Windows 的 `.bat` 必须是**纯 ASCII + CRLF**（`.gitattributes` 已强制 `eol=crlf`），
   且 `REM` 行里不能出现未配对的圆括号 —— cmd 的括号配对统计会因此从行中间截断命令。
@@ -656,6 +700,26 @@ QSettings 隐蔽备份恢复。
 ### 程序无提示退出怎么办？
 
 看 `crash.log`。0 字节通常说明不是崩溃（可能被强杀或正常退出）。
+
+### 彻底重置后数据没变，或提示「重置没有完全生效」？
+
+2.0.0 起重置会**校验写盘**。看到这个提示说明 `store.save()` 失败：弹窗里的「原因」就是系统错误
+（例如 `Permission denied: ...config.dat.tmp`），同时 `startup.log` 里有一条
+`wipe ... saved=False`。常见原因：Windows 上 `config.dat` 带只读属性（多由 zip 解压保留）、
+被杀软/OneDrive 短暂占用、程序目录不可写。取消只读或关掉占用程序后重试即可。
+
+（旧版本这里不检查保存结果，界面显示“已重置”但磁盘没变 —— 这是已修复的 BUG。）
+
+### Windows 下「关于」「彻底重置」窗口不显示？
+
+已修（2.0.0）：Windows 新增对话框置顶器，`QDialog` 显示时设为 `HWND_TOPMOST` 并置前；
+主窗口隐藏到托盘时不再拿它的几何定位（Windows 上最小化窗口在屏幕外），改为按鼠标所在屏幕居中；
+从托盘/悬浮球菜单打开时延后一拍，等菜单事件循环退出再显示。
+
+### 打开「关于」后不能双击悬浮球抽人？
+
+已修（2.0.0）：关于窗口改为**非模态**；它停在 level 25（与积分面板同级），
+抽选结果会盖在它上面。
 
 ### 打包时报 `'xxx' 不是内部或外部命令`？
 
@@ -1000,14 +1064,26 @@ their custom name, untouched ones show `Group 4/5/6`.
 - "Clear history": clears draw history and cooldowns but **keeps** lifetime fairness
   counts.
 - "About": version, copyright, the no-warranty notice and the full GPL-3.0 text
-  (also available from the tray menu and the ball's right-click menu). The version
-  actually lives in **three** places and must be bumped together (currently out of sync):
-  `VERSION` in `namepicker/about_dialog.py` (shown in the dialog, now `2.0.0`),
-  `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties, now `1.0.0.0`), and
-  `CFBundleShortVersionString` in `packaging/macos/ClassManageSystem.spec` (app version, now `1.0.0`).
-  The build script reads `version_info.txt`, **not** `about_dialog.py`.
+  (also available from the tray menu and the ball's right-click menu).
+  ~~The version actually lives in **three** places and must be bumped together (currently
+  out of sync): `VERSION` in `namepicker/about_dialog.py` (shown in the dialog, now
+  `2.0.0`), `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties,
+  now `1.0.0.0`), and `CFBundleShortVersionString` in
+  `packaging/macos/ClassManageSystem.spec` (app version, now `1.0.0`). The build script
+  reads `version_info.txt`, **not** `about_dialog.py`.~~
+  (Struck out because since 2.0.0 the version is a **single source of truth**.)
+  Only `VERSION` in `namepicker/about_dialog.py` needs editing:
+  - the Windows spec substitutes it into the `version_info.txt` template and writes
+    `version_info.generated.txt` for PyInstaller (the template is no longer edited by hand);
+  - the macOS spec reads it directly for `CFBundleShortVersionString` / `CFBundleVersion`.
 - Tray → "Full reset...": choose group names, scores, lifetime fairness counts and draw
   history individually.
+- The About window is **non-modal**: drawing from the floating ball still works while the
+  licence is open, and the result popup appears above it (GPL only requires the licence to
+  be viewable, not that it blocks the app).
+- A reset **verifies the write**: if the disk write fails (on Windows `os.replace` fails
+  when the file is locked or read-only) a "Reset did not fully apply" dialog reports the
+  OS reason and the UI falls back to the real on-disk data instead of pretending success.
 
 ---
 
@@ -1030,6 +1106,16 @@ The UI, dialogs, tray and ball menus, and the operation log are all bilingual.
 - **Default group names follow the language**: groups still using a default name are
   shown in the current language (`第一组…` ↔ `Group 1…`); **names the teacher
   customised are left untouched**, as is the log content.
+- **The language is stored twice**: in `config.dat` (`meta.language`) and in `QSettings`.
+  Startup order: `CLASSMANAGE_LANG` env var > `config.dat` > `QSettings` > system language.
+  (Reason: on Windows the registry can be redirected or permission-restricted, so
+  `QSettings` alone made the switch look ineffective.)
+- **Restart race protection**: the new process starts with `--restarted`, and the
+  single-instance guard waits up to 6 seconds for the old process to exit; if
+  `QProcess.startDetached` fails it falls back to `subprocess` (`DETACHED_PROCESS` on Windows).
+- **Startup diagnostics**: `startup.log` next to the config records version, frozen/restarted,
+  the language read from all three sources, the effective language, the single-instance
+  result and whether a restart was started (last 40 lines, failures silent).
 
 | Chinese UI | English UI |
 |---|---|
@@ -1140,6 +1226,14 @@ randomness per lesson".
 In the same directory as the config; records Python tracebacks and native crashes, up to
 200 entries. **0 bytes means there was no crash.**
 
+### `startup.log`
+
+In the same directory as the config, **purely for diagnosing startup/restart problems**:
+each start appends a few lines (version, frozen/restarted, the language read from the env
+var / `config.dat` / `QSettings`, the effective language, whether the single-instance lock
+was acquired, whether a restart was started). The last 40 lines are kept, write failures
+are silent, and the file is git-ignored.
+
 ### Where data lives
 
 Config and logs are written next to the program (for builds: the directory containing the
@@ -1201,6 +1295,8 @@ python tools/fairness_burnin.py
 |---|---|---|---|
 | Drawing / scoring / log | ✅ | ✅ | untested |
 | Sits above full-screen apps | ✅ `SetWindowPos` | ✅ accessory policy + overlay attributes (verified) | untested |
+| Dialogs above full-screen apps | ✅ `SetWindowPos(HWND_TOPMOST)` (since 2.0.0) | ✅ dialogs raised to level 26 (verified) | untested |
+| Dialog placement with a hidden main window | ✅ centred on the cursor's screen | ✅ centred on the cursor's screen | untested |
 | Tray / menu bar icon | ✅ colour tray icon | ✅ template image; **hidden when the menu bar auto-hides** | untested |
 | Light / dark mode | ❌ no auto-follow (env var override) | ✅ follows system | Unverified |
 | System-level hidden backup | ✅ HKCU registry | ✅ `~/Library/Preferences` plist | ✅ `~/.config` |
@@ -1307,6 +1403,10 @@ Apple Silicon; a universal build needs universal2 Python + PyQt5).
 │   ├── points_window.py             # points panel + log viewer
 │   ├── main_window.py               # management panel, tray, autostart, language
 │   ├── i18n.py                      # bilingual: tr() / both() / Qt translators
+│   ├── atomic.py                    # atomic replace + Windows lock retries
+│   ├── dialogs.py                   # dialog placement: hidden parent, screen centring, defer
+│   ├── win_window.py                # Windows: dialogs pinned topmost (SetWindowPos)
+│   ├── startup_log.py               # startup/restart diagnostics (startup.log)
 │   ├── about_dialog.py              # About: copyright / no-warranty / GPL text
 │   ├── widgets.py                   # ElidedLabel: elide long names + tooltip
 │   ├── restart.py                   # "restart now" after a language change
@@ -1365,6 +1465,14 @@ python tools/wipe_check.py             # full reset: selection and per-part clea
 python tools/i18n_check.py             # bilingual: default group names, restart args, long-name elision, bilingual log (GUI required)
 ```
 
+- `wipe_check` now also covers: a failed write must be reported (read-only directory),
+  the UI falls back to the on-disk data, and `os.replace` retries transient Windows locks
+  before failing.
+- `i18n_check` now also covers: drawing works while About is open, dialog placement with a
+  hidden parent, language dual persistence, the `--restarted` argument, and cross-process
+  single-instance retries.
+- `windows_check` now also covers: dialogs pinned topmost (`WS_EX_TOPMOST`) and the language
+  persisted in `config.dat`.
 - `config_crypto_check` / `log_crypto_check` run under a temporary HOME, so your **real
   data is never touched**; with PyQt5 installed they also verify the real QSettings
   hidden backup.
@@ -1415,6 +1523,21 @@ desktop, and it uses a temporary directory instead of your real config.
   the bundle. Windows `.bat` files must be **pure ASCII + CRLF** (`.gitattributes` forces
   `eol=crlf`) and `REM` lines must not contain unbalanced parentheses — cmd's parenthesis
   counting would otherwise truncate the command mid-line.
+- Dialog raising is per platform: macOS `macos_window.install_dialog_raiser()` (level 26),
+  Windows `win_window.install_dialog_raiser()` (`SetWindowPos(HWND_TOPMOST)`).
+  **Raise on Show only, never on WindowActivate** — a dialog that opens its own confirmation
+  box gets WindowActivate, and raising again would cover that box with the parent, which
+  looks like "the button does nothing".
+- Opening a dialog from a `QMenu` action must go through `dialogs.defer()`; on Windows a
+  synchronous modal opened inside the menu loop is not activated.
+- Pass `None` as the parent when the parent window is hidden/minimised, and position the
+  dialog with `dialogs.center_on_screen()`.
+- All disk writes go through `atomic.replace_with_retry()`: `os.replace` fails on Windows
+  while the target is locked, and retrying 3 times (0.12s / 0.24s backoff) absorbs the
+  short locks taken by antivirus and indexers.
+- A full reset must check `store.save()` and verify by re-reading from disk. On failure call
+  `reload_from_disk()` so the UI shows the real on-disk data, then report the error —
+  **never just refresh from memory**, or the UI and the disk drift apart.
 - **Overlays can hide dialogs**: the points panel and the result popup use
   `NSStatusWindowLevel(25)` so they sit above full-screen slides, while modal dialogs
   (rename, confirmations) default to `NSModalPanelWindowLevel(8)` and were covered by the
@@ -1477,6 +1600,30 @@ names, returns the actual count and shows a notice.
 ### The app exits without a message?
 
 Check `crash.log`. 0 bytes usually means it was not a crash (killed or exited normally).
+
+### After a full reset the data is unchanged, or I get "Reset did not fully apply"?
+
+Since 2.0.0 a reset **verifies the write**. That message means `store.save()` failed: the
+"Reason" in the dialog is the OS error (for example
+`Permission denied: ...config.dat.tmp`), and `startup.log` has a `wipe ... saved=False` line.
+Typical causes on Windows: `config.dat` carries the read-only attribute (often preserved by
+zip extraction), antivirus/OneDrive holds it briefly, or the program directory is not
+writable. Clear the attribute or close the locking program and retry.
+
+(Old versions ignored the save result: the UI said "Reset" while the disk kept the old data.
+That was a bug and is fixed.)
+
+### The About / Full reset window does not appear on Windows?
+
+Fixed in 2.0.0: Windows now has a dialog raiser that sets `HWND_TOPMOST` and brings the
+dialog to the foreground; when the main window is hidden to the tray its geometry is no
+longer used (a minimised window sits off-screen on Windows) and dialogs are centred on the
+cursor's screen; dialogs opened from the tray/ball menu are deferred until the menu loop exits.
+
+### Drawing from the ball stops working while About is open?
+
+Fixed in 2.0.0: the About window is **non-modal** and sits at level 25 (same as the points
+panel), so the draw result appears above it.
 
 ### Packaging fails with `'xxx' is not recognized as an internal or external command`?
 

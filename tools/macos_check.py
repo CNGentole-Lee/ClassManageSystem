@@ -374,6 +374,47 @@ if is_macos:
 else:
     skip("modal dialog layering", "macOS only")
 
+print("\n--- 5b. About window does not block drawing ---")
+if is_macos:
+    from PyQt5.QtWidgets import QApplication
+    from namepicker.about_dialog import AboutDialog, show_about
+    from namepicker.draw_popup import DrawResultPopup
+
+    show_about(None)                 # 非模态
+    process(0.4)
+    about = None
+    for widget in QApplication.topLevelWidgets():
+        if isinstance(widget, AboutDialog) and widget.isVisible():
+            about = widget
+            break
+    check("About window is shown", about is not None)
+    if about is not None:
+        attrs = macos_window.window_attrs(about) or {}
+        check("About is NOT raised to the dialog level (26)",
+              attrs.get("level") == macos_window.NS_STATUS_WINDOW_LEVEL,
+              f"level={attrs.get('level')}")
+        check("About is non-modal",
+              about.windowModality() == 0, str(about.windowModality()))
+
+        popup = DrawResultPopup()
+        popup.set_name_pool(["A", "B"])
+        popup.show_results(["A"])
+        process(0.5)
+        order = [number for _pid, number, _w, _h in on_screen_windows()]
+        about_num = window_number(about)
+        popup_num = window_number(popup)
+        above = (about_num in order and popup_num in order
+                 and order.index(popup_num) < order.index(about_num))
+        check("draw popup is above the About window", above,
+              f"about={order.index(about_num) if about_num in order else 'off'}"
+              f" popup={order.index(popup_num) if popup_num in order else 'off'}")
+        popup._stop_timers()
+        popup.close()
+        about.close()
+        process(0.2)
+else:
+    skip("About window layering", "macOS only")
+
 if FULLSCREEN_TEST and is_macos:
     fullscreen_test()
 elif FULLSCREEN_TEST:

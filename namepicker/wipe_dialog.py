@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QLabel, QMessageBox, QVBoxLayout,
 )
 
-from . import theme
+from . import dialogs, theme
 from .i18n import tr
 
 #: 四个可选项 → (中文, English)
@@ -66,6 +66,11 @@ class WipeDialog(QDialog):
 
     # --- 查询 ---
 
+    def showEvent(self, event) -> None:
+        """显示时按鼠标所在屏幕居中（父窗口可能在屏幕外）。"""
+        super().showEvent(event)
+        dialogs.center_on_screen(self)
+
     def selected(self) -> dict[str, bool]:
         """{names: bool, scores: bool, fairness: bool, history: bool}"""
         return {key: box.isChecked() for key, box in self._boxes.items()}
@@ -103,8 +108,12 @@ class WipeDialog(QDialog):
 
 
 def ask(parent=None) -> dict[str, bool] | None:
-    """弹出对话框；用户确认返回选中项，取消返回 None。"""
-    dialog = WipeDialog(parent)
+    """弹出对话框；用户确认返回选中项，取消返回 None。
+
+    父窗口不可见（主窗口藏在托盘 / 最小化）时改用 None —— Windows 上最小化
+    窗口的矩形在屏幕外，拿它做基准会让对话框也跑到屏幕外。
+    """
+    dialog = WipeDialog(dialogs.visible_parent(parent))
     if dialog.exec_() == QDialog.Accepted:
         return dialog.selected()
     return None

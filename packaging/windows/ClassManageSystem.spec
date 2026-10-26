@@ -22,15 +22,62 @@ APP_NAME = "ClassManageSystem"
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir, os.pardir))
 ICON = os.path.join(SPECPATH, "app.ico")
-VERSION_FILE = os.path.join(SPECPATH, "version_info.txt")
+
+
+def app_version() -> str:
+    """版本号从 namepicker/about_dialog.py 读取，避免两处手工同步。"""
+    import re
+    source = os.path.join(ROOT, "namepicker", "about_dialog.py")
+    try:
+        with open(source, encoding="utf-8") as fh:
+            match = re.search(r'^VERSION\s*=\s*"([^"]+)"', fh.read(), re.M)
+        return match.group(1) if match else "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+def version_file() -> str:
+    """把 version_info.txt 的版本号替换成当前版本，写到构建目录里。
+
+    模板仍放在 packaging/windows/version_info.txt（便于人工查看），但 EXE 属性里
+    的版本号必须和「关于」窗口一致，所以构建时生成，不靠手改。
+    """
+    version = app_version()
+    parts = (version.split(".") + ["0", "0", "0", "0"])[:4]
+    ints = ", ".join(str(int(p)) for p in parts)
+    dotted = ".".join(parts)
+
+    template_path = os.path.join(SPECPATH, "version_info.txt")
+    with open(template_path, encoding="utf-8") as fh:
+        text = fh.read()
+    import re
+    text = re.sub(r"filevers=\(\s*[\d,\s]+\)", f"filevers=({ints})", text)
+    text = re.sub(r"prodvers=\(\s*[\d,\s]+\)", f"prodvers=({ints})", text)
+    text = re.sub(r"StringStruct\('FileVersion',\s*'[^']*'\)",
+                  f"StringStruct('FileVersion', '{dotted}')", text)
+    text = re.sub(r"StringStruct\('ProductVersion',\s*'[^']*'\)",
+                  f"StringStruct('ProductVersion', '{dotted}')", text)
+
+    generated = os.path.join(SPECPATH, "version_info.generated.txt")
+    with open(generated, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return generated
+
+
+VERSION_FILE = version_file()
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
     binaries=[],
     # 程序运行时不读取包内资源：名单文件由老师自己选；配置/日志写在 EXE 旁边，
-    # 只读目录则回退到 %APPDATA%\ClassTerminal2411。所以不需要 datas。
-    datas=[],
+    # 只读目录则回退到 %APPDATA%\ClassTerminal2411。
+    # 唯一要随包走的资源是 LICENSE。
+    # GPL-3.0 要求分发的副本能看到许可证文本，而我们的产物是**单个 EXE**
+    # （ONEFILE = True）：datas 会被打进 EXE，运行时解包到 sys._MEIPASS，
+    # 「关于」窗口从那里读取。所以只拷一个 EXE 给别人也能看到完整许可证，
+    # 不依赖 EXE 旁边有没有额外文件。
+    datas=[(os.path.join(ROOT, "LICENSE"), ".")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -97,3 +144,36 @@ else:
         upx=False,
         name=APP_NAME,
     )
+
+
+# ============================================================
+#  GPL-3.0：确认许可证真的进了**单文件 EXE**
+# ============================================================
+# 我们的分发形态是一个 EXE，用户不会额外拿到任何文件，所以许可证必须在包内
+# （由上面的 datas 保证）。这里在构建结束时做一次硬校验：
+# 缺了 LICENSE 源文件就**直接让构建失败**，避免打出一个「关于」窗口只能显示
+# 内置摘要的包 —— 那不符合 GPL 的“随副本分发许可证文本”。
+def _require_license() -> None:
+    src = os.path.join(ROOT, "LICENSE")
+    if not os.path.isfile(src) or os.path.getsize(src) == 0:
+        raise SystemExit(
+            "[x] LICENSE is missing or empty: " + src +
+            "\n    It must be bundled inside the single-file EXE (GPL-3.0).")
+    # a.datas 的条目是 (源文件, 包内目标目录)，源文件在第 0 位。
+    # 注意 PyInstaller 会把它们规范成 TOC 三元组，所以两个位置都看一眼。
+    def _is_license(item) -> bool:
+        for part in (item if isinstance(item, (tuple, list)) else (item,)):
+            try:
+                if os.path.abspath(str(part)) == os.path.abspath(src):
+                    return True
+            except (TypeError, ValueError):
+                continue
+        return False
+
+    if not any(_is_license(entry) for entry in (a.datas or [])):
+        raise SystemExit(
+            "[x] LICENSE is not part of datas, so it would not be inside the EXE.")
+    print("[i] LICENSE bundled into the EXE:", os.path.getsize(src), "bytes")
+
+
+_require_license()

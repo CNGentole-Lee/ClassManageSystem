@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QApplication, QAbstractItemView, QCheckBox, QComboBox,
 )
 
-from . import about_dialog, i18n, theme, wipe_dialog
+from . import about_dialog, dialogs, i18n, theme, wipe_dialog
 from .config_store import app_name
 from .i18n import tr
 
@@ -36,6 +36,8 @@ class MainWindow(QMainWindow):
 
     #: 用户选择「立即重启」时发出；由 main.py 负责真正拉起新进程
     restart_requested = pyqtSignal()
+    #: 语言选择变化（持久化到 config.dat，QSettings 之外的第二份保险）
+    language_saved = pyqtSignal(str)
 
     def __init__(self, engine, app_path: str = "", parent=None):
         super().__init__(parent)
@@ -563,9 +565,12 @@ class MainWindow(QMainWindow):
             pass
 
     def _on_language_changed(self, _index: int) -> None:
-        """语言选择：写入 QSettings，并询问是否立即重启。"""
+        """语言选择：写入 QSettings 与 config.dat，并询问是否立即重启。"""
         code = self._lang_combo.currentData()
         self._settings.setValue("language", code)
+        # config.dat 是已在 Windows 上实测可靠的存储；QSettings 万一被
+        # 注册表重定向/权限问题影响，语言也不会丢
+        self.language_saved.emit(code)
         reply = QMessageBox.question(
             self,
             tr("语言已保存", "Language saved"),
@@ -588,11 +593,11 @@ class MainWindow(QMainWindow):
             self._engine.clear_history()
 
     def _on_wipe_all(self) -> None:
-        """托盘 / 悬浮球菜单 → 彻底重置。
+        """托盘 / 悬浮球菜单 → 彻底重置（延后到菜单关闭后再弹）。"""
+        dialogs.defer(self._open_wipe_dialog)
 
-        先弹「选择清空范围」对话框（组名 / 积分 / 长期公平记录 / 抽取历史），
-        点重置后对话框内部还会再弹一次确认。
-        """
+    def _open_wipe_dialog(self) -> None:
+        """先弹「选择清空范围」，确认后再二次确认并执行。"""
         if self._wipe_handler is None:
             QMessageBox.information(
                 self, tr("提示", "Notice"),
@@ -603,13 +608,17 @@ class MainWindow(QMainWindow):
             return
         self._wipe_handler(parts)
 
-    def on_wipe_complete(self, detail: str = "") -> None:
+    def on_wipe_complete(self, detail: str = "", ok: bool = True) -> None:
         """Refresh everything the wipe just invalidated."""
         self._refresh_history()
         self._refresh_cooldown_display()
         self._status_label.setText(
-            detail or tr("已彻底重置，所有数据恢复出厂状态",
-                         "Full reset completed; all data restored to factory state"))
+            detail or (tr("已彻底重置，所有数据恢复出厂状态",
+                          "Full reset completed; all data restored to factory state")
+                       if ok else tr("重置未生效", "Reset did not apply")))
+        self._status_label.setStyleSheet(
+            f"color: {theme.c('success') if ok else theme.c('danger')}; "
+            "font-weight: bold;")
         self._status_label.setStyleSheet(f"color: {theme.c('accent')}; font-weight: bold;")
 
     def _refresh_history(self) -> None:
@@ -631,8 +640,12 @@ class MainWindow(QMainWindow):
             self._show_from_tray()
 
     def _on_about(self) -> None:
-        """托盘菜单 → 关于（GPL-3.0 要求的 Appropriate Legal Notices）。"""
-        about_dialog.show_about(self)
+        """托盘 / 悬浮球菜单 → 关于（GPL-3.0 要求的 Appropriate Legal Notices）。
+
+        延后一拍再打开：此刻 QMenu 的嵌套事件循环还没退出，直接开窗口在
+        Windows 上容易出现不激活、被菜单压住。
+        """
+        dialogs.defer(lambda: about_dialog.show_about(None))
 
     def _quit_app(self) -> None:
         QApplication.quit()

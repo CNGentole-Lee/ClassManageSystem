@@ -132,7 +132,26 @@ set "PYINSTALLER_CONFIG_DIR=%CD%\.pyinstaller-cache"
 echo.
 echo ============================================================
 echo  DONE
+REM ---- 7] GPL-3.0: the licence must be INSIDE the single EXE ----
+REM We ship one EXE; the user gets no other files, so LICENSE has to be
+REM bundled (spec datas -> unpacked to _MEIPASS at runtime, read by the
+REM About dialog). The spec already aborts the build if it is missing;
+REM this is a second, visible check on the produced artifact.
+if not exist "LICENSE" (
+  echo [x] LICENSE missing in project root - refusing to ship a build
+  goto :error
+)
+if not exist "dist\ClassManageSystem.exe" (
+  echo [x] dist\ClassManageSystem.exe was not produced
+  goto :error
+)
+echo [i] LICENSE is bundled inside the EXE [the About dialog reads it]
+
+echo.
+echo ============================================================
+echo  DONE
 echo  Output: %CD%\dist\ClassManageSystem.exe
+echo  Distribute: dist\ClassManageSystem.exe  [single file, LICENSE inside]
 echo ============================================================
 exit /b 0
 

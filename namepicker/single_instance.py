@@ -17,6 +17,7 @@
 """
 
 import os
+import time
 
 from PyQt5.QtCore import QObject, QSharedMemory, pyqtSignal
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
@@ -48,27 +49,44 @@ class SingleInstance(QObject):
 
     # --- 对外 ---
 
-    def try_acquire(self) -> bool:
-        """尝试成为唯一实例。True = 本进程就是主实例。"""
-        # 1) 先探活：能连上说明真的有人在跑
-        if self._probe_existing():
-            return False
+    def try_acquire(self, retry_seconds: float = 0.0) -> bool:
+        """尝试成为唯一实例。True = 本进程就是主实例。
+
+        retry_seconds > 0 时，如果探测到已有实例就等一会儿再试 —— 用于
+        「切换语言后立即重启」：旧进程未必在那一瞬间退干净，新进程若直接
+        判定「已有实例」就会自杀，用户看到的是程序关掉后什么都没起来。
+        """
+        deadline = time.monotonic() + max(0.0, float(retry_seconds))
+        while True:
+            # 1) 探活：能连上说明真的有人在跑
+            if not self._probe_existing():
+                break
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.15)
 
         # 2) 连不上：清掉可能残留的套接字文件，再自己监听
-        self._server = QLocalServer(self)
-        self._server.setSocketOptions(QLocalServer.UserAccessOption)
-        QLocalServer.removeServer(SERVER_NAME)
-        self._stale_removed = True
-        if self._server.listen(SERVER_NAME):
-            self._server.newConnection.connect(self._on_new_connection)
-            # 共享内存只作标记（失败不影响单实例判定）
-            self._shared_mem = QSharedMemory(SHARED_MEM_KEY)
-            if not self._shared_mem.create(1):
-                self._shared_mem = None
-            return True
+        while True:
+            self._server = QLocalServer(self)
+            self._server.setSocketOptions(QLocalServer.UserAccessOption)
+            QLocalServer.removeServer(SERVER_NAME)
+            self._stale_removed = True
+            if self._server.listen(SERVER_NAME):
+                self._server.newConnection.connect(self._on_new_connection)
+                # 共享内存只作标记（失败不影响单实例判定）
+                self._shared_mem = QSharedMemory(SHARED_MEM_KEY)
+                if not self._shared_mem.create(1):
+                    self._shared_mem = None
+                return True
 
-        # 3) 监听失败（极少见：套接字路径不可写等）→ 退回共享内存判定
-        self._server = None
+            # 监听失败：可能是旧进程还在收尾，等一下再试
+            self._server.deleteLater()
+            self._server = None
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.15)
+
+        # 3) 仍然失败（极少见：套接字路径不可写等）→ 退回共享内存判定
         mem = QSharedMemory(SHARED_MEM_KEY)
         if mem.attach():
             mem.detach()

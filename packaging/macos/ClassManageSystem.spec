@@ -23,16 +23,34 @@ import os
 APP_NAME = "ClassManageSystem"
 DISPLAY_NAME = "班级多用教学辅助终端"
 
+
 ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir, os.pardir))
 ICON = os.path.join(SPECPATH, "app.icns")
+
+
+def app_version() -> str:
+    """版本号从 namepicker/about_dialog.py 读取，避免两处手工同步。"""
+    import re
+    source = os.path.join(ROOT, "namepicker", "about_dialog.py")
+    try:
+        with open(source, encoding="utf-8") as fh:
+            match = re.search(r'^VERSION\s*=\s*"([^"]+)"', fh.read(), re.M)
+        return match.group(1) if match else "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+VERSION = app_version()
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
     binaries=[],
     # 运行时不读取包内资源：名单由老师自选；配置/日志写在程序旁边，
-    # 只读目录则回退到 ~/ClassTerminal2411。所以不需要 datas。
-    datas=[],
+    # 只读目录则回退到 ~/ClassTerminal2411。
+    # 唯一要随包走的资源是 LICENSE —— GPL-3.0 要求分发时附带许可证全文，
+    # 「关于」窗口会读取它显示。
+    datas=[(os.path.join(ROOT, "LICENSE"), ".")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -80,16 +98,27 @@ coll = COLLECT(
     name=APP_NAME,
 )
 
+# GPL-3.0 要求分发时附带许可证全文。
+# 放两个位置：
+#   1) Resources/LICENSE —— .app 包内部，「关于」窗口通过
+#      sys._MEIPASS / Contents/Resources 都能找到，单拷贝 .app 也不缺；
+#   2) .app 同级的 LICENSE —— 用户不打开包也能直接看到。
+LICENSE_SRC = os.path.join(ROOT, "LICENSE")
+LICENSE_IN_BUNDLE = ("Resources/LICENSE", LICENSE_SRC, "DATA") \
+    if os.path.isfile(LICENSE_SRC) else None
+LICENSE_LIST = [LICENSE_IN_BUNDLE] if LICENSE_IN_BUNDLE else []
+
 app = BUNDLE(
     coll,
     name=f"{APP_NAME}.app",
+    resources=LICENSE_LIST,
     icon=ICON if os.path.isfile(ICON) else None,
     bundle_identifier="com.yourorg.classmanagesystem",
     info_plist={
         "CFBundleName": DISPLAY_NAME,
         "CFBundleDisplayName": DISPLAY_NAME,
-        "CFBundleShortVersionString": "1.0.0",
-        "CFBundleVersion": "1.0.0",
+        "CFBundleShortVersionString": VERSION,
+        "CFBundleVersion": VERSION,
         "NSHighResolutionCapable": True,
         # 常驻托盘工具：不占 Dock，只留菜单栏图标
         "LSUIElement": True,

@@ -222,6 +222,9 @@ class _DialogRaiser:
                 try:
                     if not isinstance(obj, QDialog) or not obj.isVisible():
                         return
+                    # 关于窗口自己要低于抽选弹窗，这里跳过
+                    if obj.property("cmd_skip_raise"):
+                        return
                     make_overlay(obj, DIALOG_LEVEL)
                     obj.raise_()
                 except (RuntimeError, AttributeError):
@@ -234,9 +237,12 @@ class _DialogRaiser:
                         if kind == QEvent.Show:
                             # Qt 在 Show 之后还会把父窗口的 level 传播给子窗口，
                             # 所以必须等这一轮事件处理完再抬一次。
+                            #
+                            # 不要在 WindowActivate 时再抬：对话框弹出**自己的
+                            # 二次确认框**时会收到 WindowActivate，此时 raise()
+                            # 会把父对话框盖到确认框上面，看起来就是「点了重置
+                            # 没反应」（确认框被挡住，父框还在等）。
                             QTimer.singleShot(0, lambda o=obj: raise_dialog(o))
-                        elif kind == QEvent.WindowActivate:
-                            raise_dialog(obj)
                     except Exception:
                         pass
                     return False

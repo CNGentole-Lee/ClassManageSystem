@@ -59,7 +59,7 @@ except Exception as e:
     check("PyQt5 imports", False, repr(e))
     has_qt = False
 
-from namepicker import backup_store, crypto_utils, log_store  # noqa: E402
+from namepicker import backup_store, config_store, crypto_utils, log_store  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 
 print("\n--- 2. Floating ball topmost (ctypes.wintypes bug fixed?) ---")
@@ -94,6 +94,29 @@ else:
     skip("Win32 SetWindowPos live test", "not running on Windows")
     check("degrades to None on macOS/Linux (no ImportError)",
           floating_ball._SetWindowPos is None)
+
+print("\n--- 2b. Dialogs above full-screen apps (Windows-specific) ---")
+try:
+    from namepicker import win_window
+    check("win_window module imports", win_window is not None)
+    if IS_WINDOWS:
+        from PyQt5.QtWidgets import QApplication, QDialog
+        _app = QApplication.instance() or QApplication([])
+        _dlg = QDialog()
+        _dlg.setWindowTitle("topmost probe")
+        _dlg.show()
+        _app.processEvents()
+        check("dialog becomes WS_EX_TOPMOST", win_window.make_topmost(_dlg),
+              "make_topmost returned False")
+        check("is_topmost reports True afterwards", win_window.is_topmost(_dlg))
+        check("dialog raiser installs", win_window.install_dialog_raiser(_app))
+        _dlg.close()
+    else:
+        skip("dialog topmost live test", "not running on Windows")
+        check("dialog raiser is a no-op off Windows",
+              win_window.install_dialog_raiser(None) is False)
+except Exception as exc:                       # pragma: no cover
+    check("win_window usable", False, repr(exc))
 
 print("\n--- 3. Key file ---")
 blob = crypto_utils.encrypt("中文测试".encode("utf-8"))   # 先触发密钥生成
@@ -172,6 +195,16 @@ with open(log_store.log_path_for(CFG), "wb") as f:
     f.write(old_copy)                       # 用旧密文覆盖 = 回滚式篡改
 check("rolling back to an old ciphertext is repaired", log_store.load(CFG).seq == seq_now,
       f"actual {log_store.load(CFG).seq} / expected {seq_now}")
+
+print("\n--- 8b. Language is persisted in config.dat too ---")
+store.set_language("en")
+check("set_language + save", store.save())
+check("read_saved_language returns it",
+      config_store.read_saved_language(CFG) == "en",
+      config_store.read_saved_language(CFG))
+store.set_language("zh")
+store.save()
+check("language can be switched back", config_store.read_saved_language(CFG) == "zh")
 
 print("\n--- 9. File locked (Windows-specific: os.replace raises PermissionError) ---")
 locked = None

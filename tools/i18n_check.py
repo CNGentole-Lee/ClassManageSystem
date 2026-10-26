@@ -13,6 +13,7 @@ Exit code 0 = all passed.
 """
 
 import os
+import re
 import sys
 import tempfile
 
@@ -25,10 +26,13 @@ from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
 
-from PyQt5.QtCore import QSettings  # noqa: E402
-from PyQt5.QtWidgets import QApplication  # noqa: E402
+from PyQt5.QtCore import QSettings, Qt  # noqa: E402
+from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
 
-from namepicker import i18n, log_store, restart, theme  # noqa: E402
+from namepicker import (  # noqa: E402
+    about_dialog, dialogs, i18n, log_store, restart, theme, wipe_dialog,
+)
+from namepicker import config_store  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 from namepicker.main_window import MainWindow  # noqa: E402
 from namepicker.name_engine import NameEngine  # noqa: E402
@@ -150,6 +154,39 @@ def main() -> int:
     check("choosing No does not restart", len(restarts) == 1, f"{len(restarts)}")
     QMessageBox.question = original_question
 
+    saved = []
+    win.language_saved.connect(saved.append)
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.No)
+    win._lang_combo.setCurrentIndex(win._lang_combo.findData("en"))
+    QMessageBox.question = original_question
+    check("chosen language is emitted for config.dat persistence",
+          saved == ["en"], f"{saved}")
+
+    # 菜单里打开的对话框必须延后到 QMenu 退出之后（Windows 上同步打开会不激活）
+    called = []
+    win.set_wipe_handler(lambda parts: called.append("handler"))
+    original_ask = wipe_dialog.ask
+    original_show_about = about_dialog.show_about
+    wipe_dialog.ask = lambda parent=None: called.append("wipe") or None
+    about_dialog.show_about = lambda parent=None: called.append("about")
+    try:
+        win._on_wipe_all()
+        check("wipe dialog is deferred (not opened inside the menu loop)",
+              called == [], f"{called}")
+        app.processEvents()
+        check("wipe dialog opens after the menu loop unwinds",
+              called == ["wipe"], f"{called}")
+
+        called.clear()
+        win._on_about()
+        check("About is deferred too", called == [], f"{called}")
+        app.processEvents()
+        check("About opens after the menu loop unwinds",
+              called == ["about"], f"{called}")
+    finally:
+        wipe_dialog.ask = original_ask
+        about_dialog.show_about = original_show_about
+
     print("\n--- 7. Long foreign names ---")
     i18n.set_language("en")
     long_name = "Bartholomew Montgomery-Fitzgerald"
@@ -192,19 +229,167 @@ def main() -> int:
     print("\n--- 8. Restart command line ---")
     program, args = restart.restart_arguments(["/tmp/x/main.py", "--flag"])
     check("source run passes the absolute script path",
-          program == sys.executable and args == ["/tmp/x/main.py", "--flag"],
+          program == sys.executable and args == ["/tmp/x/main.py",
+                                                restart.RESTART_FLAG, "--flag"],
           f"{program} {args}")
+    check("restarted flag is added so the new instance waits",
+          restart.RESTART_FLAG in args)
     sys.frozen = True
     try:
-        program, args = restart.restart_arguments(["/Applications/App.app/exe", "--flag"])
+        program, args = restart.restart_arguments(
+            ["/Applications/App.app/exe", "--flag", "-psn_0_12345"])
     finally:
         del sys.frozen
-    check("frozen app passes only user arguments",
-          program == sys.executable and args == ["--flag"], f"{program} {args}")
+    check("frozen app passes user arguments and drops -psn_*",
+          program == sys.executable
+          and args == [restart.RESTART_FLAG, "--flag"], f"{program} {args}")
     probe = os.path.join(tempfile.mkdtemp(prefix="cm_restart_"), "probe.py")
     with open(probe, "w", encoding="utf-8") as fh:
         fh.write("pass\n")
     check("startDetached actually spawns a process", restart.restart([probe]) is True)
+
+    print("\n--- 8a. Restart waits for the old instance to exit ---")
+    import subprocess, time as _time
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys, time; sys.path.insert(0, %r);"
+         "from PyQt5.QtWidgets import QApplication;"
+         "from namepicker.single_instance import SingleInstance;"
+         "app = QApplication([]); g = SingleInstance();"
+         "print(g.try_acquire(), flush=True); time.sleep(8)" % _ROOT],
+        cwd=_ROOT, stdout=subprocess.PIPE, text=True)
+    try:
+        held = holder.stdout.readline().strip()
+        check("holder acquired the single-instance lock", held == "True", held)
+        from namepicker.single_instance import SingleInstance
+        early = SingleInstance()
+        check("without retry a second instance gives up immediately",
+              early.try_acquire() is False)
+        holder.terminate()          # 旧进程开始收尾
+        _time.sleep(0.2)
+        late = SingleInstance()
+        acquired = late.try_acquire(retry_seconds=6.0)
+        check("with --restarted the new instance waits and then acquires",
+              acquired is True)
+        late.release()
+    finally:
+        if holder.poll() is None:
+            holder.terminate()
+        holder.wait(timeout=5)
+
+    print("\n--- 8b. Dialogs must not block the ball (issue: license freezes drawing) ---")
+    from PyQt5.QtTest import QTest
+    from namepicker import win_window
+    from namepicker.floating_ball import FloatingBall
+
+    ball = FloatingBall()
+    ball.show()
+    clicks = []
+    ball.ball_clicked.connect(lambda: clicks.append(1))
+    about_dialog.show_about(None)
+    app.processEvents()
+    about_dialog._open_about.setWindowModality(Qt.NonModal)
+    check("About is non-modal", about_dialog._open_about.windowModality() == Qt.NonModal,
+          str(about_dialog._open_about.windowModality()))
+    # 悬浮球用自己的定时器判定双击：两次独立的 click 才算一次双击
+    QTest.mouseClick(ball, Qt.LeftButton)
+    QTest.mouseClick(ball, Qt.LeftButton)
+    app.processEvents()
+    check("double-clicking the ball still works while About is open",
+          len(clicks) == 1, f"clicks={len(clicks)}")
+    check("no application-modal widget is blocking input",
+          QApplication.activeModalWidget() is None,
+          type(QApplication.activeModalWidget()).__name__)
+    about_dialog._open_about.close()
+    app.processEvents()
+
+    print("\n--- 8c. Dialog placement with a hidden parent ---")
+    check("hidden parent is ignored", dialogs.visible_parent(None) is None)
+    hidden = QWidget(); hidden.hide()
+    check("a hidden widget is not used as parent",
+          dialogs.visible_parent(hidden) is None)
+    hidden.show(); app.processEvents()
+    check("a visible widget is used as parent",
+          dialogs.visible_parent(hidden) is hidden)
+    hidden.close()
+    probe = WipeDialogForTest = wipe_dialog.WipeDialog(None)
+    probe.show()
+    app.processEvents()
+    dialogs.center_on_screen(probe)
+    geo = app.primaryScreen().availableGeometry()
+    inside = geo.contains(probe.geometry().center())
+    check("centred on a real screen (not off-screen)", inside,
+          f"centre={probe.geometry().center()} screen={geo}")
+    check("wipe dialog has no hidden parent", probe.parent() is None)
+    probe.close()
+
+    print("\n--- 8d. Language persisted twice (QSettings + config.dat) ---")
+    lang_store = ConfigStore(os.path.join(tmp, "lang.ini"))
+    lang_store.set_language("en")
+    lang_store.save()
+    check("config.dat keeps the language",
+          lang_store.get_language() == "en"
+          and config_store.read_saved_language(lang_store.path) == "en",
+          lang_store.get_language())
+
+    print("\n--- 8e. Windows dialog raiser is platform-guarded ---")
+    check("install_dialog_raiser returns False off Windows",
+          win_window.install_dialog_raiser(app) is (sys.platform == "win32"))
+    check("is_topmost is a safe no-op off Windows",
+          win_window.is_topmost(ball) is False or sys.platform == "win32")
+
+    ball.close()
+
+    print("\n--- 9. About dialog / GPL compliance ---")
+    check("LICENSE file is found next to the sources",
+          bool(about_dialog.license_path()), about_dialog.license_path())
+    text = about_dialog.license_text()
+    check("license text is the GPL-3.0", "GNU GENERAL PUBLIC LICENSE" in text
+          and "Version 3, 29 June 2007" in text)
+    check("license text carries the copyright line",
+          "Gentole Lee" in text and "Copyright (C)" in text)
+    check("license text is complete (has the FSF end notes)",
+          "END OF TERMS AND CONDITIONS" in text)
+    check("license text states there is no warranty",
+          "WITHOUT ANY WARRANTY" in text.upper())
+
+    version_file = os.path.join(_ROOT, "packaging", "windows", "version_info.txt")
+    # 版本号单一来源：模板里的版本号在构建时被替换，所以这里验证的是
+    # 「两个 spec 都从 about_dialog 读版本」，而不是模板里写死的数字。
+    check("version is a plain x.y.z", re.fullmatch(r"\d+\.\d+\.\d+",
+                                                   about_dialog.VERSION) is not None,
+          about_dialog.VERSION)
+    check("version_info.txt is a template (version injected at build time)",
+          os.path.isfile(version_file)
+          and "about_dialog" in open(version_file, encoding="utf-8").read())
+    for spec_path in (os.path.join(_ROOT, "packaging", "windows", "ClassManageSystem.spec"),
+                      os.path.join(_ROOT, "packaging", "macos", "ClassManageSystem.spec")):
+        if not os.path.isfile(spec_path):
+            check(f"spec exists: {os.path.basename(os.path.dirname(spec_path))}", False)
+            continue
+        spec_text = open(spec_path, encoding="utf-8").read()
+        check(f"{os.path.basename(os.path.dirname(spec_path))} spec reads VERSION "
+              "from about_dialog",
+              "about_dialog.py" in spec_text and "app_version" in spec_text)
+
+    dlg = about_dialog.AboutDialog()
+    check("about dialog builds", dlg.windowTitle() != "")
+
+    # 分发的 EXE / .app 旁边没有 LICENSE 时，窗口也必须能显示许可证
+    real_path_fn = about_dialog.license_path
+    try:
+        about_dialog.license_path = lambda: ""
+        fallback = about_dialog.license_text()
+    finally:
+        about_dialog.license_path = real_path_fn
+    check("missing LICENSE falls back to the embedded text",
+          "GNU GENERAL PUBLIC LICENSE" in fallback
+          and "WITHOUT ANY WARRANTY" in fallback
+          and "Gentole Lee" in fallback,
+          f"len={len(fallback)}")
+    check("fallback mentions the online copy",
+          "gnu.org/licenses" in fallback)
+    dlg.close()
 
     print("\n" + "=" * 60)
     if failures:

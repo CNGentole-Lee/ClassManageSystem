@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 # EXE 属性（右键 → 属性 → 详细信息）里显示的版本信息。
-# 升级版本时改这里的 filevers/prodvers 与 FileVersion/ProductVersion 即可。
+# 这是一个「模板」：构建时 packaging/windows/ClassManageSystem.spec 会把这里的
+# 版本号替换成 namepicker/about_dialog.py 里的 VERSION，写到
+# version_info.generated.txt 再交给 PyInstaller。
+# 所以升级版本只需要改 about_dialog.py 的 VERSION 一处，本文件不用手改。
 # 显式写 UTF-8 编码声明：PyInstaller 用 tokenize.detect_encoding 读这个文件，
 # 默认就是 UTF-8，声明一下可以避免任何工具按系统 ANSI 代码页（中文 Windows 是 GBK）去解。
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=(2, 0, 0, 0),
+    prodvers=(2, 0, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -22,12 +25,12 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', '班级多用教学辅助终端'),
             StringStruct('FileDescription', '班级多用教学辅助终端（随机点名 + 小组积分）'),
-            StringStruct('FileVersion', '1.0.0.0'),
+            StringStruct('FileVersion', '2.0.0.0'),
             StringStruct('InternalName', 'ClassManageSystem'),
             StringStruct('LegalCopyright', 'See LICENSE'),
             StringStruct('OriginalFilename', 'ClassManageSystem.exe'),
             StringStruct('ProductName', '班级多用教学辅助终端'),
-            StringStruct('ProductVersion', '1.0.0.0'),
+            StringStruct('ProductVersion', '2.0.0.0'),
           ]
         )
       ]
