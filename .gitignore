@@ -251,3 +251,13 @@ startup.log
 
 # 打包产物压缩包（.app / .exe 的分发压缩包，不入库）
 *.zip
+
+# 原生模块：只发布二进制与许可协议，源码不进仓库
+native/src/
+native/build/
+native/*.c
+native/*.cpp
+native/*.h
+native/*.o
+native/*.exe
+native/cmd_native

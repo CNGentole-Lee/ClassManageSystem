@@ -94,7 +94,7 @@ class FloatingBall(QWidget):
     # 这些动作由悬浮球右键菜单兜底，保证功能不丢。
     wipe_requested = Signal()           # 右键 → 彻底重置
     quit_requested = Signal()           # 右键 → 退出程序
-    about_requested = Signal()          # 右键 → 关于（GPL 声明）
+    about_requested = Signal()          # 右键 → 关于（许可证声明）
 
     # 连抽人数（右键菜单里竖排展开的选项）
     MULTI_DRAW_CHOICES = tuple(range(2, 11))

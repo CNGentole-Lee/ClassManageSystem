@@ -1,14 +1,15 @@
 """AboutDialog —— 关于窗口。
 
 为什么必须有它：
-    GPL-3.0 要求带交互界面的程序显示「Appropriate Legal Notices」
-    （第 5(d) 条引用第 0 条的定义）：版权声明、不提供担保的说明、
-    以及**如何查看许可证副本**。缺了它就属于分发不合规。
+    Apache-2.0 第 4(d) 条要求分发时随附许可证副本与 NOTICE；
+    LGPL v3 也要求让用户知道 Qt 是可替换的、并能看到其许可证。
+    所以这里总是显示：程序名、版本、版权、不担保声明，
+    以及「查看许可证」与第三方声明。
 
-所以这里总是显示：
-    * 程序名、版本、版权行；
-    * "本程序不提供任何担保"；
-    * 「查看许可证（GPL-3.0）」按钮 —— 直接打开完整的 LICENSE 全文。
+许可证结构：
+    * 主程序（Python）—— Apache License 2.0；
+    * 原生模块（native/，二进制）—— 专有许可，随程序使用；
+    * PySide6 / Qt 6 —— LGPL v3，动态链接、可替换。
 """
 
 import os
@@ -27,118 +28,81 @@ from .i18n import tr
 #: 打包脚本（spec / version_info.txt）在构建时从这里读取，不必手工同步。
 VERSION = "2.0.0"
 
-#: 「关于」窗口里 GPL 要求的入口
+#: 「关于」窗口里许可证入口的标识
 LICENSE_ACTION = "license"
 
-COPYRIGHT = "Copyright (C) 2026 Gentole Lee"
-LICENSE_NAME = "GNU General Public License v3.0"
-LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html"
+COPYRIGHT = "Copyright 2026 Gentole Lee"
+LICENSE_NAME = "Apache License 2.0"
+LICENSE_URL = "https://www.apache.org/licenses/LICENSE-2.0"
+NOTICES_URL = "https://github.com/Gentole/ClassManageSystem/blob/main/THIRD-PARTY-NOTICES.md"
 
 
-#: 内置的 GPL-3.0 要点（与 LICENSE 文件同源）。
-#: 目的：即使分发的 EXE / .app 旁边没有 LICENSE 文件，「关于」窗口也必须能显示许可证，
-#: 这是 GPL-3.0 的分发要求 —— 不能因为漏带一个文本文件就不合规。
-#: 完整条款仍以 LICENSE / gnu.org 为准；这里保证离线也能读到实质内容。
-EMBEDDED_LICENSE = """GNU GENERAL PUBLIC LICENSE
-Version 3, 29 June 2007
-
-Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
-Everyone is permitted to copy and distribute verbatim copies
-of this license document, but changing it is not allowed.
+#: 内置的许可证摘要（读不到 LICENSE 文件时显示）。
+#: 目的：即使分发的安装包漏带了 LICENSE，关于窗口也能说明授权与担保状况。
+#: 完整条款以随包的 LICENSE（Apache-2.0 全文）为准。
+EMBEDDED_LICENSE = """                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
 
 班级多用教学辅助终端 (Class Management Terminal)
-Copyright (C) 2026 Gentole Lee
+Copyright 2026 Gentole Lee
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, version 3 of the License.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
 -----------------------------------------------------------------------------
-The complete text of GPL-3.0 is bundled as the `LICENSE` file and is also
-available online at <https://www.gnu.org/licenses/gpl-3.0.txt>.
-Full text online / 完整条款在线: <https://www.gnu.org/licenses/gpl-3.0.html>
+The full text of the Apache License 2.0 is bundled as the `LICENSE` file.
+完整条款见随包的 `LICENSE` 文件，或在线查看：
+<https://www.apache.org/licenses/LICENSE-2.0>
 -----------------------------------------------------------------------------
 
-  0. Definitions.  "This License" refers to version 3 of the GNU General
-Public License. "The Program" refers to any copyrightable work licensed under
-this License.
+主要条款摘要（非正式文本，以英文原文为准）：
 
-  1. Source Code.  The "source code" for a work means the preferred form of
-the work for making modifications to it.
+  1. 定义 —— "License" 指 Apache License 2.0 的条款与条件；
+     "Licensor" 指授予许可的版权所有者或实体；
+     "Work" 指本许可下提供的作品（含源码与目标码形式）。
+  2. 版权许可 —— 每位贡献者授予你永久的、全球的、免费的、
+     非独占的、不可撤销的版权许可，允许复制、创作衍生作品、
+     公开展示、公开表演、再许可和分发本作品及其衍生作品。
+  3. 专利许可 —— 每位贡献者授予你永久的、全球的、免费的、
+     非独占的、不可撤销的专利许可，允许制造、使用、销售、
+     许诺销售、进口本作品。
+  4. 再分发 —— 你可以在任何媒介中复制和分发本作品或其衍生作品，
+     前提是：向接收者提供本许可证副本；修改过的文件须显著标注；
+     保留所有版权、专利、商标与归属声明；若作品含 NOTICE 文件，
+     衍生产品须在分发中包含该 NOTICE 的可读副本。
+  5. 提交贡献 —— 除非明确声明，你有意向本作品提交的贡献
+     均按本许可条款授权，不附加额外条件。
+  6. 商标 —— 本许可不授予使用许可方的商号、商标、服务标记
+     或产品名称的权利，除非为合理描述作品来源所必需。
+  7. 无担保 —— 本作品按"现状"提供，不附带任何明示或默示的担保，
+     包括但不限于适销性、特定用途适用性和不侵权的担保。
+  8. 责任限制 —— 在任何情况下，无论依据何种法律理论，
+     贡献者均不对因使用本作品产生的任何损害承担责任。
+  9. 接受担保或附加责任 —— 在再分发时，你可以提供担保、
+     支持服务或其他责任承担，但须自行承担相应责任。
+ 10. 许可证版本 —— 版权所有者可授权使用本许可的任一版本。
 
-  2. Basic Permissions.  All rights granted under this License are granted for
-the term of copyright on the Program, and are irrevocable provided the stated
-conditions are met. This License explicitly affirms your unlimited permission
-to run the unmodified Program.
+-----------------------------------------------------------------------------
+原生模块（native/）不适用 Apache-2.0，而是专有许可：
+仅可随本程序使用，禁止单独分发、反向工程或提取算法。
+详见随包的 native/LICENSE。
 
-  3. Protecting Users' Legal Rights From Anti-Circumvention Law.  No covered
-work shall be deemed part of an effective technological measure under any
-applicable law fulfilling obligations under article 11 of the WIPO copyright
-treaty.
-
-  4. Conveying Verbatim Copies.  You may convey verbatim copies of the
-Program's source code as you receive it, in any medium, provided that you
-conspicuously and appropriately publish on each copy an appropriate copyright
-notice and give all recipients a copy of this License along with the Program.
-
-  5. Conveying Modified Source Versions.  You may convey a work based on the
-Program in source form, provided that you carry prominent notices stating that
-you modified it and that it is released under this License, and that you
-license the entire work as a whole under this License.
-
-  6. Conveying Non-Source Forms.  You may convey a covered work in object code
-form provided that you also convey the machine-readable Corresponding Source
-under the terms of this License.
-
-  7. Additional Terms.  "Additional permissions" are terms that supplement the
-terms of this License by making exceptions from one or more of its conditions.
-
-  8. Termination.  You may not propagate or modify a covered work except as
-expressly provided under this License. Any attempt otherwise to propagate or
-modify it is void and terminates your rights under this License.
-
-  9. Acceptance Not Required for Having Copies.  You are not required to
-accept this License in order to receive or run a copy of the Program.
-
- 10. Automatic Licensing of Downstream Recipients.  Each time you convey a
-covered work, the recipient automatically receives a license from the original
-licensors to run, modify and propagate that work under this License.
-
- 11. Patents.  Each contributor grants you a non-exclusive, worldwide,
-royalty-free patent license under the contributor's essential patent claims.
-
- 12. No Surrender of Others' Freedom.  If conditions are imposed on you that
-contradict the conditions of this License, they do not excuse you from its
-conditions.
-
- 13. Use with the GNU Affero General Public License.  You have permission to
-link or combine any covered work with a work licensed under AGPL version 3.
-
- 14. Revised Versions of this License.  The Free Software Foundation may
-publish revised and/or new versions of the GNU General Public License.
-
- 15. Disclaimer of Warranty.  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE
-EXTENT PERMITTED BY APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING
-THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT
-WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED.
-
- 16. Limitation of Liability.  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW
-OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER BE LIABLE TO YOU FOR
-DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES
-ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM.
-
- 17. Interpretation of Sections 15 and 16.  If the disclaimer of warranty and
-limitation of liability provided above cannot be given local legal effect,
-reviewing courts shall apply local law that most closely approximates an
-absolute waiver of all civil liability.
-
-                     END OF TERMS AND CONDITIONS
+第三方组件（PySide6 / Qt 6 为 LGPL v3 等）见随包的 THIRD-PARTY-NOTICES.md。
+-----------------------------------------------------------------------------
+                     END OF TERMS SUMMARY
 """
+
+
 
 
 def _macos_app_root() -> str:
@@ -254,19 +218,24 @@ class AboutDialog(QDialog):
         layout.addWidget(QLabel(f"{tr('版本', 'Version')} {VERSION}"))
         layout.addWidget(QLabel(COPYRIGHT))
 
-        # GPL-3.0 要求的「不担保」声明：必须显眼，不能藏起来
+        # 「不担保」声明：必须显眼，不能藏起来（Apache-2.0 第 7、8 条）
         notice = QLabel(tr(
-            "本程序是自由软件，依据 GNU 通用公共许可证第 3 版授权，"
-            "你可以转发和/或修改它。\n"
-            "本程序分发时希望它有用，但**不提供任何担保**，"
-            "甚至不提供适销性或特定用途适用性的默示担保。\n"
-            "许可证全文见下方，也可访问 {u}。",
-            "This program is free software, licensed under the GNU General Public "
-            "License version 3; you may redistribute and/or modify it.\n"
-            "It is distributed in the hope that it will be useful, but **WITHOUT ANY "
-            "WARRANTY**, without even the implied warranty of merchantability or "
-            "fitness for a particular purpose.\n"
-            "The full license is shown below; see also {u}.",
+            "本程序以 Apache License 2.0 授权；你可以自由使用、修改与再分发，"
+            "但须保留版权与许可声明。\n"
+            "本程序按**“现状”**提供，**不提供任何担保**，"
+            "也不承担因使用产生的任何责任。\n"
+            "原生模块（native/）为专有许可，仅可随本程序使用；"
+            "PySide6 / Qt 6 为 LGPL v3，可替换。\n"
+            "许可证全文见下方（{u}），第三方声明见 THIRD-PARTY-NOTICES.md。",
+            "This program is licensed under the Apache License 2.0; you may use, "
+            "modify and redistribute it, provided the copyright and license notices "
+            "are kept.\n"
+            "It is provided **\"AS IS\"**, **WITHOUT WARRANTIES OR CONDITIONS OF ANY "
+            "KIND**, and without liability for any damages.\n"
+            "The native module (native/) is proprietary and may only be used together "
+            "with this program; PySide6 / Qt 6 are LGPL v3 and replaceable.\n"
+            "The license is shown below ({u}); see THIRD-PARTY-NOTICES.md for "
+            "third-party notices.",
             u=LICENSE_URL))
         notice.setWordWrap(True)
         notice.setTextFormat(Qt.RichText)
@@ -312,8 +281,8 @@ def show_about(parent=None) -> None:
     """显示关于窗口。
 
     **非模态**：模态对话框会拦截整个程序的输入 —— 之前的版本用 exec_()，
-    打开许可证之后悬浮球双击抽人完全失效。GPL 只要求能查看许可证，
-    不要求模态，所以改成 show()。
+    打开许可证之后悬浮球双击抽人完全失效。查看许可证不需要模态，
+    所以改成 show()。
 
     parent 固定为 None：这个窗口可能从托盘/悬浮球打开，那时主窗口是隐藏的，
     以它为父窗口在 Windows 上会把对话框定位到屏幕外。

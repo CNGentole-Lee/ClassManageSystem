@@ -14,7 +14,7 @@
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB">
-  <img alt="license" src="https://img.shields.io/badge/license-GPLv3-blue">
+  <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-blue">
   <img alt="PySide6" src="https://img.shields.io/badge/PySide6-LGPLv3-orange">
 </p>
 
@@ -86,7 +86,7 @@
 
 ### 关于：版本与许可证
 
-版本号、版权、不担保声明，以及可直接滚动的 GPL-3.0 全文。
+版本号、版权、不担保声明，以及可直接滚动的 Apache-2.0 许可证全文。
 
 ![关于](docs/images/about-dialog.png)
 
@@ -257,7 +257,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「开机自启动」：写入当前用户的自启动项。
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
-- 「关于」：版本、版权、不担保声明与 GPL-3.0 许可证全文（托盘菜单与悬浮球右键里也有）。
+- 「关于」：版本、版权、不担保声明与 Apache-2.0 许可证全文，并注明原生模块为专有许可、第三方组件（Qt 等）的许可证（托盘菜单与悬浮球右键里也有）。
   ~~版本号实际写在**三处**，升级时需同步修改（当前三处不一致）：
   `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `2.0.0`）、
   `packaging/windows/version_info.txt` 的 `filevers`/`prodvers`（EXE 属性，现为 `1.0.0.0`）、
@@ -520,6 +520,13 @@ packaging/macos/build.command        # 双击也可以
 ├── main.py                          # 入口：组装组件、连接信号、进入事件循环
 ├── requirements.txt
 ├── names.txt                        # 示例名单
+├── LICENSE                          # Apache License 2.0 全文
+├── NOTICE                           # 版权与归属声明（Apache-2.0 要求）
+├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium 等第三方声明
+├── native/                          # 原生模块（只发布二进制；源码不进仓库）
+│   ├── LICENSE                      # 专有许可：随程序使用，禁止单独分发/逆向
+│   ├── cmd_native.exe               # Windows 构建产物
+│   └── cmd_native                   # macOS 构建产物
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
 │
 ├── namepicker/                      # 主程序包
@@ -786,35 +793,49 @@ QSettings 隐蔽备份恢复。
 
 ## 许可证
 
-本项目以 **GNU General Public License v3.0（GPL-3.0）** 发布。
+本项目以 **Apache License 2.0** 发布。
 
 ```text
-Copyright (C) 2026 Gentole Lee
+Copyright 2026 Gentole Lee
 
-本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证
-第 3 版条款，重新分发和/或修改它。
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-本程序分发时希望它有用，但不提供任何担保，甚至不提供适销性或特定用途
-适用性的默示担保。详见 GNU 通用公共许可证。
+    http://www.apache.org/licenses/LICENSE-2.0
 
-你应当已收到本程序的 GNU 通用公共许可证副本；若没有，见
-<https://www.gnu.org/licenses/>。
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 ```
 
-- 完整条款：[`LICENSE`](LICENSE)（GPL-3.0 官方全文，逐字节未经修改）
-- 在线版本：<https://www.gnu.org/licenses/gpl-3.0.html>
+- 完整条款：[`LICENSE`](LICENSE)（Apache-2.0 官方全文 + 本项目版权声明）
+- 版权与归属：[`NOTICE`](NOTICE)
+- 第三方组件声明：[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+- 在线版本：<https://www.apache.org/licenses/LICENSE-2.0>
 
 **作为使用者你需要知道：**
 
-- 可以自由使用、修改、再分发，包括商用；
-- **分发时必须一并提供完整源代码**（含你对代码的修改），并保留版权声明与许可证；
-- 衍生作品必须同样以 GPL-3.0 授权；
+- 可以自由使用、修改、再分发，**包括商用和闭源分发**；
+- 再分发时须保留版权与许可声明，并提供许可证副本；如有 `NOTICE`，须一并附带；
+- 修改过的文件要**显著标注已修改**；
+- 附带**专利授权**：贡献者不会因你使用本程序而主张专利侵权；
 - 不提供任何担保。
+
+**原生模块是另一套许可：** `native/` 下的编译产物
+（`cmd_native.exe` / `cmd_native`）**不属于 Apache-2.0**，而是专有许可：
+只能随本程序使用，禁止单独分发、反向工程或提取其中的算法与密钥。
+详见 [`native/LICENSE`](native/LICENSE)。
 
 **关于依赖：** 本项目使用 **PySide6**（LGPL v3）与 **Qt 6**（LGPL v3），
 因此 Qt 部分要求**动态链接并允许用户替换 Qt 库**（安装包以目录形态分发即满足）。
 其余依赖：shiboken6（LGPL v3）、cryptography（Apache-2.0 OR BSD-3-Clause）、
-cffi（MIT-0）、pycparser（BSD-3-Clause）。
+cffi（MIT-0）、pycparser（BSD-3-Clause）、libsodium（ISC）。
+
+**历史版本：** 2.0.0 及更早的提交曾以 GPL-3.0 发布，收到过那些版本的人
+仍可继续按 GPL-3.0 使用它们（许可证不可收回）；自本版本起改为 Apache-2.0。
 
 ---
 
@@ -893,7 +914,7 @@ close it with `✕` or let it disappear after 5 seconds.
 
 ### About: version and license
 
-Version, copyright, the no-warranty notice and the scrollable GPL-3.0 text.
+Version, copyright, the no-warranty notice and the scrollable Apache-2.0 text.
 
 ![About](docs/images/about-dialog.png)
 
@@ -1097,7 +1118,7 @@ their custom name, untouched ones show `Group 4/5/6`.
 - "Hide ball": temporarily hide or show the ball.
 - "Clear history": clears draw history and cooldowns but **keeps** lifetime fairness
   counts.
-- "About": version, copyright, the no-warranty notice and the full GPL-3.0 text
+- "About": version, copyright, the no-warranty notice and the full Apache-2.0 text,
   (also available from the tray menu and the ball's right-click menu).
   ~~The version actually lives in **three** places and must be bumped together (currently
   out of sync): `VERSION` in `namepicker/about_dialog.py` (shown in the dialog, now
@@ -1425,6 +1446,13 @@ Apple Silicon; a universal build needs universal2 Python + PySide6).
 ├── main.py                          # entry point: wire components, connect signals, run
 ├── requirements.txt
 ├── names.txt                        # sample name list
+├── LICENSE                          # full Apache License 2.0 text
+├── NOTICE                           # copyright / attribution (required by Apache-2.0)
+├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium and other notices
+├── native/                          # native module (binaries only; source not in repo)
+│   ├── LICENSE                      # proprietary: use with the app, no standalone/RE
+│   ├── cmd_native.exe               # Windows build artifact
+│   └── cmd_native                   # macOS build artifact
 ├── docs/images/                     # README screenshots (generated by tools/make_screenshots.py)
 │
 ├── namepicker/                      # main package
@@ -1738,40 +1766,56 @@ ASCII + CRLF.
 
 ## License
 
-This project is released under the **GNU General Public License v3.0 (GPL-3.0)**.
+This project is released under the **Apache License 2.0**.
 
 ```text
-Copyright (C) 2026 Gentole Lee
+Copyright 2026 Gentole Lee
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, version 3 of the License.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 ```
 
-- Full terms: [`LICENSE`](LICENSE) — the official GPL-3.0 text, byte-for-byte unmodified
-- Online: <https://www.gnu.org/licenses/gpl-3.0.html>
+- Full terms: [`LICENSE`](LICENSE) — the official Apache-2.0 text plus this project's
+  copyright notice
+- Attribution: [`NOTICE`](NOTICE)
+- Third-party components: [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+- Online: <https://www.apache.org/licenses/LICENSE-2.0>
 
 **What this means for you:**
 
-- You may use, modify and redistribute it, including commercially;
-- **If you distribute it, you must also provide the complete source code**
-  (including your modifications), keeping the copyright and license notices;
-- Derivative works must also be licensed under GPL-3.0;
+- You may use, modify and redistribute it, **including commercially and in
+  closed-source form**;
+- When redistributing you must keep the copyright and license notices, include a copy of
+  the License, and pass along the `NOTICE` file if present;
+- **Mark modified files as changed**;
+- An **express patent grant** is included: contributors will not assert patent claims
+  against your use of this work;
 - There is no warranty.
+
+**The native module uses a different license:** the compiled artifacts under `native/`
+(`cmd_native.exe` / `cmd_native`) are **not** Apache-2.0. They are proprietary and may
+only be used together with this application; standalone distribution, reverse
+engineering and extracting their algorithms or keys are prohibited. See
+[`native/LICENSE`](native/LICENSE).
 
 **About the dependencies:** this project uses **PySide6** (LGPL v3) and **Qt 6**
 (LGPL v3). The Qt part therefore requires **dynamic linking and replaceable Qt
 libraries**, which the directory-style installer satisfies. The other dependencies are
-shiboken6 (LGPL v3), cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0) and
-pycparser (BSD-3-Clause).
+shiboken6 (LGPL v3), cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0),
+pycparser (BSD-3-Clause) and libsodium (ISC).
+
+**Historical versions:** 2.0.0 and earlier commits were released under GPL-3.0; anyone
+who received those versions may keep using them under GPL-3.0 (licenses are
+irrevocable). From this version on the license is Apache-2.0.
 
 ---
 

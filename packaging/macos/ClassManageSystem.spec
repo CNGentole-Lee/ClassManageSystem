@@ -48,9 +48,13 @@ a = Analysis(
     binaries=[],
     # 运行时不读取包内资源：名单由老师自选；配置/日志写在程序旁边，
     # 只读目录则回退到 ~/ClassTerminal2411。
-    # 唯一要随包走的资源是 LICENSE —— GPL-3.0 要求分发时附带许可证全文，
-    # 「关于」窗口会读取它显示。
-    datas=[(os.path.join(ROOT, "LICENSE"), ".")],
+    # 随包资源：LICENSE（Apache-2.0 全文）、NOTICE、第三方声明。
+    # Apache-2.0 第 4(d) 条要求再分发时附带许可证与 NOTICE。
+    datas=[
+        (os.path.join(ROOT, "LICENSE"), "."),
+        (os.path.join(ROOT, "NOTICE"), "."),
+        (os.path.join(ROOT, "THIRD-PARTY-NOTICES.md"), "."),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -103,10 +107,12 @@ coll = COLLECT(
 #   1) Resources/LICENSE —— .app 包内部，「关于」窗口通过
 #      sys._MEIPASS / Contents/Resources 都能找到，单拷贝 .app 也不缺；
 #   2) .app 同级的 LICENSE —— 用户不打开包也能直接看到。
-LICENSE_SRC = os.path.join(ROOT, "LICENSE")
-LICENSE_IN_BUNDLE = ("Resources/LICENSE", LICENSE_SRC, "DATA") \
-    if os.path.isfile(LICENSE_SRC) else None
-LICENSE_LIST = [LICENSE_IN_BUNDLE] if LICENSE_IN_BUNDLE else []
+_BUNDLED_DOCS = ("LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.md")
+LICENSE_LIST = [
+    (f"Resources/{name}", os.path.join(ROOT, name), "DATA")
+    for name in _BUNDLED_DOCS
+    if os.path.isfile(os.path.join(ROOT, name))
+]
 
 app = BUNDLE(
     coll,

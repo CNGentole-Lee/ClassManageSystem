@@ -342,18 +342,18 @@ def main() -> int:
 
     ball.close()
 
-    print("\n--- 9. About dialog / GPL compliance ---")
+    print("\n--- 9. About dialog / license compliance ---")
     check("LICENSE file is found next to the sources",
           bool(about_dialog.license_path()), about_dialog.license_path())
     text = about_dialog.license_text()
-    check("license text is the GPL-3.0", "GNU GENERAL PUBLIC LICENSE" in text
-          and "Version 3, 29 June 2007" in text)
+    check("license text is the Apache License 2.0",
+          "Apache License" in text and "Version 2.0" in text)
     check("license text carries the copyright line",
-          "Gentole Lee" in text and "Copyright (C)" in text)
-    check("license text is complete (has the FSF end notes)",
-          "END OF TERMS AND CONDITIONS" in text)
+          "Gentole Lee" in text and "Copyright" in text)
+    check("license text mentions the warranty disclaimer",
+          "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND" in text)
     check("license text states there is no warranty",
-          "WITHOUT ANY WARRANTY" in text.upper())
+          "WITHOUT WARRANTIES" in text.upper())
 
     version_file = os.path.join(_ROOT, "packaging", "windows", "version_info.txt")
     # 版本号单一来源：模板里的版本号在构建时被替换，所以这里验证的是
@@ -385,12 +385,12 @@ def main() -> int:
     finally:
         about_dialog.license_path = real_path_fn
     check("missing LICENSE falls back to the embedded text",
-          "GNU GENERAL PUBLIC LICENSE" in fallback
-          and "WITHOUT ANY WARRANTY" in fallback
+          "Apache License" in fallback
+          and "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND" in fallback
           and "Gentole Lee" in fallback,
           f"len={len(fallback)}")
     check("fallback mentions the online copy",
-          "gnu.org/licenses" in fallback)
+          "apache.org/licenses" in fallback)
     dlg.close()
 
     print("\n" + "=" * 60)
