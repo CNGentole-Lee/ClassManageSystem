@@ -19,8 +19,8 @@
 import sys
 import os
 
-from PyQt5.QtCore import Qt, QSettings, QTimer
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import Qt, QSettings, QTimer
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from namepicker import about_dialog
 from namepicker.about_dialog import VERSION
@@ -58,8 +58,9 @@ def main():
 # 必须在任何 Qt 对象之前存在，这样启动阶段的故障也能被捕获。
     crash_log.install(os.path.dirname(resolve_config_path()))
 
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # Qt6 起高分屏缩放与高清图标默认开启，AA_EnableHighDpiScaling /
+    # AA_UseHighDpiPixmaps 已废弃（设置它们只会产生 DeprecationWarning），
+    # 所以这里不再显式设置。
 
     app = QApplication(sys.argv)
 # 内部（ASCII）标识保持不变，这样在重命名后 QSettings 路径 / 单实例键 后仍能继续正常工作。
@@ -315,7 +316,7 @@ def main():
         popup.set_name_pool(engine.get_names())
 
     # --- Run ---
-    exit_code = app.exec_()
+    exit_code = app.exec()
     main_win.save_settings()
     points_win.save_now()
     save_stats()

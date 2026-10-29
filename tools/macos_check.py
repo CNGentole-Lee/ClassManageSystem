@@ -32,9 +32,9 @@ from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
 
-from PyQt5.QtCore import QTimer  # noqa: E402
-from PyQt5.QtGui import QColor, QPalette  # noqa: E402
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon  # noqa: E402
+from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtGui import QColor, QPalette  # noqa: E402
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon  # noqa: E402
 
 from namepicker import macos_window, theme  # noqa: E402
 from namepicker.floating_ball import FloatingBall, force_topmost  # noqa: E402
@@ -331,7 +331,7 @@ ball.deleteLater()
 
 print("\n--- 5. Modal dialogs above the overlay panel ---")
 if is_macos:
-    from PyQt5.QtWidgets import QInputDialog
+    from PySide6.QtWidgets import QInputDialog
     from namepicker.config_store import ConfigStore
     from namepicker.points_window import PointsWindow
 
@@ -357,7 +357,7 @@ if is_macos:
         dialog.reject()
 
     QTimer.singleShot(600, inspect)
-    dialog.exec_()          # 模态打开；inspect() 在模态循环里执行并关掉它
+    dialog.exec()          # 模态打开；inspect() 在模态循环里执行并关掉它
     process(0.2)
 
     check("panel really is an overlay (level 25)", result.get("panel_level") == 25,
@@ -376,7 +376,7 @@ else:
 
 print("\n--- 5b. About window does not block drawing ---")
 if is_macos:
-    from PyQt5.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     from namepicker.about_dialog import AboutDialog, show_about
     from namepicker.draw_popup import DrawResultPopup
 
@@ -393,8 +393,10 @@ if is_macos:
         check("About is NOT raised to the dialog level (26)",
               attrs.get("level") == macos_window.NS_STATUS_WINDOW_LEVEL,
               f"level={attrs.get('level')}")
+        from PySide6.QtCore import Qt as _Qt
         check("About is non-modal",
-              about.windowModality() == 0, str(about.windowModality()))
+              about.windowModality() == _Qt.WindowModality.NonModal,
+              str(about.windowModality()))
 
         popup = DrawResultPopup()
         popup.set_name_pool(["A", "B"])
@@ -431,4 +433,4 @@ if failures:
     sys.exit(1)
 print("ALL PASSED")
 QTimer.singleShot(0, app.quit)
-app.exec_()
+app.exec()

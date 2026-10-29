@@ -5,13 +5,13 @@
 """
 
 import random
-from PyQt5.QtCore import (
+from PySide6.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, QRectF,
 )
-from PyQt5.QtGui import (
+from PySide6.QtGui import (
     QPainter, QBrush, QColor, QFont, QFontMetrics, QPen, QPainterPath,
 )
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QGridLayout, QPushButton, QHBoxLayout,
     QApplication,
 )

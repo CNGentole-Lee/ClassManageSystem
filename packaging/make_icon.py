@@ -14,9 +14,9 @@ import os
 import struct
 import sys
 
-from PyQt5.QtCore import QBuffer, QByteArray, QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QImage, QPainter
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import QBuffer, QByteArray, QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QImage, QPainter
+from PySide6.QtWidgets import QApplication
 
 SIZES = (256, 128, 64, 48, 32, 16)
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "windows", "app.ico")

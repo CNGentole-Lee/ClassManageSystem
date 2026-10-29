@@ -30,9 +30,9 @@ from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
 
-from PyQt5.QtCore import QRectF, Qt  # noqa: E402
-from PyQt5.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
-from PyQt5.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtCore import QRectF, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from namepicker import i18n, theme  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
@@ -134,7 +134,7 @@ def scrub_paths(widget) -> None:
     README 截图里出现 /var/folders/xxx/cm_shots_yyy/ 这种测试路径没有意义，
     所以只把「路径」这一部分换成文件名，其余文字保持原样（不改运行逻辑）。
     """
-    from PyQt5.QtWidgets import QLabel
+    from PySide6.QtWidgets import QLabel
     for label in widget.findChildren(QLabel):
         text = label.text()
         if "加密保存于" in text or "配置" in text or "Encrypted at" in text or "Config" in text:

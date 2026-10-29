@@ -18,9 +18,9 @@ import subprocess
 import sys
 import tempfile
 
-from PyQt5.QtCore import QBuffer, QByteArray, QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QImage, QPainter
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import QBuffer, QByteArray, QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QImage, QPainter
+from PySide6.QtWidgets import QApplication
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.icns")
 

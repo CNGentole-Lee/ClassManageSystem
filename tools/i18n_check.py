@@ -26,8 +26,8 @@ from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
 
-from PyQt5.QtCore import QSettings, Qt  # noqa: E402
-from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
+from PySide6.QtCore import QSettings, Qt  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
 
 from namepicker import (  # noqa: E402
     about_dialog, dialogs, i18n, log_store, restart, theme, wipe_dialog,
@@ -89,7 +89,7 @@ def main() -> int:
     en_points.close()
 
     print("\n--- 3. Language combo persists to QSettings ---")
-    from PyQt5.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
     i18n.set_language("zh")
     settings = QSettings("NamePicker", "Config")
     settings.setValue("language", "zh")
@@ -253,7 +253,7 @@ def main() -> int:
     holder = subprocess.Popen(
         [sys.executable, "-c",
          "import sys, time; sys.path.insert(0, %r);"
-         "from PyQt5.QtWidgets import QApplication;"
+         "from PySide6.QtWidgets import QApplication;"
          "from namepicker.single_instance import SingleInstance;"
          "app = QApplication([]); g = SingleInstance();"
          "print(g.try_acquire(), flush=True); time.sleep(8)" % _ROOT],
@@ -278,7 +278,7 @@ def main() -> int:
         holder.wait(timeout=5)
 
     print("\n--- 8b. Dialogs must not block the ball (issue: license freezes drawing) ---")
-    from PyQt5.QtTest import QTest
+    from PySide6.QtTest import QTest
     from namepicker import win_window
     from namepicker.floating_ball import FloatingBall
 

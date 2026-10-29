@@ -14,9 +14,11 @@
 
 import os
 
-#: True = 单文件 EXE（分发省事；启动时解压到临时目录，首次启动约 1~3 秒）；
-#: False = 单目录版本（启动更快、杀软误报更少，但要把整个文件夹一起拷）。
-ONEFILE = True
+#: False = 单目录版本（目录 + _internal），由安装包打包成安装程序。
+#: 为什么不用单文件：PySide6/Qt 是 LGPL，LGPL 要求用户**能够替换 Qt 库**。
+#: 单文件 EXE 运行时把 Qt 解压到临时目录、退出即删，用户无法替换；
+#: 目录模式下 Qt 的 dll 是独立文件，安装后可直接替换 —— 符合 LGPL 第 4(d) 条。
+ONEFILE = False
 
 APP_NAME = "ClassManageSystem"
 
@@ -74,7 +76,7 @@ a = Analysis(
     # 只读目录则回退到 %APPDATA%\ClassTerminal2411。
     # 唯一要随包走的资源是 LICENSE。
     # GPL-3.0 要求分发的副本能看到许可证文本，而我们的产物是**单个 EXE**
-    # （ONEFILE = True）：datas 会被打进 EXE，运行时解包到 sys._MEIPASS，
+    # （ONEFILE = False）：datas 会被打进 EXE，运行时解包到 sys._MEIPASS，
     # 「关于」窗口从那里读取。所以只拷一个 EXE 给别人也能看到完整许可证，
     # 不依赖 EXE 旁边有没有额外文件。
     datas=[(os.path.join(ROOT, "LICENSE"), ".")],
@@ -82,16 +84,16 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # 砍掉用不到的模块。注意别写 "PyQt5" —— 那会把整个绑定砍没。
+    # 砍掉用不到的模块。注意别写 "PySide6" —— 那会把整个绑定砍没。
     excludes=[
         "tkinter", "unittest", "pydoc_data", "test", "lib2to3",
-        "PyQt5.QtWebEngineWidgets", "PyQt5.QtWebEngineCore",
-        "PyQt5.QtQml", "PyQt5.QtQuick", "PyQt5.QtQuickWidgets",
-        "PyQt5.QtMultimedia", "PyQt5.QtMultimediaWidgets",
-        "PyQt5.QtBluetooth", "PyQt5.QtNfc", "PyQt5.QtPositioning",
-        "PyQt5.QtLocation", "PyQt5.QtSensors", "PyQt5.QtSerialPort",
-        "PyQt5.QtSql", "PyQt5.QtTest", "PyQt5.QtDesigner", "PyQt5.QtHelp",
-        "PyQt5.QtXml", "PyQt5.QtXmlPatterns", "PyQt5.QtDBus",
+        "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore",
+        "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",
+        "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets",
+        "PySide6.QtBluetooth", "PySide6.QtNfc", "PySide6.QtPositioning",
+        "PySide6.QtLocation", "PySide6.QtSensors", "PySide6.QtSerialPort",
+        "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtDesigner", "PySide6.QtHelp",
+        "PySide6.QtXml", "PySide6.QtXmlPatterns", "PySide6.QtDBus",
     ],
     noarchive=False,
 )

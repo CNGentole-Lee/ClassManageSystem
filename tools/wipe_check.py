@@ -25,7 +25,7 @@ from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
 
-from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 from namepicker import i18n, log_store, wipe_service  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402

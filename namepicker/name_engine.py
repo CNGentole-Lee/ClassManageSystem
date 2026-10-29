@@ -19,7 +19,7 @@ import random
 import time
 from datetime import datetime
 
-from PyQt5.QtCore import QObject, pyqtSignal
+from PySide6.QtCore import QObject, Signal
 
 from .i18n import tr
 
@@ -39,15 +39,15 @@ class NameEngine(QObject):
     MIN_WEIGHT = 0.01         # 保证每个有资格的人仍可被抽中
 
     # --- 信号 ---
-    name_drawn = pyqtSignal(str)          # (name) —— 滚动结束后的最终结果
-    rolling_start = pyqtSignal(str)       # (name) —— 引擎选中，开始滚动动画
-    names_drawn = pyqtSignal(list)        # (list[str]) —— 连抽结果
-    multi_rolling_start = pyqtSignal(list)  # (list[str]) —— 连抽开始滚动
-    names_loaded = pyqtSignal(int)        # (count)
-    error_occurred = pyqtSignal(str)      # (message)
-    history_cleared = pyqtSignal()
-    pool_refilled = pyqtSignal(int)       # (pool_size) —— 全员抽完一轮
-    cooldowns_updated = pyqtSignal()      # 每人冷却变化（供界面刷新）
+    name_drawn = Signal(str)          # (name) —— 滚动结束后的最终结果
+    rolling_start = Signal(str)       # (name) —— 引擎选中，开始滚动动画
+    names_drawn = Signal(list)        # (list[str]) —— 连抽结果
+    multi_rolling_start = Signal(list)  # (list[str]) —— 连抽开始滚动
+    names_loaded = Signal(int)        # (count)
+    error_occurred = Signal(str)      # (message)
+    history_cleared = Signal()
+    pool_refilled = Signal(int)       # (pool_size) —— 全员抽完一轮
+    cooldowns_updated = Signal()      # 每人冷却变化（供界面刷新）
 
     def __init__(self, parent=None):
         super().__init__(parent)

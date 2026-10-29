@@ -28,7 +28,7 @@ APP_NAME = "ClassManageSystem"
 VALUE_KEY = "sys_cache"
 
 try:  # PyQt5 缺失时（例如纯逻辑测试）本模块退化为「无隐蔽备份」
-    from PyQt5.QtCore import QSettings
+    from PySide6.QtCore import QSettings
 except Exception:  # pragma: no cover - 取决于运行环境
     QSettings = None
 

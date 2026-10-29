@@ -30,7 +30,7 @@ def isolate_settings(org: str = ORG, app: str = APP) -> None:
         # 抛 "wrapped C/C++ object ... has been deleted"；若被静默吞掉，测试数据就
         # 留在用户真实的注册表 / plist 里了。
         try:
-            from PyQt5.QtCore import QSettings
+            from PySide6.QtCore import QSettings
             settings = QSettings(org, app)
             settings.setFallbacksEnabled(False)
             settings.clear()

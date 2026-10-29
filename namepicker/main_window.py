@@ -8,14 +8,14 @@ try:  # 注册表模块只在 Windows 上存在；macOS/Linux 下没有它
 except ImportError:  # pragma: no cover - 取决于运行平台
     winreg = None
 
-from PyQt5.QtCore import Qt, QSettings, QTimer, pyqtSignal
-from PyQt5.QtGui import QColor, QBrush
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, QSettings, QTimer, Signal
+from PySide6.QtGui import QAction, QColor, QBrush
+from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QFileDialog,
     QListWidget, QListWidgetItem, QTableWidget, QTableWidgetItem,
     QSpinBox, QGroupBox, QSplitter, QHeaderView,
-    QSystemTrayIcon, QMenu, QAction, QMessageBox,
+    QSystemTrayIcon, QMenu, QMessageBox,
     QApplication, QAbstractItemView, QCheckBox, QComboBox,
 )
 
@@ -35,9 +35,9 @@ class MainWindow(QMainWindow):
     MACOS_AGENT_DIR = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents")
 
     #: 用户选择「立即重启」时发出；由 main.py 负责真正拉起新进程
-    restart_requested = pyqtSignal()
+    restart_requested = Signal()
     #: 语言选择变化（持久化到 config.dat，QSettings 之外的第二份保险）
-    language_saved = pyqtSignal(str)
+    language_saved = Signal(str)
 
     def __init__(self, engine, app_path: str = "", parent=None):
         super().__init__(parent)

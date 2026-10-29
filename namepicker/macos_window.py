@@ -213,10 +213,10 @@ class _DialogRaiser:
         if sys.platform != "darwin":
             return False
         try:
-            from PyQt5.QtCore import QObject, QEvent
+            from PySide6.QtCore import QObject, QEvent
 
-            from PyQt5.QtCore import QTimer
-            from PyQt5.QtWidgets import QDialog
+            from PySide6.QtCore import QTimer
+            from PySide6.QtWidgets import QDialog
 
             def raise_dialog(obj) -> None:
                 try:

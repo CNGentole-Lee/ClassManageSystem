@@ -24,8 +24,8 @@
 
 import sys
 
-from PyQt5.QtCore import QSize
-from PyQt5.QtGui import QColor, QFont, QFontDatabase, QFontInfo, QPalette
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontInfo, QPalette
 
 from .i18n import tr
 
@@ -133,7 +133,7 @@ def is_dark() -> bool:
     if forced is not None:
         return forced
     if _dark is None:
-        from PyQt5.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         if app is None:
             _dark = False
@@ -308,8 +308,8 @@ def tray_icon():
 
     Windows 托盘是彩色图标，这里用钢蓝圆底 + 白色「抽」，与悬浮球一致。
     """
-    from PyQt5.QtCore import Qt
-    from PyQt5.QtGui import QIcon, QPainter, QPixmap
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QIcon, QPainter, QPixmap
 
     sizes = (22, 44, 66) if sys.platform == "darwin" else (16, 24, 32, 48, 64)
     icon = QIcon()

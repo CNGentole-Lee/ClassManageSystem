@@ -8,11 +8,11 @@
 唯一入口是底栏「小组数量...」旁边的「操作日志」按钮（见 _LogViewerDialog）。
 """
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QFontDatabase
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QFont, QFontDatabase
+from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QGridLayout, QVBoxLayout,
-    QHBoxLayout, QMessageBox, QInputDialog, QSizePolicy, QMenu, QAction,
+    QHBoxLayout, QMessageBox, QInputDialog, QSizePolicy, QMenu,
     QScrollArea, QLayout, QDialog, QPlainTextEdit,
 )
 
@@ -97,10 +97,10 @@ def _score_color(score: int) -> str:
 class GroupCard(QFrame):
     """一张可选中展开的小组卡片，收起时只显名称和分数，展开后露出按钮。"""
 
-    delta_requested = pyqtSignal(int, int)   # (group_index, delta)
-    selected = pyqtSignal(int)               # (group_index)
-    rename_requested = pyqtSignal(int)
-    reset_requested = pyqtSignal(int)
+    delta_requested = Signal(int, int)   # (group_index, delta)
+    selected = Signal(int)               # (group_index)
+    rename_requested = Signal(int)
+    reset_requested = Signal(int)
 
     BADGE_MS = 1200
 
@@ -260,7 +260,7 @@ class GroupCard(QFrame):
         zero_action.triggered.connect(lambda: self.reset_requested.emit(self._index))
         menu.addAction(zero_action)
 
-        menu.exec_(pos)
+        menu.exec(pos)
 
     # --- 样式 ---
 
@@ -653,7 +653,7 @@ class PointsWindow(QWidget):
         也不出现在托盘菜单或管理面板里。
         """
         dialog = _LogViewerDialog(self._store.path, self)
-        dialog.exec_()
+        dialog.exec()
 
 
 class _LogViewerDialog(QDialog):

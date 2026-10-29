@@ -54,12 +54,12 @@ if backup_store.QSettings is None:
 
     backup_store.save_backup = _fake_save
     backup_store.load_backup = _fake_load
-    print("[INFO] PyQt5 is not installed: hidden backup uses an in-memory fake")
+    print("[INFO] PySide6 is not installed: hidden backup uses an in-memory fake")
 else:
-    # 有 PyQt5 时用共享的隔离工具：测试数据不写进真实注册表 / plist，退出时自动清空
+    # 有 PySide6 时用共享的隔离工具：测试数据不写进真实注册表 / plist，退出时自动清空
     from _settings_isolation import isolate_settings  # noqa: E402
     isolate_settings('YourOrgLogCheck', 'ClassManageSystemLogCheck')
-    print("[INFO] PyQt5 detected: hidden backup uses real QSettings (isolated namespace)")
+    print("[INFO] PySide6 detected: hidden backup uses real QSettings (isolated namespace)")
 
 TMP = os.path.join(_TMP_HOME, "app")
 os.makedirs(TMP)
