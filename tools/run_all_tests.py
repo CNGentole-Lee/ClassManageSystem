@@ -5,13 +5,15 @@
   1. 找到能用的 Python（优先项目里的 .conda，其次当前解释器）；
   2. 给每个测试设置隔离的 HOME / QT_QPA_PLATFORM=offscreen，
      不会污染你的真实配置，也不需要在 CI 里有真实显示器；
-  3. 逐项限时运行，卡住的直接杀掉并继续下一项 —— 不会整场挂死。
+  3. 逐项限时运行，卡住的直接杀掉并继续下一项 —— 不会整场挂死；
+  4. 默认把每项测试的输出**实时**打印出来（能看见卡在哪一步）。
 
 用法：
     双击本文件；或在终端里：
         python tools/run_all_tests.py          # 全部
         python tools/run_all_tests.py --gui    # 用真实窗口跑（本机调试用）
         python tools/run_all_tests.py -k wipe  # 只跑名字含 wipe 的
+        python tools/run_all_tests.py -q       # 只看失败摘要
 
 退出码 0 = 全绿；非 0 = 有失败/超时。
 """
@@ -62,7 +64,13 @@ def find_python() -> str:
     return sys.executable
 
 
-def run_one(python: str, name: str, timeout: int, gui: bool) -> tuple[bool, float, str]:
+def run_one(python: str, name: str, timeout: int, gui: bool,
+            stream: bool = True) -> tuple[bool, float, str]:
+    """运行一项测试。
+
+    stream=True 时把子进程输出**实时**转发到终端（能看见卡在哪一步），
+    同时留一份全文用于最后的失败摘要；stream=False 时只收集。
+    """
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
     env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -73,22 +81,46 @@ def run_one(python: str, name: str, timeout: int, gui: bool) -> tuple[bool, floa
 
     script = os.path.join(HERE, f"{name}.py")
     started = time.time()
+    collected: list[str] = []
+
     try:
-        proc = subprocess.run([python, "-u", script],
-                              cwd=ROOT, env=env, timeout=timeout,
-                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, errors="replace")
-        elapsed = time.time() - started
-        out = proc.stdout or ""
-        if proc.returncode == 0:
-            return True, elapsed, out
-        return False, elapsed, out
-    except subprocess.TimeoutExpired as exc:
-        elapsed = time.time() - started
-        out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
-        return False, elapsed, out + f"\n[timeout] 超过 {timeout}s，已终止"
+        proc = subprocess.Popen(
+            [python, "-u", script], cwd=ROOT, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, errors="replace", bufsize=1,
+        )
     except Exception as exc:                      # pragma: no cover
         return False, time.time() - started, f"[error] {exc}"
+
+    timed_out = False
+    assert proc.stdout is not None
+    try:
+        for line in proc.stdout:
+            collected.append(line)
+            if stream:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+            if time.time() - started > timeout:
+                timed_out = True
+                proc.kill()
+                break
+        proc.wait(timeout=max(1, timeout))
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        proc.kill()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+    elapsed = time.time() - started
+    out = "".join(collected)
+    if timed_out:
+        out += f"\n[timeout] 超过 {timeout}s，已终止"
+        if stream:
+            print(f"[timeout] 超过 {timeout}s，已终止", flush=True)
+        return False, elapsed, out
+    return proc.returncode == 0, elapsed, out
 
 
 def highlight(output: str) -> str:
@@ -109,6 +141,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="一键跑全套测试")
     parser.add_argument("--gui", action="store_true",
                         help="用真实窗口跑（默认 offscreen，等价 CI）")
+    parser.add_argument("-q", "--quiet", action="store_true",
+                        help="只打印失败摘要（默认打印每项测试的完整输出）")
     parser.add_argument("-k", "--filter", default="",
                         help="只跑名字包含该字符串的测试")
     args = parser.parse_args()
@@ -130,12 +164,14 @@ def main() -> int:
     total = time.time()
     for name, timeout in tests:
         print(f"\n>>> {name} ...", flush=True)
-        ok, elapsed, output = run_one(python, name, timeout, args.gui)
+        ok, elapsed, output = run_one(python, name, timeout, args.gui,
+                                      stream=not args.quiet)
         status = "OK" if ok else "FAIL"
         print(f"<<< {status}  {elapsed:.1f}s")
         if not ok:
             failed.append(name)
-            print(highlight(output))
+            if args.quiet:
+                print(highlight(output))
 
     print("\n" + "=" * 66)
     print(f"总计 {time.time() - total:.1f}s")
