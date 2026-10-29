@@ -15,7 +15,7 @@
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB">
   <img alt="license" src="https://img.shields.io/badge/license-GPLv3-blue">
-  <img alt="PyQt5" src="https://img.shields.io/badge/PyQt5-GPLv3-orange">
+  <img alt="PySide6" src="https://img.shields.io/badge/PySide6-LGPLv3-orange">
 </p>
 
 <p align="center">
@@ -189,7 +189,7 @@
 ### 环境要求
 
 - Windows 10 及以上（主要目标平台）、macOS 11 及以上；Linux 未验证。
-- Python 3.10+、PyQt5、cryptography（仅源码运行需要）。
+- Python 3.10+、PySide6、cryptography（仅源码运行需要）。
 
 ```bash
 pip install -r requirements.txt
@@ -455,27 +455,29 @@ python tools/fairness_burnin.py
 | 开机自启动 | ✅ 注册表 Run 项 | ✅ LaunchAgent | ❌（返回失败） |
 | 冻结后数据位置 | ✅ EXE 同级目录 | ✅ `.app` **同级**目录（不在包内） | — |
 
-设计约定：**不直接 `import winreg`**（改为 `try/except ImportError`），平台专有调用全部包在 `try/except` 里并静默降级；存储层统一走 PyQt5 自带的 `QSettings`；配色与字体统一由 `namepicker/theme.py` 提供。
+设计约定：**不直接 `import winreg`**（改为 `try/except ImportError`），平台专有调用全部包在 `try/except` 里并静默降级；存储层统一走 PySide6 自带的 `QSettings`；配色与字体统一由 `namepicker/theme.py` 提供。
 
 ---
 
 ## 打包
 
-> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上**本地**打包（CI 已弃用，见「已知限制」）。
+> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包
+> （本机或 Windows runner）。测试已支持无头运行（`QT_QPA_PLATFORM=offscreen`），
+> 不再依赖真实显示器。
 
 ### Windows —— 唯一可行方式：本机打包
 
-> ⚠️ **原「方式一：GitHub Actions」已弃用**，仓库中不再有 `.github/workflows`。
-> 原因见「已知限制」：CI 在冒烟测试阶段因无 GUI 会卡死，无法出包。
-> 下面的 `git push` / `git tag` 触发流程**已失效**，请勿照抄。
+> 说明：CI 出包流程目前**未启用**（`.github/workflows` 保留但不再自动触发）。
+> 打包本身仍是 PyInstaller 的一步，在任意一台 Windows 上执行即可；
+> 测试已可在无头环境运行，不再需要真实显示器。
 
-请在任意一台 Windows 上本地打包：
+请在任意一台 Windows 上打包：
 
 ```bat
 packaging\windows\build.bat
 ```
 
-脚本会自动建 `.venv-build` 虚拟环境、装依赖、跑自检、打包，产物 `dist\ClassManageSystem.exe`。
+脚本会自动建 `.venv-build` 虚拟环境、装依赖、跑自检、打包，产物是目录 `dist\ClassManageSystem\`（含 `ClassManageSystem.exe` 与 `_internal\`），再由安装程序打成安装包。
 
 **pip 源自动选择**（不用手动判断自己在国内还是国外）：
 
@@ -489,7 +491,7 @@ packaging\windows\build.bat
 
 没有 `curl`（Windows 10 17063 以下没有自带）时跳过测速，退回内置顺序 **清华 → 阿里 → 官方 pypi.org**。
 
-装依赖时如果当前源失败，脚本会**自动换下一个候选源重试**，而不是卡在第一次超时上退出——PyQt5 单包约 50 MB，这条比测速更保命。
+装依赖时如果当前源失败，脚本会**自动换下一个候选源重试**，而不是卡在第一次超时上退出——PySide6 基础包约 100 MB，这条比测速更保命。
 
 镜像只作用于这条命令，**不写 `pip.ini`、不改系统全局 pip 配置**。
 
@@ -499,11 +501,13 @@ packaging\windows\build.bat
 packaging/macos/build.command        # 双击也可以
 ```
 
-产物 `dist/ClassManageSystem.app`。打出来是**当前 CPU 架构**的原生程序（Apple Silicon 上是 arm64；要通用需 universal2 的 Python + PyQt5）。
+产物 `dist/ClassManageSystem.app`。打出来是**当前 CPU 架构**的原生程序（Apple Silicon 上是 arm64；要通用需 universal2 的 Python + PySide6）。
 
 ### 产物说明
 
-- 单文件窗口程序，目标机不需要装 Python；
+- 目录形态（`dist/ClassManageSystem/`）＋安装程序，目标机不需要装 Python；
+- **Qt 库是独立文件**（`_internal/` 下的 `Qt*.dll` / `.framework`），安装后可被替换，
+  满足 LGPL v3 对「用户能替换库」的要求；单文件 EXE 做不到这一点，因此不再使用；
 - 配置与日志写在 EXE / `.app` 同级目录（只读目录则回退 `%APPDATA%\ClassTerminal2411`），密钥在用户主目录；
 - **未做代码签名**：Windows 首次运行 SmartScreen 会提示「未知发布者」，点「更多信息 → 仍要运行」；macOS 拷给别人后首次需**右键 → 打开**。
 
@@ -519,7 +523,6 @@ packaging/macos/build.command        # 双击也可以
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
 │
 ├── namepicker/                      # 主程序包
-│   ├── __init__.py
 │   ├── _init_.md                    # 包内文件职责说明
 │   ├── config_store.py              # config.dat：加密配置 + 三级回档
 │   ├── crypto_utils.py              # AES-256-GCM 与 ~/.classmanage_key 密钥管理
@@ -568,16 +571,33 @@ packaging/macos/build.command        # 双击也可以
 │   ├── reset_fairness_benchmark.py  # 教师清空历史工作流模拟
 │   ├── weighting_demo.py            # 新旧算法分布对比
 │   ├── repro_quit.py                # 「关闭面板导致退出」最小复现
-│   └── _settings_isolation.py       # 测试用的 QSettings 命名空间隔离
+│   ├── _settings_isolation.py       # 测试用的 QSettings 命名空间隔离
+│   ├── _headless.py                 # 无头模式：屏蔽所有模态框，CI 不阻塞
+│   ├── run_all_tests.py             # 一键跑全套测试（自动找解释器 / 限时 / 隔离）
+│   ├── run_all_tests.command        # macOS 双击启动器
+│   └── run_all_tests.bat            # Windows 双击启动器
 │
-└── .github/workflows/build-windows.yml   # ❌ 已删除（目录不存在）：CI 无法编译含 GUI 的项目，见「已知限制」
+└── .github/workflows/build-windows.yml   # CI 构建流程（当前未启用，见「打包」）
 ```
 
 ---
 
 ## 测试
 
-所有测试从项目根目录运行。
+**最省事的方式**：双击 `tools/run_all_tests.command`（macOS）或
+`tools/run_all_tests.bat`（Windows），或运行：
+
+```bash
+python tools/run_all_tests.py            # 全套，offscreen（等价 CI）
+python tools/run_all_tests.py --gui      # 真实窗口，本机调试
+python tools/run_all_tests.py -k wipe    # 只跑名字含 wipe 的
+python tools/run_all_tests.py -q         # 只看失败摘要（默认打印全量输出）
+```
+
+它会自动选解释器（`.conda` → `.venv-build` → 当前 Python），给需要写数据的测试
+分配临时 `HOME`，并逐项限时（单项卡住不会拖垮整场）。
+
+单独运行某一项：
 
 ```bash
 python tools/config_check.py           # 最快，不依赖 Qt：存储读写/合并/清零/重置
@@ -597,7 +617,7 @@ python tools/i18n_check.py             # 双语：默认组名、重启参数、
 - `i18n_check` 现在覆盖：关于窗口非模态时悬浮球仍可抽人、隐藏父窗口下的对话框定位、
   语言双写、`--restarted` 参数、单实例重试（跨进程）。
 - `windows_check` 现在覆盖：对话框置顶（`WS_EX_TOPMOST`）、语言写入 `config.dat`。
-- `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PyQt5 时还会验证真实的 QSettings 隐蔽备份。
+- `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PySide6 时还会验证真实的 QSettings 隐蔽备份。
 - 冒烟测试构造 `MainWindow` 会读写真实注册表（Windows），脚本会先备份开机自启动项、跑完还原；macOS/Linux 自动跳过。
 - 测试统一使用隔离的 QSettings 命名空间，不会污染真实注册表 / plist。
 
@@ -643,6 +663,19 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
   重试 3 次（0.12s / 0.24s 退避）能吃掉杀软与索引服务的瞬时锁。
 - 「彻底重置」必须检查 `store.save()` 的返回值并读回校验；失败时先 `reload_from_disk()`
   让界面回到磁盘真实数据，再弹错误 —— **不要只刷内存**，否则界面和磁盘会长期不一致。
+- Qt 绑定是 **PySide6（Qt 6）**，不是 PyQt5。迁移时的坑：
+  * `QAction` 从 `QtWidgets` 移到了 **`QtGui`**；
+  * `pyqtSignal`/`pyqtSlot` → `Signal`/`Slot`，`exec_()` → `exec()`；
+  * `sip.isdeleted(x)` → `shiboken6.isValid(x)`；
+  * `PYQT_VERSION_STR` / `QT_VERSION_STR` 不存在，用 `qVersion()`；
+  * Qt6 里 `windowModality()` 返回**枚举**（`Qt.WindowModality.NonModal`），
+    不要和整数 `0` 比较。
+- **offscreen 下不能碰 macOS 原生窗口**：`QT_QPA_PLATFORM=offscreen` 时 `winId()`
+  不是真实 NSView，对它发 objc 消息会**段错误**（实测 exit=-11）。
+  `macos_window` 里所有入口都以 `QGuiApplication.platformName()` 是否 `cocoa` 为前置条件。
+- **测试里不能出现阻塞式对话框**：CI/无头环境没人点「确定」，会永久卡住。
+  `tools/_headless.py` 的 `install()` 会把 `QMessageBox` 的四个静态方法替换成
+  立即返回；新增测试请在创建 `QApplication` 前调用它。
 - 打包相关：`config_store._app_dir()` 对 `.app` 有专门处理，避免把数据写进应用包内部；
   Windows 的 `.bat` 必须是**纯 ASCII + CRLF**（`.gitattributes` 已强制 `eol=crlf`），
   且 `REM` 行里不能出现未配对的圆括号 —— cmd 的括号配对统计会因此从行中间截断命令。
@@ -732,7 +765,8 @@ QSettings 隐蔽备份恢复。
 ## 已知限制
 
 - **未做代码签名/公证**：Windows 有 SmartScreen 提示，macOS 拷贝到别的机器需右键打开。
-- **无法使用CI，无法交叉编译**：CI在冒烟测试阶段因为无GUI会卡死，需要注意，受限于Pyinstaller，不支持交叉编译
+- **不能交叉编译**：受限于 PyInstaller，macOS 上打不出 `.exe`，Windows 包必须在 Windows 上构建。
+  （测试本身已可在无头环境运行：`tools/run_all_tests.py` 默认 offscreen。）
 - **macOS 全屏覆盖靠「应用激活策略」**：窗口层级再高也没用 —— regular 应用自己占着
   一个桌面 Space，别的 App 进全屏后它压根不在那个 Space 里。本程序启动时会切到
   **accessory** 策略（`LSUIElement`，与 Alfred / Raycast 相同），窗口才能加入
@@ -777,10 +811,10 @@ Copyright (C) 2026 Gentole Lee
 - 衍生作品必须同样以 GPL-3.0 授权；
 - 不提供任何担保。
 
-**关于依赖：** 本项目使用 **PyQt5**，其许可证为 **GPL v3**，因此本程序本身也必须以
-GPL 发布 —— 选择 GPL-3.0 与之一致。其余依赖：Qt 5.15（LGPL v3）、PyQt5-sip（BSD-2-Clause）、
-cryptography（Apache-2.0 OR BSD-3-Clause）、cffi（MIT-0）、pycparser（BSD-3-Clause），
-均与 GPL-3.0 兼容。
+**关于依赖：** 本项目使用 **PySide6**（LGPL v3）与 **Qt 6**（LGPL v3），
+因此 Qt 部分要求**动态链接并允许用户替换 Qt 库**（安装包以目录形态分发即满足）。
+其余依赖：shiboken6（LGPL v3）、cryptography（Apache-2.0 OR BSD-3-Clause）、
+cffi（MIT-0）、pycparser（BSD-3-Clause）。
 
 ---
 
@@ -987,7 +1021,7 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 ### Requirements
 
 - Windows 10 or later (primary target), macOS 11 or later; Linux untested.
-- Python 3.10+, PyQt5 and cryptography (only needed when running from source).
+- Python 3.10+, PySide6 and cryptography (only needed when running from source).
 
 ```bash
 pip install -r requirements.txt
@@ -1306,7 +1340,7 @@ python tools/fairness_burnin.py
 | Data location when frozen | ✅ next to the EXE | ✅ **next to** the `.app` (not inside) | — |
 
 Conventions: **never `import winreg` directly** (use `try/except ImportError`), wrap all
-platform-specific calls in `try/except` with silent degradation, use PyQt5's built-in
+platform-specific calls in `try/except` with silent degradation, use PySide6's built-in
 `QSettings` for storage, and keep colours and fonts in `namepicker/theme.py`.
 
 ---
@@ -1316,16 +1350,16 @@ platform-specific calls in `try/except` with silent degradation, use PyQt5's bui
 ## Packaging
 
 > **PyInstaller cannot cross-compile**: on macOS you only get a macOS build; the `.exe`
-> must be built **locally** on Windows (CI is retired, see Known limitations).
+> must be built on Windows (locally or on a Windows runner). The test suite is
+> headless-safe now (`QT_QPA_PLATFORM=offscreen`), so it no longer needs a display.
 
 ### Windows — the only working way: build locally
 
-> ⚠️ **The former "option 1: GitHub Actions" is retired**; the repository no longer
-> contains `.github/workflows`. See Known limitations: CI hangs at the smoke-test
-> stage because there is no GUI, so it cannot produce a build. The `git push` /
-> `git tag` flow below **no longer works** — do not copy it.
+> Note: the CI build pipeline is **currently disabled** (`.github/workflows` is kept but
+> no longer triggers automatically). Packaging is still a single PyInstaller step on any
+> Windows machine; the test suite is headless-safe, so no display is required.
 
-On any Windows machine, build locally:
+On any Windows machine, build with:
 
 ```bat
 packaging\windows\build.bat
@@ -1352,7 +1386,7 @@ Without `curl` (not bundled before Windows 10 17063) probing is skipped and the 
 is used instead: **Tsinghua → Aliyun → pypi.org**.
 
 If the chosen index dies mid-install, the script **automatically retries the next candidate**
-instead of aborting on the first timeout — the PyQt5 wheel alone is about 50 MB, so this
+instead of aborting on the first timeout — the PySide6 base wheel is about 100 MB, so this
 matters more than the probe does.
 
 The index only applies to that one command — **no `pip.ini`, no global pip changes**.
@@ -1364,11 +1398,15 @@ packaging/macos/build.command        # double-clicking also works
 ```
 
 Produces `dist/ClassManageSystem.app` for the **current CPU architecture** (arm64 on
-Apple Silicon; a universal build needs universal2 Python + PyQt5).
+Apple Silicon; a universal build needs universal2 Python + PySide6).
 
 ### About the artifacts
 
-- Single-window GUI; the target machine needs no Python.
+- Directory layout (`dist/ClassManageSystem/`) plus an installer; the target machine
+  needs no Python.
+- **Qt ships as separate files** (`Qt*.dll` / `.framework` under `_internal/`) and can be
+  replaced after installation, which satisfies LGPL v3's "user can replace the library".
+  A single-file EXE cannot do that, so it is no longer used.
 - Config and logs are written next to the EXE / `.app` (falling back to
   `%APPDATA%\ClassTerminal2411` for read-only directories); the key lives in the home
   directory.
@@ -1439,7 +1477,11 @@ Apple Silicon; a universal build needs universal2 Python + PyQt5).
 │   ├── reset_fairness_benchmark.py  # pre-lesson "clear history" workflow
 │   ├── weighting_demo.py            # old vs new distribution
 │   ├── repro_quit.py                # minimal repro for "closing the panel quits"
-│   └── _settings_isolation.py       # isolated QSettings namespace for tests
+│   ├── _settings_isolation.py       # isolated QSettings namespace for tests
+│   ├── _headless.py                 # headless: stub out every modal dialog (CI-safe)
+│   ├── run_all_tests.py             # one-click suite runner (interpreter / timeout / isolation)
+│   ├── run_all_tests.command        # macOS double-click launcher
+│   └── run_all_tests.bat            # Windows double-click launcher
 │
 └── .github/workflows/build-windows.yml   # CI: x64 Windows build # deprecated: CI cannot build GUI projects online
 ```
@@ -1450,7 +1492,21 @@ Apple Silicon; a universal build needs universal2 Python + PyQt5).
 
 ## Tests
 
-Run everything from the project root.
+**Easiest way**: double-click `tools/run_all_tests.command` (macOS) or
+`tools/run_all_tests.bat` (Windows), or run:
+
+```bash
+python tools/run_all_tests.py            # everything, offscreen (CI-equivalent)
+python tools/run_all_tests.py --gui      # real windows, for local debugging
+python tools/run_all_tests.py -k wipe    # only tests whose name contains "wipe"
+python tools/run_all_tests.py -q         # failures only (default prints everything)
+```
+
+It picks the interpreter (`.conda` → `.venv-build` → current Python), gives
+data-writing tests a temporary `HOME`, and applies a per-test timeout so one stuck test
+cannot block the run.
+
+Run a single test:
 
 ```bash
 python tools/config_check.py           # fastest, no Qt: storage read/write/merge/reset
@@ -1474,7 +1530,7 @@ python tools/i18n_check.py             # bilingual: default group names, restart
 - `windows_check` now also covers: dialogs pinned topmost (`WS_EX_TOPMOST`) and the language
   persisted in `config.dat`.
 - `config_crypto_check` / `log_crypto_check` run under a temporary HOME, so your **real
-  data is never touched**; with PyQt5 installed they also verify the real QSettings
+  data is never touched**; with PySide6 installed they also verify the real QSettings
   hidden backup.
 - The smoke test builds `MainWindow`, which touches the real registry on Windows; the
   script backs up the autostart entry and restores it afterwards, and skips on macOS/Linux.
@@ -1519,6 +1575,20 @@ desktop, and it uses a temporary directory instead of your real config.
   memory segment is not released when a process dies, so an orphan left by `kill -9`
   makes every later start exit silently. Liveness is now determined by whether a
   `QLocalServer` accepts a connection, with shared memory as a fallback only.
+- The Qt binding is **PySide6 (Qt 6)**, not PyQt5. Migration traps:
+  * `QAction` moved from `QtWidgets` to **`QtGui`**;
+  * `pyqtSignal`/`pyqtSlot` → `Signal`/`Slot`, `exec_()` → `exec()`;
+  * `sip.isdeleted(x)` → `shiboken6.isValid(x)`;
+  * `PYQT_VERSION_STR` / `QT_VERSION_STR` do not exist — use `qVersion()`;
+  * `windowModality()` returns an **enum** (`Qt.WindowModality.NonModal`) in Qt 6;
+    do not compare it with the integer `0`.
+- **Never touch native macOS windows under offscreen**: with
+  `QT_QPA_PLATFORM=offscreen`, `winId()` is not a real NSView and sending it an objc
+  message segfaults (measured: exit=-11). Every entry point in `macos_window` is guarded
+  by `QGuiApplication.platformName()` starting with `cocoa`.
+- **No blocking dialogs in tests**: CI/headless has nobody to click OK, so `exec()` hangs
+  forever. `tools/_headless.py`'s `install()` replaces the four `QMessageBox` statics with
+  immediate returns; call it before creating `QApplication` in new tests.
 - Packaging: `config_store._app_dir()` special-cases `.app` so data never ends up inside
   the bundle. Windows `.bat` files must be **pure ASCII + CRLF** (`.gitattributes` forces
   `eol=crlf`) and `REM` lines must not contain unbalanced parentheses — cmd's parenthesis
@@ -1697,11 +1767,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 - Derivative works must also be licensed under GPL-3.0;
 - There is no warranty.
 
-**About the dependencies:** this project uses **PyQt5**, which is licensed under
-**GPL v3**, so the program itself must be GPL-licensed — GPL-3.0 is consistent with
-that. The other dependencies are Qt 5.15 (LGPL v3), PyQt5-sip (BSD-2-Clause),
-cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0) and pycparser
-(BSD-3-Clause), all compatible with GPL-3.0.
+**About the dependencies:** this project uses **PySide6** (LGPL v3) and **Qt 6**
+(LGPL v3). The Qt part therefore requires **dynamic linking and replaceable Qt
+libraries**, which the directory-style installer satisfies. The other dependencies are
+shiboken6 (LGPL v3), cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0) and
+pycparser (BSD-3-Clause).
 
 ---
 
