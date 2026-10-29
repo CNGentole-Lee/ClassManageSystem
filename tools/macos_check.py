@@ -235,6 +235,13 @@ def process(seconds: float):
 
 app = QApplication(sys.argv)
 theme.apply(app)
+
+# offscreen（CI / 无头）下没有真实的 NSWindow/NSStatusBar，继续跑只会对
+# 假的 winId 发 objc 消息（段错误），所以这里直接跳过。
+if is_macos and not macos_window._is_cocoa():
+    print(f"平台插件: {app.platformName()}（无真实窗口系统）")
+    print("SKIP: macOS 自检需要 cocoa 平台插件，offscreen 下不适用")
+    sys.exit(0)
 # 与 main.py 一致：macOS 必须切到 accessory 策略，窗口才能加入别的 App 的全屏 Space
 if is_macos:
     macos_window.set_accessory_policy()

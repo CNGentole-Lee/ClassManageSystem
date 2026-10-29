@@ -27,7 +27,7 @@ from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtGui import QFont, QFontMetrics  # noqa: E402
 from shiboken6 import isValid  # noqa: E402
 
-from namepicker import crash_log  # noqa: E402
+from namepicker import crash_log, theme  # noqa: E402
 from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()  # 测试数据不写进真实的隐蔽备份（Windows 注册表 / macOS plist）
@@ -375,7 +375,7 @@ def test_popup(engine):
     # 老外的名字真的很长，用这个当测试标准稳稳的
     popup.set_name_pool(["abcdefghijklmn", "1", "2"])
     popup.show_result("abcdefghijklmn")
-    fm = QFontMetrics(QFont("Microsoft YaHei", popup._font_size, QFont.Bold))
+    fm = QFontMetrics(theme.font(popup._font_size, bold=True))
     check("long names are not clipped",
           popup._cell_width >= fm.horizontalAdvance("abcdefghijklmn") + 16,
           f"cell width {popup._cell_width}px")

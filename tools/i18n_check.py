@@ -22,9 +22,11 @@ _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, _HERE)
 
+from _headless import install as silence_dialogs  # noqa: E402
 from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
+silence_dialogs()
 
 from PySide6.QtCore import QSettings, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
