@@ -778,6 +778,13 @@ class ConfigStore:
         # 早期版本把抽取次数写在 [stats] 段里，一并删除避免留下误导性残留。
         if self._cp.has_section("stats"):
             self._cp.remove_section("stats")
+        # 事件链也要记一笔，否则重放会把旧组名/分数带回来
+        self._ledger_append(self._ops().OP_RESET, {
+            "op": "reset",
+            "count": self.group_count,
+            "names": [self.get_group_name(i) for i in range(1, self.group_count + 1)],
+            "scores": [0] * self.group_count,
+        })
         return self.save()
 
     # --- 保存 ---
