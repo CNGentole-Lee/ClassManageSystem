@@ -600,9 +600,6 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 ├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium 等第三方声明
 ├── native/                          # 原生模块（只发布二进制；源码不进仓库）
 │   ├── LICENSE                      # 专有许可：随程序使用，禁止单独分发/逆向
-│   ├── CMakeLists.txt               # 构建定义（源码在 native/src/，已 gitignore）
-│   ├── build_macos.sh               # clang + 静态 libsodium，strip + ad-hoc 签名
-│   ├── build_windows.sh             # zig 交叉编译（无需 MSVC / 管理员）
 │   ├── cmd_native.exe               # Windows 构建产物
 │   └── cmd_native                   # macOS 构建产物
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
