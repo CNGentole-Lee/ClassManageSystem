@@ -100,6 +100,8 @@ a = Analysis(
         (os.path.join(ROOT, "LICENSE"), "."),
         (os.path.join(ROOT, "NOTICE"), "."),
         (os.path.join(ROOT, "THIRD-PARTY-NOTICES.md"), "."),
+        # 原生模块的专有许可：关于窗口的「原生模块」分页会读取它
+        (os.path.join(ROOT, "native", "LICENSE"), "native"),
     ],
     hiddenimports=[],
     hookspath=[],

@@ -64,6 +64,8 @@ def main() -> int:
         check(f"{label} spec bundles NOTICE", '"NOTICE"' in spec)
         check(f"{label} spec bundles third-party notices",
               "THIRD-PARTY-NOTICES.md" in spec)
+        check(f"{label} spec bundles the native module license",
+              '"native"' in spec and "LICENSE" in spec)
 
     # ---- native binaries -------------------------------------------
     check("macOS native binary exists", os.path.isfile(os.path.join(_ROOT, "native", "cmd_native")))

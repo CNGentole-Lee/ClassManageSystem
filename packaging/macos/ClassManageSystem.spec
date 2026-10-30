@@ -119,6 +119,10 @@ LICENSE_LIST = [
     for name in _BUNDLED_DOCS
     if os.path.isfile(os.path.join(ROOT, name))
 ]
+# 原生模块的专有许可（关于窗口的「原生模块」分页读取）
+_NATIVE_LICENSE = os.path.join(ROOT, "native", "LICENSE")
+if os.path.isfile(_NATIVE_LICENSE):
+    LICENSE_LIST.append(("Resources/native/LICENSE", _NATIVE_LICENSE, "DATA"))
 
 app = BUNDLE(
     coll,

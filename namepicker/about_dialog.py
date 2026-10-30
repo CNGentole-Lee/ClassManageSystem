@@ -17,7 +17,8 @@ import sys
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QLabel, QPushButton, QTextBrowser, QVBoxLayout,
+    QDialog, QHBoxLayout, QLabel, QPushButton, QTabWidget, QTextBrowser,
+    QVBoxLayout,
 )
 
 from . import dialogs, theme
@@ -143,6 +144,111 @@ def license_candidates() -> list[str]:
     return candidates
 
 
+def _doc_candidates(rel: str) -> list[str]:
+    """在源码目录与打包目录里找随包文档（rel 形如 'LICENSE'、'native/LICENSE'）。"""
+    candidates = []
+    base = getattr(sys, "_MEIPASS", "")
+    if base:
+        candidates.append(os.path.join(base, rel))
+        candidates.append(os.path.join(base, "Resources", rel))
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(os.path.dirname(here), rel))
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        contents = os.path.dirname(exe_dir)
+        candidates.append(os.path.join(contents, "Resources", rel))
+        candidates.append(os.path.join(exe_dir, rel))
+        app_root = _macos_app_root()
+        if app_root:
+            candidates.append(os.path.join(app_root, rel))
+            candidates.append(os.path.join(os.path.dirname(app_root), rel))
+    return candidates
+
+
+def doc_path(rel: str) -> str:
+    """找到随程序分发的某个文档；找不到返回空串。"""
+    for path in _doc_candidates(rel):
+        try:
+            if path and os.path.isfile(path):
+                return os.path.normpath(path)
+        except OSError:
+            continue
+    return ""
+
+
+def doc_text(rel: str) -> str:
+    """读取随包文档；读不到返回空串。"""
+    path = doc_path(rel)
+    if not path:
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def native_license_text() -> str:
+    """原生模块的专有许可；缺失时给出内置摘要。"""
+    text = doc_text(os.path.join("native", "LICENSE"))
+    if text:
+        return text
+    return tr(
+        "[\u63d0\u793a] \u672a\u627e\u5230 native/LICENSE\uff0c\u4ee5\u4e0b\u4e3a\u5185\u7f6e\u6458\u8981\uff1a\n\n"
+        "\u539f\u751f\u6a21\u5757\uff08cmd_native / cmd_native.exe\uff09\u4e3a\u4e13\u6709\u8f6f\u4ef6\uff0c"
+        "\u53ea\u80fd\u968f\u672c\u7a0b\u5e8f\u4f7f\u7528\uff1b\u7981\u6b62\u5355\u72ec\u5206\u53d1\u3001"
+        "\u53cd\u5411\u5de5\u7a0b\u3001\u4fee\u6539\u6216\u63d0\u53d6\u5176\u4e2d\u7684\u7b97\u6cd5\u4e0e\u5bc6\u94a5\u3002"
+        "\u6309\u201c\u73b0\u72b6\u201d\u63d0\u4f9b\uff0c\u4e0d\u9644\u5e26\u4efb\u4f55\u62c5\u4fdd\u3002\n",
+        "[Note] native/LICENSE was not found; embedded summary:\n\n"
+        "The native module (cmd_native / cmd_native.exe) is proprietary software and "
+        "may only be used together with this application; standalone distribution, "
+        "reverse engineering, modification or extraction of its algorithms and keys "
+        "are prohibited. Provided AS IS, without warranty.\n",
+    )
+
+
+DEPENDENCIES_ZH = """\u672c\u9879\u76ee\u4f7f\u7528\u7684\u7b2c\u4e09\u65b9\u7ec4\u4ef6 / Third-party components
+============================================================
+
+PySide6        6.12.x     LGPL-3.0      \u52a8\u6001\u94fe\u63a5\u3001\u53ef\u66ff\u6362
+Qt 6           6.12.x     LGPL-3.0      \u52a8\u6001\u94fe\u63a5\u3001\u53ef\u66ff\u6362
+shiboken6      6.12.x     LGPL-3.0
+cryptography   50.x       Apache-2.0 OR BSD-3-Clause
+cffi           2.x        MIT-0
+pycparser      3.x        BSD-3-Clause
+libsodium      \u9759\u6001\u94fe\u63a5   ISC           \u4ec5\u5b58\u5728\u4e8e\u539f\u751f\u6a21\u5757\u5185\u90e8
+Python         3.14.x     PSF-2.0       \u6253\u5305\u65f6\u968f\u9644\u89e3\u91ca\u5668
+
+LGPL v3 \u8981\u6c42\u7528\u6237\u80fd\u591f**\u66ff\u6362 Qt \u5e93**\uff1a\u5b89\u88c5\u76ee\u5f55\u4e0b\u7684 Qt \u52a8\u6001\u5e93
+\uff08_internal/Qt*.dll\u3001Contents/Frameworks/Qt*.framework\uff09\u662f\u72ec\u7acb\u6587\u4ef6\uff0c
+\u5b89\u88c5\u540e\u53ef\u76f4\u63a5\u66ff\u6362\uff0c\u65e0\u9700\u91cd\u65b0\u7f16\u8bd1\u672c\u7a0b\u5e8f\u3002
+
+\u5b8c\u6574\u58f0\u660e\uff08\u7248\u6743\u884c\u3001\u4e3b\u9875\u3001\u8bb8\u53ef\u8bc1\u5168\u6587\u94fe\u63a5\uff09\u89c1\u968f\u5305\u7684
+THIRD-PARTY-NOTICES.md\u3002
+"""
+
+DEPENDENCIES_EN = """Third-party components used by this program
+============================================================
+
+PySide6        6.12.x     LGPL-3.0      dynamically linked, replaceable
+Qt 6           6.12.x     LGPL-3.0      dynamically linked, replaceable
+shiboken6      6.12.x     LGPL-3.0
+cryptography   50.x       Apache-2.0 OR BSD-3-Clause
+cffi           2.x        MIT-0
+pycparser      3.x        BSD-3-Clause
+libsodium      static      ISC           only inside the native module
+Python         3.14.x     PSF-2.0       interpreter bundled by PyInstaller
+
+LGPL v3 requires that users can **replace the Qt libraries**: the Qt shared
+libraries in the install directory (_internal/Qt*.dll,
+Contents/Frameworks/Qt*.framework) are separate files and can be replaced
+after installation without rebuilding this program.
+
+The full notices (copyright lines, homepages, license links) are in the
+bundled THIRD-PARTY-NOTICES.md.
+"""
+
+
 def license_path() -> str:
     """找到随程序分发的 LICENSE 文件；一个都找不到时返回空串。
 
@@ -189,8 +295,27 @@ def _bold(text: str) -> str:
     return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
 
 
+def _is_zh() -> bool:
+    try:
+        from . import i18n
+        return i18n.is_zh()
+    except Exception:                                  # noqa: BLE001
+        return True
+
+
 class AboutDialog(QDialog):
     """关于窗口：版权 + 不担保声明 + 许可证全文。"""
+
+    def _make_text_view(self, text: str) -> QTextBrowser:
+        """生成一个与许可证页同样式的只读文本视图。"""
+        view = QTextBrowser()
+        view.setPlainText(text)
+        view.setFont(theme.font(11))
+        view.setStyleSheet(
+            f"background: {theme.c('log_bg')}; color: {theme.c('text')};"
+            f" border: 1px solid {theme.c('view_border')};"
+        )
+        return view
 
     def showEvent(self, event) -> None:
         """显示时居中；macOS 上用 level 25 的浮层（低于抽选弹窗）。"""
@@ -243,14 +368,36 @@ class AboutDialog(QDialog):
         notice.setStyleSheet(f"color: {theme.c('muted')};")
         layout.addWidget(notice)
 
+        # 四个分页：许可证 / 原生模块 / 第三方组件 / 依赖
         self._browser = QTextBrowser()
-        self._browser.setPlainText(license_text())
         self._browser.setFont(theme.font(11))
         self._browser.setStyleSheet(
             f"background: {theme.c('log_bg')}; color: {theme.c('text')};"
             f" border: 1px solid {theme.c('view_border')};"
         )
-        layout.addWidget(self._browser, 1)
+
+        self._tabs = QTabWidget()
+        self._tabs.setStyleSheet(
+            f"QTabBar::tab {{ padding: 5px 12px; color: {theme.c('muted')}; }}"
+            f"QTabBar::tab:selected {{ color: {theme.c('text')}; font-weight: bold; }}"
+        )
+        self._tabs.addTab(self._browser, tr("许可证", "License"))
+
+        self._native_view = self._make_text_view(native_license_text())
+        self._tabs.addTab(self._native_view, tr("原生模块", "Native module"))
+
+        notices = doc_text("THIRD-PARTY-NOTICES.md") or tr(
+            "未找到 THIRD-PARTY-NOTICES.md。\n\n" + DEPENDENCIES_ZH,
+            "THIRD-PARTY-NOTICES.md was not found.\n\n" + DEPENDENCIES_EN)
+        self._notices_view = self._make_text_view(notices)
+        self._tabs.addTab(self._notices_view, tr("第三方组件", "Third-party"))
+
+        deps = DEPENDENCIES_ZH if _is_zh() else DEPENDENCIES_EN
+        self._deps_view = self._make_text_view(deps)
+        self._tabs.addTab(self._deps_view, tr("依赖", "Dependencies"))
+
+        self._browser.setPlainText(license_text())
+        layout.addWidget(self._tabs, 1)
 
         buttons = QHBoxLayout()
         path = license_path()

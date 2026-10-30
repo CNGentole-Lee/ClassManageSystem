@@ -391,6 +391,25 @@ def main() -> int:
           f"len={len(fallback)}")
     check("fallback mentions the online copy",
           "apache.org/licenses" in fallback)
+
+    # 关于窗口的四个分页：许可证 / 原生模块 / 第三方组件 / 依赖
+    from namepicker import about_dialog as ad
+    dlg = ad.AboutDialog(None)
+    tabs = [dlg._tabs.tabText(i) for i in range(dlg._tabs.count())]
+    check("about dialog has four tabs", len(tabs) == 4, " / ".join(tabs))
+    check("license tab is the first", tabs[0] in ("许可证", "License"), tabs[0])
+    native_text = dlg._native_view.toPlainText()
+    check("native tab shows the proprietary license",
+          "cmd_native" in native_text and ("专有" in native_text or "proprietary" in native_text))
+    notices_text = dlg._notices_view.toPlainText()
+    check("third-party tab lists PySide6 and Qt",
+          "PySide6" in notices_text and "Qt" in notices_text)
+    deps_text = dlg._deps_view.toPlainText()
+    check("dependencies tab lists libsodium and LGPL",
+          "libsodium" in deps_text and "LGPL" in deps_text)
+    check("dependencies tab explains Qt replaceability",
+          "替换" in deps_text or "replace" in deps_text)
+    dlg.deleteLater()
     dlg.close()
 
     print("\n" + "=" * 60)

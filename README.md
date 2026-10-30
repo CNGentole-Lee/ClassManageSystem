@@ -263,7 +263,9 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「开机自启动」：写入当前用户的自启动项。
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
-- 「关于」：版本、版权、不担保声明与 Apache-2.0 许可证全文，并注明原生模块为专有许可、第三方组件（Qt 等）的许可证（托盘菜单与悬浮球右键里也有）。
+- 「关于」：分四个分页 —— **许可证**（Apache-2.0 全文）、**原生模块**（`native/LICENSE` 专有许可）、
+  **第三方组件**（`THIRD-PARTY-NOTICES.md` 全文）、**依赖**（PySide6 / Qt 6 / libsodium 等清单与
+  Qt 可替换说明）。托盘菜单与悬浮球右键里也有入口。
   ~~版本号实际写在**三处**，升级时需同步修改（当前三处不一致）：
   `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `3.0.0`）、
   `packaging/windows/version_info.txt` 的 `filevers`/`prodvers`（EXE 属性，现为 `1.0.0.0`）、
@@ -1215,8 +1217,10 @@ their custom name, untouched ones show `Group 4/5/6`.
 - "Hide ball": temporarily hide or show the ball.
 - "Clear history": clears draw history and cooldowns but **keeps** lifetime fairness
   counts.
-- "About": version, copyright, the no-warranty notice and the full Apache-2.0 text,
-  (also available from the tray menu and the ball's right-click menu).
+- "About": four tabs — **License** (full Apache-2.0), **Native module** (`native/LICENSE`,
+  proprietary), **Third-party** (full `THIRD-PARTY-NOTICES.md`) and **Dependencies**
+  (PySide6 / Qt 6 / libsodium list plus the Qt replaceability note). Also reachable from
+  the tray menu and the ball's right-click menu.
   ~~The version actually lives in **three** places and must be bumped together (currently
   out of sync): `VERSION` in `namepicker/about_dialog.py` (shown in the dialog, now
   `3.0.0`), `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties,
