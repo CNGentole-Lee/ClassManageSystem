@@ -78,6 +78,20 @@ def main() -> int:
           st["names"][0] == "雄鹰组" and st["scores"] == [0, 5, 0], str(st["scores"]))
     check("state reports the head", len(base64.b64decode(st["head"])) == 32)
 
+    # ---- 非 ASCII 参数（Windows 上曾因 argv 代码页而乱码）----------
+    # Windows 的 main(int, char**) 拿的是当前代码页的窄字符；
+    # 这里用中文 + emoji 覆盖 UTF-16 -> UTF-8 的转换路径。
+    r = nb.apply([], "init", count=3, names="甲组,乙组,丙组", scores="0,0,0")
+    ascii_rec = base64.b64decode(r["record"])
+    check("non-ASCII names survive init", r["names"] == ["甲组", "乙组", "丙组"],
+          str(r["names"]))
+    r = nb.apply([ascii_rec], "rename", group=1, name="🚀火箭组")
+    emoji_rec = base64.b64decode(r["record"])
+    check("emoji name survives rename", r["names"][0] == "🚀火箭组", r["names"][0])
+    st = nb.state([ascii_rec, emoji_rec])
+    check("non-ASCII names replay correctly",
+          st["names"] == ["🚀火箭组", "乙组", "丙组"], str(st["names"]))
+
     # ---- 规则在 C++ 侧 --------------------------------------------
     try:
         nb.apply([rec1, rec2, rec3], "score", group=99, delta=1)

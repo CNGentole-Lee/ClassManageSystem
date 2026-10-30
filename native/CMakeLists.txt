@@ -34,4 +34,7 @@ target_compile_options(cmd_native PRIVATE -O2 -Wall -Wextra)
 
 if(APPLE)
   target_link_libraries(cmd_native PRIVATE "-framework Security")
+elseif(WIN32)
+  # CommandLineToArgvW 在 shell32 里
+  target_link_libraries(cmd_native PRIVATE shell32)
 endif()

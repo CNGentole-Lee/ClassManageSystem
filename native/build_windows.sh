@@ -54,7 +54,7 @@ cd "$ROOT/native"
   -I "$TP/libsodium-windows/include" \
   src/main.cpp src/crypto.cpp src/envfp.cpp src/state.cpp \
   "$TP/libsodium-windows/lib/libsodium.lib" \
-  -o cmd_native.exe -lbcrypt
+  -o cmd_native.exe -lbcrypt -lshell32
 
 file cmd_native.exe
 ls -lh cmd_native.exe
