@@ -123,31 +123,26 @@ def reset_cache() -> None:
     _fp_cache = None
 
 
-def append(prev_head: bytes, seq: int, payload: bytes, gen: int = 0) -> tuple[bytes, bytes]:
-    """追加一条事件，返回 (record, new_head)。
+def state(records: list[bytes]) -> dict:
+    """重放整条链，返回业务状态（C++ 计算，Python 不解析事件）。"""
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    return _run(["state", "--fp", fingerprint()], stdin_text=lines, timeout=30)
 
-    prev_head 为 32 字节；首条传 b"\\x00" * 32。
+
+def apply(records: list[bytes], op: str, **kwargs) -> dict:
+    """执行一个业务操作；规则校验与事件生成都在 C++ 里。
+
+    kwargs 会按 --key value 的形式传下去（下划线会转成短横线）。
+    业务规则拒绝时抛 NativeError。
     """
-    if len(prev_head) != 32:
-        raise NativeError("prev_head must be 32 bytes")
-    data = _run(
-        [
-            "append",
-            "--fp", fingerprint(),
-            "--seq", str(int(seq)),
-            "--gen", str(int(gen)),
-            "--prev-head", base64.b64encode(prev_head).decode("ascii"),
-            "--payload", base64.b64encode(payload).decode("ascii"),
-        ],
-        timeout=10,
-    )
+    args = ["apply", "--fp", fingerprint(), "--op", op]
+    for key, value in kwargs.items():
+        args += ["--" + key.replace("_", "-"), str(value)]
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    data = _run(args, stdin_text=lines, timeout=30)
     if data.get("ok") is not True:
-        raise NativeError("append failed: " + str(data.get("error")))
-    record = base64.b64decode(data["record"])
-    head = base64.b64decode(data["head"])
-    if len(head) != 32:
-        raise NativeError("bad head length")
-    return record, head
+        raise NativeError(str(data.get("error", "APPLY_FAILED")))
+    return data
 
 
 def verify(records: list[bytes], expect_seq: int | None = None,
@@ -168,43 +163,6 @@ def verify(records: list[bytes], expect_seq: int | None = None,
     if data.get("ok") is True:
         return True, base64.b64decode(data.get("head", "")), ""
     return False, b"", str(data.get("error", "UNKNOWN"))
-
-
-def dump(records: list[bytes]) -> tuple[list[bytes], bytes, str]:
-    """校验并返回每条记录的明文，返回 (plaintexts, head, error)。
-
-    明文格式：prev_head(32) seq(4) ts(8) op(1) len(4) payload
-    """
-    if not records:
-        return [], b"", "EMPTY"
-    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    data = _run(["dump", "--fp", fingerprint()], stdin_text=lines, timeout=30)
-    if data.get("ok") is not True:
-        return [], b"", str(data.get("error", "UNKNOWN"))
-    plains = [base64.b64decode(x) for x in data.get("events", [])]
-    return plains, base64.b64decode(data.get("head", "")), ""
-
-
-def state(records: list[bytes]) -> dict:
-    """重放整条链，返回业务状态（C++ 计算，Python 不解析事件）。"""
-    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    return _run(["state", "--fp", fingerprint()], stdin_text=lines, timeout=30)
-
-
-def apply(records: list[bytes], op: str, **kwargs) -> dict:
-    """执行一个业务操作；规则校验与事件生成都在 C++ 里。
-
-    kwargs 会按 --key value 的形式传下去（值会被转成字符串）。
-    """
-    args = ["apply", "--fp", fingerprint(), "--op", op]
-    for key, value in kwargs.items():
-        args += ["--" + key.replace("_", "-"), str(value)]
-    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    data = _run(args, stdin_text=lines, timeout=30)
-    if data.get("ok") is not True:
-        # 业务规则拒绝（组号越界、分数超限等）也要抛出来，调用方不能当成功
-        raise NativeError(str(data.get("error", "APPLY_FAILED")))
-    return data
 
 
 def selftest() -> bool:

@@ -19,7 +19,7 @@
 import sys
 import os
 
-from PySide6.QtCore import Qt, QSettings, QTimer
+from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from namepicker import about_dialog
@@ -170,9 +170,10 @@ def main():
         else:
             startup_log.record(["ledger not attached: chain is not trustworthy"])
     except Exception as exc:                      # noqa: BLE001
-        # 原生模块缺失 / 文件不可读：降级为“无链模式”，不阻断上课
-        ledger_state = {"ok": False, "error": str(exc)}
-        startup_log.record([f"ledger unavailable: {exc}"])
+        # 这里只可能是“安全模块不可用 / 程序内部错误”，不是数据被篡改。
+        # 两者必须分开提示：把程序 bug 说成“数据被替换”会误导老师。
+        ledger_state = {"ok": False, "internal": True, "error": str(exc)}
+        startup_log.record([f"ledger unavailable: {type(exc).__name__}: {exc}"])
 
     stats = StatsStore()
     engine = NameEngine()
@@ -248,6 +249,14 @@ def main():
         main_win.statusBar().showMessage(
             tr("⚠ 检测到数据被删除或替换，已从安全副本恢复（{e}）。",
                "⚠ Data deletion or replacement detected; restored from a safe copy ({e}).",
+               e=ledger_state["error"]),
+            0,
+        )
+    elif ledger_state.get("internal"):
+        main_win.statusBar().showMessage(
+            tr("⚠ 安全模块异常：{e}。已暂停记录新变动，请检查安装是否完整。",
+               "⚠ Security module error: {e}. New changes are not being recorded; "
+               "check the installation.",
                e=ledger_state["error"]),
             0,
         )

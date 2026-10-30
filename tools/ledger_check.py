@@ -103,6 +103,12 @@ def main() -> int:
     check("no-op score does not append", chain2.count() == before + 2,
           str(chain2.count()))
 
+    # ---- score limits come from C++ --------------------------------
+    before_score = store.get_score(1)
+    store.set_score(1, 2_000_000)             # 远超上限 -> C++ 拒绝
+    check("oversized score is rejected by C++", store.get_score(1) == before_score,
+          f"{store.get_score(1)} vs {before_score}")
+
     # ---- tampering -------------------------------------------------
     lines = [ln for ln in open(chain2.path, encoding="ascii") if ln.strip()]
     raw = bytearray(base64.b64decode(lines[-1]))
