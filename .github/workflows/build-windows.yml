@@ -84,9 +84,17 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
-          & $iscc "packaging\windows\installer.iss" "/DMyAppVersion=${{ steps.version.outputs.value }}"
+          # ISCC 可能在 Program Files 或 Program Files (x86)，两个都找一遍
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe not found in Program Files" }
+          "ISCC: $iscc"
+          # 注意：/D 定义必须在脚本路径之前，否则 ISCC 会把它当成第二个脚本文件，
+          # 报 "The system cannot find the file specified."
+          & $iscc "/DMyAppVersion=${{ steps.version.outputs.value }}" "packaging\windows\installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
           Get-ChildItem dist\*.exe | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
 
       - name: Build portable zip
