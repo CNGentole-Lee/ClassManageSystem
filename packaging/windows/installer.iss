@@ -1,7 +1,7 @@
 ; Inno Setup 6 script for ClassManageSystem (Windows installer).
 ;
 ; Build:
-;   iscc packaging\windows\installer.iss /DMyAppVersion=2.0.0
+;   iscc packaging\windows\installer.iss /DMyAppVersion=3.0.0
 ;
 ; Expects PyInstaller output at dist\ClassManageSystem\ (onedir build).
 ;

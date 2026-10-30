@@ -26,7 +26,7 @@ from .i18n import tr
 
 #: 版本号 —— 全项目唯一来源。
 #: 打包脚本（spec / version_info.txt）在构建时从这里读取，不必手工同步。
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 #: 「关于」窗口里许可证入口的标识
 LICENSE_ACTION = "license"

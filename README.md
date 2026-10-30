@@ -14,6 +14,7 @@
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB">
+  <img alt="version" src="https://img.shields.io/badge/version-3.0-blue">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-blue">
   <img alt="PySide6" src="https://img.shields.io/badge/PySide6-LGPLv3-orange">
 </p>
@@ -216,6 +217,8 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 ### 下载可运行版本
 
+当前版本 **3.0**（`namepicker/about_dialog.py` 的 `VERSION = "3.0.0"`）。
+
 在 **GitHub Releases** 下载（若尚未发布，见 [打包](#打包) 自行构建）。
 
 ---
@@ -262,7 +265,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
 - 「关于」：版本、版权、不担保声明与 Apache-2.0 许可证全文，并注明原生模块为专有许可、第三方组件（Qt 等）的许可证（托盘菜单与悬浮球右键里也有）。
   ~~版本号实际写在**三处**，升级时需同步修改（当前三处不一致）：
-  `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `2.0.0`）、
+  `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `3.0.0`）、
   `packaging/windows/version_info.txt` 的 `filevers`/`prodvers`（EXE 属性，现为 `1.0.0.0`）、
   `packaging/macos/ClassManageSystem.spec` 的 `CFBundleShortVersionString`（.app 版本，现为 `1.0.0`）。
   打包脚本读的是 `version_info.txt`，**不会**从 `about_dialog.py` 读取。~~
@@ -923,8 +926,8 @@ limitations under the License.
 其余依赖：shiboken6（LGPL v3）、cryptography（Apache-2.0 OR BSD-3-Clause）、
 cffi（MIT-0）、pycparser（BSD-3-Clause）、libsodium（ISC）。
 
-**历史版本：** 2.0.0 及更早的提交曾以 GPL-3.0 发布，收到过那些版本的人
-仍可继续按 GPL-3.0 使用它们（许可证不可收回）；自本版本起改为 Apache-2.0。
+**历史版本：** 3.0.0 之前的版本（含 2.0.0）以 GPL-3.0 发布，收到过那些版本的
+人仍可继续按 GPL-3.0 使用它们（许可证不可收回）；自 **3.0.0** 起改为 Apache-2.0。
 
 ---
 
@@ -1160,6 +1163,8 @@ a default list of the numbers 1–99 is generated.
 
 ### Download a ready-to-run build
 
+Current version: **3.0** (`VERSION = "3.0.0"` in `namepicker/about_dialog.py`).
+
 Grab it from **GitHub Releases** (if nothing is published yet, see
 [Packaging](#en-packaging) and build it yourself).
 
@@ -1214,12 +1219,12 @@ their custom name, untouched ones show `Group 4/5/6`.
   (also available from the tray menu and the ball's right-click menu).
   ~~The version actually lives in **three** places and must be bumped together (currently
   out of sync): `VERSION` in `namepicker/about_dialog.py` (shown in the dialog, now
-  `2.0.0`), `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties,
+  `3.0.0`), `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties,
   now `1.0.0.0`), and `CFBundleShortVersionString` in
   `packaging/macos/ClassManageSystem.spec` (app version, now `1.0.0`). The build script
   reads `version_info.txt`, **not** `about_dialog.py`.~~
   (Struck out because since 2.0.0 the version is a **single source of truth**.)
-  Only `VERSION` in `namepicker/about_dialog.py` needs editing:
+  Only `VERSION` in `namepicker/about_dialog.py` needs editing (currently `3.0.0`):
   - the Windows spec substitutes it into the `version_info.txt` template and writes
     `version_info.generated.txt` for PyInstaller (the template is no longer edited by hand);
   - the macOS spec reads it directly for `CFBundleShortVersionString` / `CFBundleVersion`.
@@ -1984,9 +1989,9 @@ libraries**, which the directory-style installer satisfies. The other dependenci
 shiboken6 (LGPL v3), cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0),
 pycparser (BSD-3-Clause) and libsodium (ISC).
 
-**Historical versions:** 2.0.0 and earlier commits were released under GPL-3.0; anyone
-who received those versions may keep using them under GPL-3.0 (licenses are
-irrevocable). From this version on the license is Apache-2.0.
+**Historical versions:** versions before 3.0.0 (including 2.0.0) were released under
+GPL-3.0; anyone who received those versions may keep using them under GPL-3.0 (licenses
+are irrevocable). Starting with **3.0.0** the license is Apache-2.0.
 
 ---
 
