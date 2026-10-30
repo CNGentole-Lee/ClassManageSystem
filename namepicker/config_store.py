@@ -1,19 +1,23 @@
-"""ConfigStore —— 小组积分的防篡改持久化（加密主文件 + 三级回档）。
+"""ConfigStore —— 非分数配置的持久化 + 分数缓存。
 
-存储布局（四个副本，读取时逐级回退）：
+**分数的权威来源是事件链**（见 ledger.py 与原生模块 cmd_native）：
+每次改分/改组都会由 C++ 校验规则、加密、签名后追加一条事件；
+启动时校验整条链并重放，用重放结果覆盖这里的 score_* 缓存。
+所以本文件里的分数只是**缓存**，被单独篡改不会生效。
 
-    config.dat          加密主数据源（AES-256-GCM）              读 + 写
-    config.dat.bak      同目录加密备份                            读（回档）+ 写
-    QSettings 隐蔽备份  注册表 / plist，学生难找难删（backup_store） 读（回档）+ 写
-    config.ini          明文查看副本，程序**永不读取**             只写
+配置数据（组名、组数、语言等）仍按四级顺序读取，用于容灾：
+
+    config.dat          加密主文件（AES-256-GCM）               读 + 写
+    config.dat.bak      同目录加密备份                          读（回档）+ 写
+    QSettings 隐蔽备份  注册表 / plist（backup_store）           读（回档）+ 写
+    config.ini          明文查看副本，程序**永不读取**           只写
 
 读取顺序：
 
     config.dat → config.dat.bak → QSettings 隐蔽备份 → 旧版明文（一次性迁移）→ 默认值
 
-任何一级成功，都会用成功的数据把前面的副本全部修复回一致状态。
-config.ini 只是给人看的：老师/学生改它都不会影响分数（程序不读它），
-每次保存都会被加密数据重新覆盖。
+任何一级成功，都会用成功的数据把前面的副本修复回一致状态。
+config.ini 只是给人看的：老师/学生改它都不会影响程序（程序不读它）。
 
 结构（加密前的明文，仅用于说明字段）：
 
@@ -24,7 +28,7 @@ config.ini 只是给人看的：老师/学生改它都不会影响分数（程�
     [points]
     group_count = 6
     group_1 = 第一组          ; 显示名，可自由编辑
-    score_1 = 12              ; 可为负数
+    score_1 = 12              ; 可为负数；仅是缓存，实际以事件链重放为准
     ...
 
 长期抽取次数刻意放在 stats.ini（见 stats_store.py），
@@ -74,7 +78,8 @@ MAX_GROUP_COUNT = 24
 VIEW_MARKER = "# 仅供查看，修改无效"
 VIEW_MARKER_EN = "# view-only copy - edits are ignored"
 VIEW_HEADER = (
-    VIEW_MARKER + " —— 分数保存在加密文件 config.dat 中，程序不会读取本文件。\n"
+    VIEW_MARKER + " —— 本文件只是查看副本，程序不会读取它；"
+    "真正的分数在 Data/ledger.esc（加密签名的追加式事件链）。\n"
     + VIEW_MARKER_EN + "\n"
     + "# 手工修改这里不会影响程序里的分数，只作为人工查看/备份用。\n"
 )

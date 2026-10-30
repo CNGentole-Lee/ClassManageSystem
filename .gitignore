@@ -274,3 +274,7 @@ crash.log
 native/*.pdb
 native/*.lib
 native/*.obj
+
+# 临时测试目录（历史遗留）
+sw_*/
+sw2_*/

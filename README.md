@@ -160,7 +160,8 @@
 - 默认 6 组，可调 1~24 组；每组一张卡片。
 - 单击展开 `-1 / +1 / +2 / +3`；双击组名重命名；右键清零本组。
 - 支持 `Ctrl+Z` 撤销；快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
-- 分数加密保存在 `config.dat`，重启不丢；被改坏或删掉会自动回档。
+- 分数以加密签名的事件链（`Data/ledger.esc`）为准，重启不丢；
+  被改坏、被删掉或被换回旧文件都会自动检测并恢复。
 - 每次积分变动自动写入加密操作日志，底栏「操作日志」按钮只读查看；
   日志每条同时保存中英两版，切换语言后历史记录依然可读。
 - 「彻底重置」会先弹出**选择清空范围**的对话框：组名 / 积分 / 长期公平记录 /
@@ -190,6 +191,8 @@
 
 - Windows 10 及以上（主要目标平台）、macOS 11 及以上；Linux 未验证。
 - Python 3.10+、PySide6、cryptography（仅源码运行需要）。
+- **原生模块** `native/cmd_native`（Windows 为 `cmd_native.exe`）：源码运行时必须存在，
+  否则程序降级为「只读 + 状态栏提示」，不会崩溃。构建方法见「开发注意事项」。
 
 ```bash
 pip install -r requirements.txt
@@ -315,29 +318,83 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 ## 数据与安全
 
-积分和操作日志都是**防篡改存储**：同一份数据有四个副本，读取时逐级回退。
+数据分两套机制，**分数的权威来源是事件链，配置文件只是缓存**。
+
+### 一、事件链（分数）
+
+每次改分、改组名、改组数，都会先经原生模块 `cmd_native`：
+
+```text
+界面操作
+  → C++ 校验规则（组号 1..24、分数 ±100 万、组名长度）
+  → 加密（XChaCha20-Poly1305）+ 计算链头（BLAKE2b-256）+ 签名（Ed25519）
+  → 追加到 Data/ledger.esc
+```
+
+启动时整链验签并重放，用结果覆盖 `config.dat` 里的分数缓存。
+
+| 文件 / 位置 | 角色 |
+|---|---|
+| `Data/ledger.esc` | 事件链，base64 行，只追加不覆盖 |
+| `Data/anchor.json` | 基准：链曾经到过第几条、链头是什么 |
+| `~/.cache/classmanage/<哈希>/anchor.json` | 同一基准的隐藏副本 |
+| `~/.cache/classmanage/<哈希>/ledger.esc` | 安全副本，用于自动恢复 |
+| `native/cmd_native`（Windows 为 `.exe`） | 原生模块：密钥、规则、加解密、签名 |
+
+**能挡住什么**（均为实测）：
+
+| 攻击 | 结果 |
+|---|---|
+| 改任意一条记录 | 验签失败，拒绝加载 |
+| 删掉中间几条 | 序号断裂，拒绝加载 |
+| 用旧文件覆盖 `Data/` | 链比基准短 → 从安全副本自动恢复 |
+| 删空 `Data/` | 判定被删 → 从安全副本自动恢复 |
+| 连 `config.dat` 一起换 | 仍然被基准发现（基准不在 `Data/` 里） |
+| 把数据拷到别的电脑 | 机器指纹不同，验签失败 |
+| 读源码找改分接口 | 规则在 C++ 里，接口只接受“加几分” |
+
+**挡不住什么**（边界）：
+
+- 连 `~/.cache` 一起还原的**完整快照**（需要知道三处位置，属于蓄意伪造）；
+- 在老师电脑上**循环调用合法接口**加很多分（会留下 N 条带时间戳的签名事件，
+  一眼可辨，且删不掉）。
+
+### 二、配置文件（组名 / 组数 / 语言）
+
+组名、组数、界面语言等仍按四级容灾逐级回退：
 
 | 文件 / 位置 | 角色 | 程序行为 |
 |---|---|---|
-| `config.dat` | 积分主数据源（AES-256-GCM） | 读 + 写 |
+| `config.dat` | 加密主文件（AES-256-GCM） | 读 + 写 |
 | `config.dat.bak` | 同目录加密备份 | 读（回档）+ 写 |
 | `QSettings` 隐蔽备份 | Windows 注册表 / macOS plist / Linux conf | 读（回档）+ 写 |
 | `config.ini` | 明文查看副本 | **只写，永不读** |
-
-积分读取顺序：
 
 ```text
 config.dat → config.dat.bak → QSettings 隐蔽备份 → 旧版明文（一次性迁移）→ 默认值
 ```
 
-任何一级读成功，都会用成功的数据把前面的副本重新写一遍（自动修复）。
+任何一级读成功，都会把前面的副本重新写一遍（自动修复）。
 
 ### `config.dat` / `config.dat.bak`
 
 - 内容为 `nonce(12B) + 密文 + GCM tag(16B)`，用记事本打开是乱码；
+- **其中 `score_*` 只是缓存**：启动时会被事件链重放结果覆盖，单独改它无效；
 - GCM 是认证加密：改任何一个字节，解密必然失败，程序随即回档到下一级副本。
 
 ### 密钥
+
+**两套独立的密钥：**
+
+| 用途 | 位置 / 来源 | 谁能看到 |
+|---|---|---|
+| 配置文件 `config.dat` | `~/.classmanage_key`（32 字节，权限 `600`） | Python 侧 |
+| 事件链 `Data/ledger.esc` | 机器指纹派生，只存在于 C++ 进程内存 | Python 拿不到 |
+
+事件链的密钥 = `BLAKE2b(机器 UUID ‖ 用户目录 ‖ 编译期盐)`，再由它派生加密钥与签名种子；
+进程退出即清零。把数据拷到别的电脑（或换用户），派生出的密钥不同，验签必然失败。
+
+配置文件密钥的行为：
 
 - 首次运行自动生成 32 字节密钥到 `~/.classmanage_key`（macOS/Linux 权限 `600`）；
 - 不硬编码在源码里，随用户账户隔离；
@@ -525,13 +582,16 @@ packaging/macos/build.command        # 双击也可以
 ├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium 等第三方声明
 ├── native/                          # 原生模块（只发布二进制；源码不进仓库）
 │   ├── LICENSE                      # 专有许可：随程序使用，禁止单独分发/逆向
+│   ├── CMakeLists.txt               # 构建定义（源码在 native/src/，已 gitignore）
+│   ├── build_macos.sh               # clang + 静态 libsodium，strip + ad-hoc 签名
+│   ├── build_windows.sh             # zig 交叉编译（无需 MSVC / 管理员）
 │   ├── cmd_native.exe               # Windows 构建产物
 │   └── cmd_native                   # macOS 构建产物
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
 │
 ├── namepicker/                      # 主程序包
 │   ├── _init_.md                    # 包内文件职责说明
-│   ├── config_store.py              # config.dat：加密配置 + 三级回档
+│   ├── config_store.py              # 配置持久化（四级容灾）+ 分数缓存
 │   ├── crypto_utils.py              # AES-256-GCM 与 ~/.classmanage_key 密钥管理
 │   ├── log_store.py                 # points_log.dat：加密操作日志 + 防回滚
 │   ├── backup_store.py              # QSettings 系统级隐蔽备份（跨平台）
@@ -617,6 +677,8 @@ python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、�
 python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
 python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
 python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志(需要GUI)
+python tools/native_check.py           # 原生模块：状态机、规则拒绝、篡改/重排/换机器
+python tools/ledger_check.py           # 事件链：迁移、C++ 改分、回档检测、安全副本恢复
 ```
 
 - `wipe_check` 现在覆盖：写盘失败必须被报告（只读目录）、失败后界面回退到磁盘真实数据、
@@ -683,6 +745,16 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
 - **测试里不能出现阻塞式对话框**：CI/无头环境没人点「确定」，会永久卡住。
   `tools/_headless.py` 的 `install()` 会把 `QMessageBox` 的四个静态方法替换成
   立即返回；新增测试请在创建 `QApplication` 前调用它。
+- **业务规则只在 C++ 里**：不要在图界面或 `ConfigStore` 里再判断“组号是否合法 /
+  分数是否超限”。新增操作走 `ConfigStore._ledger_apply(op, **kwargs)`，
+  由 `cmd_native apply` 校验；被拒绝时返回 `False`，调用方必须放弃本次改动。
+- **改完 C++ 一定要重编两个平台**：`native/build_macos.sh` 与
+  `native/build_windows.sh`（zig 交叉编译，无需 MSVC / 管理员）。
+  libsodium 源码放在 `native/third_party/`（已 gitignore）。
+- **事件格式由 C++ 定义**：Python 只把 `record` 当不透明字节追加到
+  `Data/ledger.esc`，不要解析；需要状态就调 `cmd_native state`。
+- **数值上限要对齐**：C++ 的 `MIN_GROUPS/MAX_GROUPS` 与 `config_store` 的
+  `MIN_GROUP_COUNT/MAX_GROUP_COUNT` 必须一致。
 - 打包相关：`config_store._app_dir()` 对 `.app` 有专门处理，避免把数据写进应用包内部；
   Windows 的 `.bat` 必须是**纯 ASCII + CRLF**（`.gitattributes` 已强制 `eol=crlf`），
   且 `REM` 行里不能出现未配对的圆括号 —— cmd 的括号配对统计会因此从行中间截断命令。
@@ -785,8 +857,11 @@ QSettings 隐蔽备份恢复。
   菜单栏收起时状态项按系统设计就不显示 —— 这不是程序问题。此时可用悬浮球右键菜单，
   里面已包含托盘的全部动作（抽取名字 / 积分管理 / 打开面板 / 彻底重置 / 退出）。
   想要常驻可见，请在 系统设置 → 外观（或桌面与程序坞）关闭「自动隐藏菜单栏」。
-- **密钥与账户同权限**：密钥在用户主目录，若教师与学生共用同一个系统登录账户，
-  学生理论上可以读取密钥。这是「用户级密钥」方案的固有边界。
+- **事件链也受同账户限制**：事件链的密钥由机器指纹派生、只存在于 C++ 进程内存，
+  不落盘；但若教师与学生共用同一个系统登录账户，能在这台机器上运行程序并调试的人，
+  理论上仍可提取运行中的密钥。这是「单机 + 同账户」的前提决定的上限，不是实现缺陷。
+- **完整快照还原不在防护范围**：同时替换 `Data/`、`config.dat` 与 `~/.cache/classmanage/`
+  的整机快照可以骗过校验（需要知道三处位置，属于蓄意伪造）。
 - **Linux 未验证**：代码有平台守卫不会崩，但托盘/置顶行为未测试。
 
 ---
@@ -1043,6 +1118,9 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 
 - Windows 10 or later (primary target), macOS 11 or later; Linux untested.
 - Python 3.10+, PySide6 and cryptography (only needed when running from source).
+- The **native module** `native/cmd_native` (`.exe` on Windows) must exist when running
+  from source; without it the app degrades to read-only with a status-bar notice and does
+  not crash. See Development notes for how to build it.
 
 ```bash
 pip install -r requirements.txt
@@ -1189,29 +1267,73 @@ or CI logs.
 
 ## Data and security
 
-Scores and the operation log use **tamper-resistant storage**: four copies of the same
-data with a level-by-level fallback on read.
+There are two mechanisms, and **the authoritative source for scores is the event chain**;
+the config file only caches them.
+
+### 1. Event chain (scores)
+
+Every score / group-name / group-count change goes through the native module `cmd_native`:
+
+```text
+UI action
+  → C++ validates the rules (group 1..24, score ±1,000,000, name length)
+  → encrypt (XChaCha20-Poly1305) + chain head (BLAKE2b-256) + sign (Ed25519)
+  → append to Data/ledger.esc
+```
+
+At startup the whole chain is verified and replayed; the result overwrites the cached
+`score_*` values in `config.dat`.
+
+| File / location | Role |
+|---|---|
+| `Data/ledger.esc` | event chain, base64 lines, append-only |
+| `Data/anchor.json` | anchor: how long the chain ever got, and its head |
+| `~/.cache/classmanage/<hash>/anchor.json` | hidden copy of the same anchor |
+| `~/.cache/classmanage/<hash>/ledger.esc` | shadow copy used for automatic restore |
+| `native/cmd_native` (`.exe` on Windows) | native module: keys, rules, crypto, chain |
+
+**What it stops** (all measured):
+
+| Attack | Result |
+|---|---|
+| Edit any record | signature fails, chain rejected |
+| Delete records in the middle | sequence gap, chain rejected |
+| Replace `Data/` with an old copy | chain shorter than anchor → restored from shadow |
+| Delete `Data/` entirely | detected as deleted → restored from shadow |
+| Replace `config.dat` too | still caught, because the anchor is not inside `Data/` |
+| Copy the data to another machine | different machine fingerprint, signature fails |
+| Read the source to find a "set score" API | rules live in C++; the API only accepts deltas |
+
+**What it does not stop** (the boundary):
+
+- a **full snapshot** restore that also replaces `~/.cache` (requires knowing all three
+  locations — that is deliberate forgery);
+- **looping the legitimate API** on the teacher's machine to add many points (it leaves N
+  signed, timestamped events that are obvious and cannot be deleted).
+
+### 2. Config file (group names / count / language)
+
+Group names, group count and UI language still use the four-level fallback:
 
 | File / location | Role | Program behaviour |
 |---|---|---|
-| `config.dat` | Primary score source (AES-256-GCM) | read + write |
-| `config.dat.bak` | Encrypted backup next to it | read (restore) + write |
+| `config.dat` | primary encrypted file (AES-256-GCM) | read + write |
+| `config.dat.bak` | encrypted backup next to it | read (restore) + write |
 | `QSettings` hidden backup | Windows registry / macOS plist / Linux conf | read (restore) + write |
-| `config.ini` | Plain-text view copy | **write only, never read** |
-
-Read order:
+| `config.ini` | plain-text view copy | **write only, never read** |
 
 ```text
 config.dat → config.dat.bak → QSettings hidden backup → legacy plaintext (one-time migration) → defaults
 ```
 
-Whenever a lower level succeeds, the data is written back to the levels above it
-(automatic repair).
+Whenever a lower level succeeds, the levels above it are rewritten (automatic repair).
 
 ### `config.dat` / `config.dat.bak`
 
 - Contents are `nonce(12B) + ciphertext + GCM tag(16B)`; opening it in a text editor
   shows nothing but garbage.
+- **The `score_*` entries are only a cache**: at startup they are overwritten by the
+  event-chain replay, so editing them alone has no effect.
 - GCM is authenticated encryption: changing a single byte makes decryption fail and the
   program falls back to the next copy.
 
@@ -1458,7 +1580,9 @@ Apple Silicon; a universal build needs universal2 Python + PySide6).
 ├── namepicker/                      # main package
 │   ├── __init__.py
 │   ├── _init_.md                    # package file responsibilities
-│   ├── config_store.py              # config.dat: encrypted config + 3-level fallback
+│   ├── config_store.py              # config persistence (4-level recovery) + score cache
+│   ├── ledger.py                    # event chain: append, anchor, shadow copy, native calls
+│   ├── native_bridge.py             # calls cmd_native (fingerprint/state/apply/verify)
 │   ├── crypto_utils.py              # AES-256-GCM and ~/.classmanage_key handling
 │   ├── log_store.py                 # points_log.dat: encrypted log + anti-rollback
 │   ├── backup_store.py              # QSettings system-level hidden backup
@@ -1547,6 +1671,8 @@ python tools/smoke_test.py             # GUI smoke: signals, layout, persistence
 python tools/group_count_stress.py     # group count + 300-round stress test
 python tools/wipe_check.py             # full reset: selection and per-part clearing
 python tools/i18n_check.py             # bilingual: default group names, restart args, long-name elision, bilingual log (GUI required)
+python tools/native_check.py           # native module: state machine, rule rejections, tamper/reorder/other-machine
+python tools/ledger_check.py           # event chain: migration, C++ scoring, rollback detection, shadow restore
 ```
 
 - `wipe_check` now also covers: a failed write must be reported (read-only directory),
@@ -1617,6 +1743,18 @@ desktop, and it uses a temporary directory instead of your real config.
 - **No blocking dialogs in tests**: CI/headless has nobody to click OK, so `exec()` hangs
   forever. `tools/_headless.py`'s `install()` replaces the four `QMessageBox` statics with
   immediate returns; call it before creating `QApplication` in new tests.
+- **Business rules live only in C++**: do not re-check "group in range / score limit" in
+  the UI or in `ConfigStore`. New operations go through
+  `ConfigStore._ledger_apply(op, **kwargs)`, validated by `cmd_native apply`; a rejection
+  returns `False` and the caller must drop the change.
+- **Rebuild both native binaries after touching the C++**: `native/build_macos.sh` and
+  `native/build_windows.sh` (zig cross-compile, no MSVC or admin rights needed). The
+  libsodium sources live in `native/third_party/` (git-ignored).
+- **The event format is defined in C++**: Python treats `record` as opaque bytes and
+  appends them to `Data/ledger.esc`; ask `cmd_native state` for the state instead of
+  parsing events.
+- **Keep the limits in sync**: `MIN_GROUPS`/`MAX_GROUPS` in C++ and
+  `MIN_GROUP_COUNT`/`MAX_GROUP_COUNT` in `config_store` must match.
 - Packaging: `config_store._app_dir()` special-cases `.app` so data never ends up inside
   the bundle. Windows `.bat` files must be **pure ASCII + CRLF** (`.gitattributes` forces
   `eol=crlf`) and `REM` lines must not contain unbalanced parentheses — cmd's parenthesis
@@ -1754,9 +1892,14 @@ ASCII + CRLF.
   contains every tray action (draw / points / open panel / full reset / quit). To keep it
   always visible, disable "Automatically hide the menu bar" in System Settings →
   Appearance (or Desktop & Dock).
-- **The key has the same permissions as the account**: it lives in the home directory, so
-  if a teacher and students share one system login, students could theoretically read it.
-  This is inherent to a per-user key scheme.
+- **The event chain is limited by the same account too**: its key is derived from the
+  machine fingerprint and only ever exists in the C++ process memory (never on disk). If a
+  teacher and students share one system login, someone who can run and debug programs on
+  that machine could in principle extract the key while it is in use. That is the ceiling
+  imposed by "single machine + shared account", not an implementation flaw.
+- **Full snapshot restores are out of scope**: replacing `Data/`, `config.dat` *and*
+  `~/.cache/classmanage/` together can defeat verification (it requires knowing all three
+  locations — deliberate forgery).
 - **Linux is untested**: platform guards prevent crashes, but tray and topmost behaviour
   have not been verified.
 
