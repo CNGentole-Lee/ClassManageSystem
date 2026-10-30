@@ -42,6 +42,7 @@ TESTS = [
     ("group_count_stress", 180),
     ("native_check", 120),        # 原生模块；缺失时返回 77 -> SKIP
     ("ledger_check", 180),        # 事件链：迁移/重放/篡改/回滚
+    ("packaging_check", 60),      # 打包配置：spec / 安装包 / CI 一致性
     ("windows_check", 60),      # 非 Windows 上会自动跳过 Win32 分支
     ("macos_check", 120),       # 非 macOS / offscreen 下会自动跳过
 ]

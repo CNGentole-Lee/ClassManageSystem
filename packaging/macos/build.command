@@ -34,7 +34,7 @@ echo "[2/5] 检查依赖"
 "$PY" - <<'CHECK' || exit 1
 import importlib, sys
 missing = []
-for mod in ("PyQt5.QtCore", "PyQt5.QtWidgets", "cryptography"):
+for mod in ("PySide6.QtCore", "PySide6.QtWidgets", "cryptography"):
     try:
         importlib.import_module(mod)
     except ImportError:
@@ -61,6 +61,12 @@ rm -rf "$HOME_ISOLATED"
 "$PY" tools/windows_check.py | tail -1
 
 # --- 4. 生成图标（可选，缺 Pillow 也不影响，因为走 Qt）---
+# 原生模块必须存在，否则打出来的包只能只读运行
+if [ ! -f native/cmd_native ]; then
+  echo "[x] 缺少 native/cmd_native，请先运行 native/build_macos.sh"
+  exit 1
+fi
+
 echo "[4/5] 生成图标"
 if [ ! -f packaging/macos/app.icns ]; then
   "$PY" packaging/macos/make_icns.py || echo "  图标生成失败，将使用默认图标"
@@ -90,12 +96,35 @@ fi
 # 去掉隔离属性，避免本机首次运行被 Gatekeeper 拦
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 
+# 生成 DMG（像安装程序一样分发）
+VERSION="$("$PY" - <<'VER'
+import re, pathlib
+text = pathlib.Path("namepicker/about_dialog.py").read_text(encoding="utf-8")
+m = re.search(r'^VERSION\s*=\s*"([^"]+)"', text, re.M)
+print(m.group(1) if m else "0.0.0")
+VER
+)"
+DMG="dist/ClassManageSystem-${VERSION}.dmg"
+ZIP="dist/ClassManageSystem-${VERSION}-macos.zip"
+rm -f "$DMG" "$ZIP"
+# DMG 是首选安装包形态。某些受限环境（沙箱/无权限创建磁盘映像）会失败，
+# 此时退回 zip（ditto 会保留符号链接与扩展属性，解压后仍是可运行的 .app）。
+if hdiutil create -volname "ClassManageSystem" -srcfolder "$APP" \
+        -ov -format UDZO "$DMG" >/dev/null 2>&1; then
+  echo "  DMG:  $ROOT/$DMG"
+else
+  echo "  [!] 无法创建 DMG（可能是权限限制），改用 zip"
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  echo "  ZIP:  $ROOT/$ZIP"
+fi
+
 SIZE="$(du -sh "$APP" | cut -f1)"
 echo
 echo "============================================================"
 echo " 打包完成"
-echo " 产物: $ROOT/$APP  ($SIZE)"
+echo " 产物: ${ROOT}/${APP}  (${SIZE})"
+echo " 安装包: ${ROOT}/${DMG}（或 .zip）"
 echo
 echo " 运行:  open \"$APP\""
-echo " 分发:  压缩后发给别人；对方首次需右键 → 打开"
+echo " 分发:  发 DMG；对方首次需右键 → 打开"
 echo "============================================================"

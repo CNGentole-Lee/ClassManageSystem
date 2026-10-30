@@ -560,9 +560,23 @@ packaging/macos/build.command        # 双击也可以
 
 产物 `dist/ClassManageSystem.app`。打出来是**当前 CPU 架构**的原生程序（Apple Silicon 上是 arm64；要通用需 universal2 的 Python + PySide6）。
 
+### 安装包形态
+
+| 平台 | 产物 | 说明 |
+|---|---|---|
+| Windows | `ClassManageSystem-<版本>-Setup.exe` | Inno Setup 安装程序：**按用户安装**（`%LOCALAPPDATA%\Programs`），**不需要管理员权限**；带许可证页、开始菜单与桌面快捷方式、卸载器 |
+| Windows | `ClassManageSystem-<版本>-portable.zip` | 便携版，解压即用 |
+| macOS | `ClassManageSystem-<版本>.dmg` | 拖入「应用程序」即可；受限环境无法建 DMG 时退回落成 zip |
+
+Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）：
+测试 → PyInstaller 目录包 → Inno Setup → 上传安装包与便携版。
+
 ### 产物说明
 
 - 目录形态（`dist/ClassManageSystem/`）＋安装程序，目标机不需要装 Python；
+- **原生模块随包分发**：`_internal/native/cmd_native.exe`（macOS 为
+  `Contents/Frameworks/native/cmd_native`）。缺了它程序只能以只读模式运行，
+  因此打包配置会在缺失时**直接让构建失败**；
 - **Qt 库是独立文件**（`_internal/` 下的 `Qt*.dll` / `.framework`），安装后可被替换，
   满足 LGPL v3 对「用户能替换库」的要求；单文件 EXE 做不到这一点，因此不再使用；
 - 配置与日志写在 EXE / `.app` 同级目录（只读目录则回退 `%APPDATA%\ClassTerminal2411`），密钥在用户主目录；
@@ -1543,10 +1557,24 @@ packaging/macos/build.command        # double-clicking also works
 Produces `dist/ClassManageSystem.app` for the **current CPU architecture** (arm64 on
 Apple Silicon; a universal build needs universal2 Python + PySide6).
 
+### Installer artifacts
+
+| Platform | Artifact | Notes |
+|---|---|---|
+| Windows | `ClassManageSystem-<version>-Setup.exe` | Inno Setup installer: **per-user** (`%LOCALAPPDATA%\Programs`), **no admin rights**; license page, Start-menu and desktop shortcuts, uninstaller |
+| Windows | `ClassManageSystem-<version>-portable.zip` | portable, unzip and run |
+| macOS | `ClassManageSystem-<version>.dmg` | drag to Applications; falls back to a zip when DMG creation is not permitted |
+
+The Windows installer is produced by CI (`.github/workflows/build-windows.yml`):
+tests → PyInstaller onedir → Inno Setup → upload installer and portable zip.
+
 ### About the artifacts
 
 - Directory layout (`dist/ClassManageSystem/`) plus an installer; the target machine
   needs no Python.
+- **The native module ships inside the package**: `_internal/native/cmd_native.exe`
+  (macOS: `Contents/Frameworks/native/cmd_native`). Without it the app can only run
+  read-only, so the packaging config **fails the build** when it is missing.
 - **Qt ships as separate files** (`Qt*.dll` / `.framework` under `_internal/`) and can be
   replaced after installation, which satisfies LGPL v3's "user can replace the library".
   A single-file EXE cannot do that, so it is no longer used.

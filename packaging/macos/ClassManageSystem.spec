@@ -42,10 +42,16 @@ def app_version() -> str:
 
 VERSION = app_version()
 
+NATIVE_SRC = os.path.join(ROOT, "native", "cmd_native")
+if not os.path.isfile(NATIVE_SRC):
+    raise SystemExit(
+        "[x] native/cmd_native is missing.\n"
+        "    Build it first: native/build_macos.sh")
+
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
-    binaries=[],
+    binaries=[(NATIVE_SRC, "native")] if os.path.isfile(NATIVE_SRC) else [],
     # 运行时不读取包内资源：名单由老师自选；配置/日志写在程序旁边，
     # 只读目录则回退到 ~/ClassTerminal2411。
     # 随包资源：LICENSE（Apache-2.0 全文）、NOTICE、第三方声明。

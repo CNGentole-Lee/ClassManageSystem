@@ -68,18 +68,34 @@ def version_file() -> str:
 
 VERSION_FILE = version_file()
 
+NATIVE_SRC = os.path.join(ROOT, "native", "cmd_native.exe")
+
+
+def require_native() -> str:
+    """原生模块必须随包分发，否则程序只能以只读模式运行。
+
+    宁可让构建失败，也不要打出一个“看起来正常、实际不能记分”的安装包。
+    """
+    if not os.path.isfile(NATIVE_SRC):
+        raise SystemExit(
+            "[x] native/cmd_native.exe is missing.\n"
+            "    Build it first (native/build_windows.sh on macOS, or on Windows)\n"
+            "    or fetch it from the private native repository.")
+    return NATIVE_SRC
+
+
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
-    binaries=[],
+    # 原生模块：rules + crypto + chain. Destination "native" keeps the layout
+    # the Python bridge expects (_MEIPASS/native/cmd_native.exe).
+    binaries=[(require_native(), "native")],
     # 程序运行时不读取包内资源：名单文件由老师自己选；配置/日志写在 EXE 旁边，
     # 只读目录则回退到 %APPDATA%\ClassTerminal2411。
     # 随包资源：LICENSE（Apache-2.0 全文）、NOTICE、第三方声明。
     # Apache-2.0 第 4(d) 条要求再分发时附带许可证与 NOTICE。
-    # GPL-3.0 要求分发的副本能看到许可证文本，而我们的产物是**单个 EXE**
-    # （ONEFILE = False）：datas 会被打进 EXE，运行时解包到 sys._MEIPASS，
-    # 「关于」窗口从那里读取。所以只拷一个 EXE 给别人也能看到完整许可证，
-    # 不依赖 EXE 旁边有没有额外文件。
+    # 目录模式下 datas 会放进 _internal/，运行时通过 sys._MEIPASS 读取，
+    # 「关于」窗口从那里取许可证文本。
     datas=[
         (os.path.join(ROOT, "LICENSE"), "."),
         (os.path.join(ROOT, "NOTICE"), "."),
