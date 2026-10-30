@@ -91,9 +91,13 @@ jobs:
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) { throw "ISCC.exe not found in Program Files" }
           "ISCC: $iscc"
-          # 注意：/D 定义必须在脚本路径之前，否则 ISCC 会把它当成第二个脚本文件，
-          # 报 "The system cannot find the file specified."
-          & $iscc "/DMyAppVersion=${{ steps.version.outputs.value }}" "packaging\windows\installer.iss"
+          # 注意两点：
+          #   1. /D 定义必须在脚本路径之前，否则 ISCC 会把它当成第二个脚本文件；
+          #   2. RepoRoot 必须传绝对路径 —— Inno 不会规范化 "..\.."，
+          #      通配符会因此匹配不到文件。
+          $root = $env:GITHUB_WORKSPACE
+          "RepoRoot: $root"
+          & $iscc "/DRepoRoot=$root" "/DMyAppVersion=${{ steps.version.outputs.value }}" "packaging\windows\installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
           Get-ChildItem dist\*.exe | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
 
