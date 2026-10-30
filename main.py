@@ -154,16 +154,14 @@ def main():
 
         if problem and chain.restore_from_shadow():
             # 主链被删/被换，但安全副本完好：直接恢复，并告诉老师发生过什么
-            state = chain.replay()
-            store.apply_ledger_state(state)
+            store.apply_ledger_state(chain.state())
             ledger_state = {"ok": True, "error": problem, "recovered": True}
             startup_log.record([f"ledger restored from shadow: {problem}"])
         elif problem:
             ledger_state = {"ok": False, "error": problem}
             startup_log.record([f"ledger rejected: {problem}"])
         elif chain.count():
-            state = chain.replay()
-            store.apply_ledger_state(state)
+            store.apply_ledger_state(chain.state())
             chain.write_anchor(state.events, state.head)
 
         # 只有链可信时才挂上：链不可信还继续追加，会把坏链写得更长

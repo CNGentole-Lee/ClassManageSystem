@@ -17,7 +17,7 @@ CXX="$(xcrun --find clang++)"
 
 "$CXX" -std=c++17 -O2 -Wall -Wextra -isysroot "$SDK" \
   -I "$SODIUM/include" \
-  src/main.cpp src/crypto.cpp src/envfp.cpp \
+  src/main.cpp src/crypto.cpp src/envfp.cpp src/state.cpp \
   "$SODIUM/lib/libsodium.a" \
   -o cmd_native
 

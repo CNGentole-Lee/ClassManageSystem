@@ -185,6 +185,28 @@ def dump(records: list[bytes]) -> tuple[list[bytes], bytes, str]:
     return plains, base64.b64decode(data.get("head", "")), ""
 
 
+def state(records: list[bytes]) -> dict:
+    """重放整条链，返回业务状态（C++ 计算，Python 不解析事件）。"""
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    return _run(["state", "--fp", fingerprint()], stdin_text=lines, timeout=30)
+
+
+def apply(records: list[bytes], op: str, **kwargs) -> dict:
+    """执行一个业务操作；规则校验与事件生成都在 C++ 里。
+
+    kwargs 会按 --key value 的形式传下去（值会被转成字符串）。
+    """
+    args = ["apply", "--fp", fingerprint(), "--op", op]
+    for key, value in kwargs.items():
+        args += ["--" + key.replace("_", "-"), str(value)]
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    data = _run(args, stdin_text=lines, timeout=30)
+    if data.get("ok") is not True:
+        # 业务规则拒绝（组号越界、分数超限等）也要抛出来，调用方不能当成功
+        raise NativeError(str(data.get("error", "APPLY_FAILED")))
+    return data
+
+
 def selftest() -> bool:
     """原生模块内置自检（同进程内 append→verify）。"""
     data = _run(["selftest"], timeout=10)

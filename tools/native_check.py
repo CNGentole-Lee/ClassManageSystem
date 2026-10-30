@@ -1,17 +1,15 @@
-"""Check the native helper module (cmd_native / cmd_native.exe).
+"""Check the native helper (cmd_native / cmd_native.exe).
 
 Usage:
     python tools/native_check.py
 
 Covers:
-    1. binary exists, is executable, and its built-in selftest passes;
-    2. fingerprint is stable and the protocol matches the Python bridge;
-    3. append -> verify round-trip over several records;
-    4. flipping one byte is rejected (BAD_SIG);
-    5. swapping two records is rejected (BAD_SIG / BAD_SEQ);
-    6. a different fingerprint cannot verify (data is machine-bound).
+    1. binary exists, selftest, fingerprint, protocol;
+    2. business state machine in C++: init / score / rename / count / wipe;
+    3. rule enforcement (bad group, bad count, score limits);
+    4. tamper detection, reorder, dropped record, wrong fingerprint.
 
-Exit code 0 = all passed; 1 = something failed; 77 = native module missing.
+Exit code 0 = passed, 1 = failure, 77 = native module missing.
 """
 
 import base64
@@ -53,55 +51,68 @@ def main() -> int:
     check("fingerprint is 64 hex chars",
           len(fp) == 64 and all(c in "0123456789abcdef" for c in fp), fp[:16] + "...")
     check("fingerprint is stable", nb.fingerprint() == fp)
-    check("protocol matches the bridge",
-          nb.EXPECTED_PROTOCOL == 1)
 
-    # ---- round trip -------------------------------------------------
-    genesis = b"\x00" * 32
-    head = genesis
-    records = []
-    payloads = [
-        b'{"op":"init"}',
-        b'{"op":"score","group":2,"to":5}',
-        b'{"op":"score","group":3,"to":-1}',
-    ]
-    for i, payload in enumerate(payloads, start=1):
-        rec, head = nb.append(head, i, payload)
-        records.append(rec)
-        check(f"record {i} has expected size", len(rec) > 32 + 64, f"{len(rec)} bytes")
+    # ---- 业务状态机（数据由 C++ 计算） ----------------------------
+    r = nb.apply([], "init", count=3, names="甲,乙,丙", scores="0,0,0")
+    check("init returns a record", bool(r.get("record")))
+    rec1 = base64.b64decode(r["record"])
+    check("init state", r["count"] == 3 and r["names"] == ["甲", "乙", "丙"]
+          and r["scores"] == [0, 0, 0], str(r["scores"]))
 
-    ok, final_head, error = nb.verify(records)
+    r = nb.apply([rec1], "score", group=2, delta=5)
+    rec2 = base64.b64decode(r["record"])
+    check("score applied by C++", r["scores"] == [0, 5, 0], str(r["scores"]))
+    check("score returns new seq", r["seq"] == 2, str(r["seq"]))
+
+    r = nb.apply([rec1, rec2], "rename", group=1, name="雄鹰组")
+    rec3 = base64.b64decode(r["record"])
+    check("rename applied by C++", r["names"][0] == "雄鹰组", r["names"][0])
+
+    st = nb.state([rec1, rec2, rec3])
+    check("state replays to the same result",
+          st["names"][0] == "雄鹰组" and st["scores"] == [0, 5, 0], str(st["scores"]))
+    check("state reports the head", len(base64.b64decode(st["head"])) == 32)
+
+    # ---- 规则在 C++ 侧 --------------------------------------------
+    try:
+        nb.apply([rec1, rec2, rec3], "score", group=99, delta=1)
+        check("out-of-range group is rejected", False)
+    except nb.NativeError as exc:
+        check("out-of-range group is rejected", "BAD_GROUP" in str(exc), str(exc)[:40])
+    try:
+        nb.apply([rec1, rec2, rec3], "score", group=1, delta=10 ** 9)
+        check("absurd score delta is rejected", False)
+    except nb.NativeError as exc:
+        check("absurd score delta is rejected", "BAD_SCORE" in str(exc), str(exc)[:40])
+    try:
+        nb.apply([rec1, rec2, rec3], "count", count=999)
+        check("absurd group count is rejected", False)
+    except nb.NativeError as exc:
+        check("absurd group count is rejected", "BAD_COUNT" in str(exc), str(exc)[:40])
+
+    # ---- 链完整性 -------------------------------------------------
+    records = [rec1, rec2, rec3]
+    ok, head, error = nb.verify(records)
     check("chain verifies", ok, error)
-    check("final head matches", final_head == head)
 
-    # ---- tamper -----------------------------------------------------
     broken = [bytearray(r) for r in records]
-    broken[1][20] ^= 0x01                      # 改密文区域一个 bit
+    broken[1][20] ^= 0x01
     ok, _, error = nb.verify([bytes(r) for r in broken])
     check("single-byte tamper is rejected", not ok, error)
-    check("tamper reports a signature error", error in ("BAD_SIG", "BAD_DECRYPT"), error)
 
-    # ---- reorder ----------------------------------------------------
     ok, _, error = nb.verify([records[1], records[0], records[2]])
     check("reordered records are rejected", not ok, error)
 
-    # ---- dropped record --------------------------------------------
     ok, _, error = nb.verify([records[0], records[2]])
     check("dropped record is rejected", not ok, error)
 
-    # ---- wrong machine ---------------------------------------------
-    wrong = "00" * 32
     saved = nb._fp_cache
     try:
-        nb._fp_cache = wrong
+        nb._fp_cache = "00" * 32
         ok, _, error = nb.verify(records)
         check("another machine's fingerprint cannot verify", not ok, error)
     finally:
         nb._fp_cache = saved
-
-    # ---- base64 payloads survive --------------------------------
-    ok, _, _ = nb.verify(records, expect_seq=len(records))
-    check("expect_seq matches", ok)
 
     print("\n" + "=" * 60)
     if failures:

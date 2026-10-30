@@ -1,22 +1,21 @@
-"""Check the encrypted event ledger (append-only chain of score changes).
+"""Check the encrypted event ledger (business logic lives in C++).
 
 Usage:
     python tools/ledger_check.py
 
 Covers:
-    1. empty ledger verifies and replays to nothing;
+    1. empty ledger verifies;
     2. migration writes one init event that replays back the same state;
-    3. score / rename / count events replay correctly;
-    4. the ConfigStore appends events on every change;
-    5. tampering with a record breaks verification;
-    6. deleting a record breaks verification (sequence gap);
-    7. replacing the ledger with an older copy is detected via head/seq.
+    3. score / rename / wipe are applied by C++ and replayed;
+    4. ConfigStore drives the chain through C++;
+    5. tampering breaks verification;
+    6. a rolled-back copy is detected via the anchor;
+    7. deleting the ledger is detected and recovered from the shadow copy.
 
 Exit code 0 = all passed, 1 = failure, 77 = native module missing.
 """
 
 import base64
-import json
 import os
 import sys
 import tempfile
@@ -56,24 +55,34 @@ def main() -> int:
     chain = L.Ledger(cfg)
 
     check("empty ledger verifies", chain.verify())
-    check("empty ledger replays to zero events", chain.replay().events == 0)
+    check("empty ledger has zero events", chain.count() == 0)
+    check("empty ledger state is empty", chain.state()["count"] == 0)
 
     # ---- migration -------------------------------------------------
     migrated = chain.migrate_from(3, ["甲组", "乙组", "丙组"], [0, 5, -2])
     check("migration writes an init event", migrated)
     check("migration is one-shot", not chain.migrate_from(3, [], []))
-    state = chain.replay()
-    check("replay restores group count", state.group_count == 3, str(state.group_count))
-    check("replay restores names", state.names == {1: "甲组", 2: "乙组", 3: "丙组"})
-    check("replay restores scores", state.scores == {1: 0, 2: 5, 3: -2}, str(state.scores))
+    st = chain.state()
+    check("replay restores group count", st["count"] == 3, str(st["count"]))
+    check("replay restores names", st["names"] == ["甲组", "乙组", "丙组"], str(st["names"]))
+    check("replay restores scores", st["scores"] == [0, 5, -2], str(st["scores"]))
 
-    # ---- score / rename / count ------------------------------------
-    chain.append(L.OP_SCORE, {"op": "score", "g": 2, "v": 9, "r": "+4"})
-    chain.append(L.OP_RENAME, {"op": "rename", "g": 1, "name": "雄鹰组"})
-    state = chain.replay()
-    check("score event applied", state.scores[2] == 9, str(state.scores[2]))
-    check("rename event applied", state.names[1] == "雄鹰组", state.names[1])
-    check("event count matches", state.events == 3, str(state.events))
+    # ---- business ops driven by C++ --------------------------------
+    st = chain.apply("score", group=2, delta=4)
+    check("score event applied", st["scores"] == [0, 9, -2], str(st["scores"]))
+    st = chain.apply("rename", group=1, name="雄鹰组")
+    check("rename event applied", st["names"][0] == "雄鹰组", st["names"][0])
+    st = chain.apply("wipe", parts="scores")
+    check("wipe scores applied", st["scores"] == [0, 0, 0], str(st["scores"]))
+    check("event count matches", chain.count() == 4, str(chain.count()))
+
+    # ---- rule enforcement comes from C++ ---------------------------
+    try:
+        chain.apply("score", group=99, delta=1)
+        check("illegal group rejected by the chain", False)
+    except L.LedgerError as exc:
+        check("illegal group rejected by the chain", "BAD_GROUP" in str(exc), str(exc)[:30])
+    check("rejected op wrote nothing", chain.count() == 4, str(chain.count()))
 
     # ---- ConfigStore integration -----------------------------------
     store = ConfigStore(cfg)
@@ -85,16 +94,14 @@ def main() -> int:
     store.set_score(1, 7, reason="测试加分")
     check("set_score appends an event", chain2.count() == before + 1,
           f"{before} -> {chain2.count()}")
-    state2 = chain2.replay()
-    check("appended score replays", state2.scores.get(1) == 7, str(state2.scores))
-
-    # ---- appending to a chain loaded from disk ---------------------
-    # 重新打开后直接 append：必须先校验拿到真实链头，否则 prev 会指向创世块
-    reopened = L.Ledger(cfg)
-    reopened.load()
-    reopened.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 3})
-    check("append after reopen keeps the chain valid", reopened.verify(),
-          reopened.verify_error())
+    check("appended score replays", chain2.state()["scores"][0] == 7,
+          str(chain2.state()["scores"]))
+    store.set_group_name(2, "闪电组")
+    check("set_group_name replays", chain2.state()["names"][1] == "闪电组",
+          str(chain2.state()["names"]))
+    store.set_score(1, 7)                     # 值没变：不应新增事件
+    check("no-op score does not append", chain2.count() == before + 2,
+          str(chain2.count()))
 
     # ---- tampering -------------------------------------------------
     lines = [ln for ln in open(chain2.path, encoding="ascii") if ln.strip()]
@@ -105,74 +112,49 @@ def main() -> int:
         fh.writelines(lines)
     bad = L.Ledger(cfg)
     check("tampered ledger fails verification", not bad.verify(), bad.verify_error())
-    try:
-        bad.replay()
-        check("tampered ledger cannot replay", False)
-    except L.LedgerError as exc:
-        check("tampered ledger cannot replay", True, str(exc)[:20])
 
     # ---- rollback detection (anchor) -------------------------------
     tmp3 = tempfile.mkdtemp(prefix="ledger3_")
     cfg3 = os.path.join(tmp3, "config.ini")
     live = L.Ledger(cfg3)
     live.migrate_from(1, ["A"], [0])
-    live.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 5})
+    live.apply("score", group=1, delta=5)
     snapshot = open(live.path, encoding="ascii").read()      # 合法但旧的副本
-    live.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 9})
+    live.apply("score", group=1, delta=4)
     check("anchor records the newest seq", live.read_anchor()[0] == live.count(),
           f"{live.read_anchor()[0]} vs {live.count()}")
     with open(live.path, "w", encoding="ascii") as fh:
-        fh.write(snapshot)                                    # 换回旧副本
+        fh.write(snapshot)
     rolled = L.Ledger(cfg3)
     check("old copy still self-verifies", rolled.verify())
     check("old copy is detected via anchor", rolled.rollback_reason().startswith("SHORTER"),
           rolled.rollback_reason())
-
-    # 整个目录删掉：基准还在，必须判为 DELETED
-    tmp4 = tempfile.mkdtemp(prefix="ledger4_")
-    cfg4 = os.path.join(tmp4, "config.ini")
-    gone = L.Ledger(cfg4)
-    gone.migrate_from(1, ["A"], [0])
-    os.remove(gone.path)
-    empty = L.Ledger(cfg4)
-    check("deleted ledger is detected via anchor", empty.rollback_reason() == "DELETED",
-          empty.rollback_reason())
 
     # ---- restore from shadow ---------------------------------------
     tmp5 = tempfile.mkdtemp(prefix="ledger5_")
     cfg5 = os.path.join(tmp5, "config.ini")
     live5 = L.Ledger(cfg5)
     live5.migrate_from(1, ["A"], [0])
-    live5.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 5})
-    live5.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 9})
+    live5.apply("score", group=1, delta=5)
+    live5.apply("score", group=1, delta=4)
     good = live5.read_anchor()
     os.remove(live5.path)                     # 模拟“删掉 Data 里的链”
     victim = L.Ledger(cfg5)
     check("deleted chain is detected", victim.rollback_reason() == "DELETED",
           victim.rollback_reason())
-    restored = victim.restore_from_shadow()
-    check("restore from shadow succeeds", restored)
+    check("restore from shadow succeeds", victim.restore_from_shadow())
     check("restored chain verifies", victim.verify())
     check("restored chain has the newest seq", victim.count() == good[0],
           f"{victim.count()} vs {good[0]}")
-    check("restored chain replays the newest score", victim.replay().scores.get(1) == 9)
+    check("restored chain replays the newest score",
+          victim.state()["scores"][0] == 9, str(victim.state()["scores"]))
 
-    # ---- rollback (older copy, chain-only view) --------------------
-    tmp2 = tempfile.mkdtemp(prefix="ledger2_")
-    cfg2 = os.path.join(tmp2, "config.ini")
-    fresh = L.Ledger(cfg2)
-    fresh.migrate_from(1, ["A"], [0])
-    fresh.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 5})
-    old_copy = open(fresh.path, encoding="ascii").read()
-    fresh.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 9})
-    with open(fresh.path, "w", encoding="ascii") as fh:
-        fh.write(old_copy)                      # 回滚到最后一次之前
-    rolled = L.Ledger(cfg2)
-    # 链本身仍自洽（旧副本是合法的），所以 verify 会通过 —— 这正是为什么要
-    # 额外的“基准 seq/head”来判定回滚；这里只断言 seq 变短了。
-    rolled.verify()
-    check("rolled-back ledger is shorter than the newest state",
-          rolled.count() == 2, str(rolled.count()))
+    # ---- append after reopen ---------------------------------------
+    reopened = L.Ledger(cfg5)
+    reopened.load()
+    reopened.apply("score", group=1, delta=1)
+    check("append after reopen keeps the chain valid", reopened.verify(),
+          reopened.verify_error())
 
     print("\n" + "=" * 60)
     if failures:

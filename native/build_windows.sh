@@ -52,7 +52,7 @@ echo "[2/2] 编译 cmd_native.exe"
 cd "$ROOT/native"
 "$ZIG" c++ -target x86_64-windows-gnu -std=c++17 -O2 -static \
   -I "$TP/libsodium-windows/include" \
-  src/main.cpp src/crypto.cpp src/envfp.cpp \
+  src/main.cpp src/crypto.cpp src/envfp.cpp src/state.cpp \
   "$TP/libsodium-windows/lib/libsodium.lib" \
   -o cmd_native.exe -lbcrypt
 
