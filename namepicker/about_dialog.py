@@ -207,46 +207,69 @@ def native_license_text() -> str:
     )
 
 
-DEPENDENCIES_ZH = """\u672c\u9879\u76ee\u4f7f\u7528\u7684\u7b2c\u4e09\u65b9\u7ec4\u4ef6 / Third-party components
-============================================================
+#: 依赖清单：(名称, 版本, 许可证, 备注)
+DEPENDENCIES = [
+    ("PySide6", "6.12.x", "LGPL-3.0", "dynamic"),
+    ("Qt 6", "6.12.x", "LGPL-3.0", "dynamic"),
+    ("shiboken6", "6.12.x", "LGPL-3.0", ""),
+    ("cryptography", "50.x", "Apache-2.0 OR BSD-3-Clause", ""),
+    ("cffi", "2.x", "MIT-0", ""),
+    ("pycparser", "3.x", "BSD-3-Clause", ""),
+    ("libsodium", "static", "ISC", "native-only"),
+    ("Python", "3.14.x", "PSF-2.0", "bundled"),
+]
 
-PySide6        6.12.x     LGPL-3.0      \u52a8\u6001\u94fe\u63a5\u3001\u53ef\u66ff\u6362
-Qt 6           6.12.x     LGPL-3.0      \u52a8\u6001\u94fe\u63a5\u3001\u53ef\u66ff\u6362
-shiboken6      6.12.x     LGPL-3.0
-cryptography   50.x       Apache-2.0 OR BSD-3-Clause
-cffi           2.x        MIT-0
-pycparser      3.x        BSD-3-Clause
-libsodium      \u9759\u6001\u94fe\u63a5   ISC           \u4ec5\u5b58\u5728\u4e8e\u539f\u751f\u6a21\u5757\u5185\u90e8
-Python         3.14.x     PSF-2.0       \u6253\u5305\u65f6\u968f\u9644\u89e3\u91ca\u5668
+#: 备注列按语言翻译
+DEPENDENCY_NOTES = {
+    "dynamic": ("动态链接、可替换", "dynamically linked, replaceable"),
+    "native-only": ("仅存在于原生模块内部", "only inside the native module"),
+    "bundled": ("打包时随附解释器", "interpreter bundled"),
+}
 
-LGPL v3 \u8981\u6c42\u7528\u6237\u80fd\u591f**\u66ff\u6362 Qt \u5e93**\uff1a\u5b89\u88c5\u76ee\u5f55\u4e0b\u7684 Qt \u52a8\u6001\u5e93
-\uff08_internal/Qt*.dll\u3001Contents/Frameworks/Qt*.framework\uff09\u662f\u72ec\u7acb\u6587\u4ef6\uff0c
-\u5b89\u88c5\u540e\u53ef\u76f4\u63a5\u66ff\u6362\uff0c\u65e0\u9700\u91cd\u65b0\u7f16\u8bd1\u672c\u7a0b\u5e8f\u3002
 
-\u5b8c\u6574\u58f0\u660e\uff08\u7248\u6743\u884c\u3001\u4e3b\u9875\u3001\u8bb8\u53ef\u8bc1\u5168\u6587\u94fe\u63a5\uff09\u89c1\u968f\u5305\u7684
-THIRD-PARTY-NOTICES.md\u3002
-"""
-
-DEPENDENCIES_EN = """Third-party components used by this program
-============================================================
-
-PySide6        6.12.x     LGPL-3.0      dynamically linked, replaceable
-Qt 6           6.12.x     LGPL-3.0      dynamically linked, replaceable
-shiboken6      6.12.x     LGPL-3.0
-cryptography   50.x       Apache-2.0 OR BSD-3-Clause
-cffi           2.x        MIT-0
-pycparser      3.x        BSD-3-Clause
-libsodium      static      ISC           only inside the native module
-Python         3.14.x     PSF-2.0       interpreter bundled by PyInstaller
-
-LGPL v3 requires that users can **replace the Qt libraries**: the Qt shared
-libraries in the install directory (_internal/Qt*.dll,
-Contents/Frameworks/Qt*.framework) are separate files and can be replaced
-after installation without rebuilding this program.
-
-The full notices (copyright lines, homepages, license links) are in the
-bundled THIRD-PARTY-NOTICES.md.
-"""
+def dependencies_html() -> str:
+    """把依赖表渲染成 HTML 表格（比纯文本对齐好看得多）。"""
+    zh = _is_zh()
+    header = ("组件", "版本", "许可证", "说明") if zh else ("Component", "Version", "License", "Notes")
+    parts = ['<table cellspacing="0" cellpadding="5" width="100%">',
+             '<tr style="color:#888888; font-size:12px;">'
+             + "".join(f'<td width="{w}">{h}</td>' for h, w
+                       in zip(header, ("24%", "12%", "36%", "")))
+             + '</tr>']
+    for name, version, license_, note in DEPENDENCIES:
+        note_zh, note_en = DEPENDENCY_NOTES.get(note, ("", ""))
+        note_text = (note_zh if zh else note_en)
+        parts.append(
+            '<tr>'
+            f'<td width="22%"><b>{name}</b></td>'
+            f'<td width="14%" style="color:#888888;">{version}</td>'
+            f'<td width="34%">{license_}</td>'
+            f'<td style="color:#888888;">{note_text}</td>'
+            '</tr>'
+        )
+    parts.append("</table>")
+    if zh:
+        tail = (
+            "<p style='margin:12px 0 4px 0; font-size:12px; color:#888888;'>"
+            "LGPL v3 要求用户能够替换 Qt 库：安装目录下的 Qt 动态库"
+            "（_internal/Qt*.dll、Contents/Frameworks/Qt*.framework）是独立文件，"
+            "安装后可直接替换，无需重新编译本程序。</p>"
+            "<p style='margin:8px 0; font-size:12px; color:#888888;'>"
+            "完整声明（版权行、主页、许可证链接）见「第三方组件」分页与随包的 "
+            "THIRD-PARTY-NOTICES.md。</p>"
+        )
+    else:
+        tail = (
+            "<p style='margin:12px 0 4px 0; font-size:12px; color:#888888;'>"
+            "LGPL v3 requires that users can replace the Qt libraries: the Qt shared "
+            "libraries in the install directory (_internal/Qt*.dll, "
+            "Contents/Frameworks/Qt*.framework) are separate files and can be replaced "
+            "after installation without rebuilding this program.</p>"
+            "<p style='margin:8px 0; font-size:12px; color:#888888;'>"
+            "Full notices (copyright, homepages, license links) are on the "
+            "&quot;Third-party&quot; tab and in the bundled THIRD-PARTY-NOTICES.md.</p>"
+        )
+    return "".join(parts) + tail
 
 
 def license_path() -> str:
@@ -303,13 +326,107 @@ def _is_zh() -> bool:
         return True
 
 
+def markdown_to_html(text: str) -> str:
+    """把随包文档里的少量 Markdown 转成 HTML。
+
+    只支持这些文档实际用到的语法，不做通用实现：
+    标题 #~####、加粗 **x**、行内代码 `x`、链接 [t](url)、裸 URL、
+    分隔线 ---、无序/有序列表、``` 代码块。
+    其余内容先做 HTML 转义再原样输出，因此许可证里的缩进与符号不会被破坏。
+    """
+    import html
+    import re
+
+    def inline(chunk: str) -> str:
+        out = html.escape(chunk, quote=False)
+        out = re.sub(r"`([^`]+)`",
+                     lambda m: '<code>' + m.group(1) + '</code>', out)
+        out = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", out)
+        out = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', out)
+        out = re.sub(r"&lt;(https?://[^&]+)&gt;", r'<a href="\1">\1</a>', out)
+        out = re.sub(r"(?<![\"=>])(https?://[^\s<]+)", r'<a href="\1">\1</a>', out)
+        return out
+
+    out: list[str] = []
+    in_code = False
+    list_open = None
+    paragraph: list[str] = []
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph
+        if paragraph:
+            out.append('<p style="margin:4px 0;">' + inline(" ".join(paragraph)) + '</p>')
+            paragraph = []
+
+    def close_list() -> None:
+        nonlocal list_open
+        if list_open:
+            out.append("</" + list_open + ">")
+            list_open = None
+
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            flush_paragraph()
+            close_list()
+            out.append("</pre>" if in_code
+                       else '<pre style="margin:6px 0;">')
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(html.escape(raw, quote=False))
+            continue
+        if not stripped:
+            flush_paragraph()
+            close_list()
+            continue
+        if set(stripped) <= {"-"} and len(stripped) >= 3:
+            flush_paragraph()
+            close_list()
+            out.append('<hr style="border:none; border-top:1px solid #88888855; margin:10px 0;">')
+            continue
+        heading = re.match(r"^(#{1,4})\s+(.*)$", stripped)
+        if heading:
+            flush_paragraph()
+            close_list()
+            level = len(heading.group(1))
+            size = {1: "15px", 2: "14px", 3: "13px", 4: "12px"}.get(level, "12px")
+            out.append('<p style="font-size:' + size + '; font-weight:bold; margin:10px 0 4px 0;">'
+                       + inline(heading.group(2)) + '</p>')
+            continue
+        bullet = re.match(r"^[-*]\s+(.*)$", stripped)
+        ordered = re.match(r"^(\d+)\.\s+(.*)$", stripped)
+        if bullet or ordered:
+            flush_paragraph()
+            want = "ul" if bullet else "ol"
+            if list_open != want:
+                close_list()
+                indent = "18px" if want == "ul" else "22px"
+                out.append('<' + want + ' style="margin:4px 0 4px ' + indent + ';">')
+                list_open = want
+            body = bullet.group(1) if bullet else ordered.group(2)
+            out.append("<li>" + inline(body) + "</li>")
+            continue
+        close_list()
+        paragraph.append(stripped)
+
+    flush_paragraph()
+    close_list()
+    if in_code:
+        out.append("</pre>")
+    return "\n".join(out)
+
+
 class AboutDialog(QDialog):
     """关于窗口：版权 + 不担保声明 + 许可证全文。"""
 
-    def _make_text_view(self, text: str) -> QTextBrowser:
-        """生成一个与许可证页同样式的只读文本视图。"""
+    def _make_text_view(self, text: str, already_html: bool = False) -> QTextBrowser:
+        """生成一个与许可证页同样式的只读视图。"""
         view = QTextBrowser()
-        view.setPlainText(text)
+        view.setOpenExternalLinks(True)
+        if not already_html:
+            view.setHtml(markdown_to_html(text))
         view.setFont(theme.font(11))
         view.setStyleSheet(
             f"background: {theme.c('log_bg')}; color: {theme.c('text')};"
@@ -392,11 +509,12 @@ class AboutDialog(QDialog):
         self._notices_view = self._make_text_view(notices)
         self._tabs.addTab(self._notices_view, tr("第三方组件", "Third-party"))
 
-        deps = DEPENDENCIES_ZH if _is_zh() else DEPENDENCIES_EN
-        self._deps_view = self._make_text_view(deps)
+        self._deps_view = self._make_text_view("", already_html=True)
+        self._deps_view.setHtml(dependencies_html())
         self._tabs.addTab(self._deps_view, tr("依赖", "Dependencies"))
 
-        self._browser.setPlainText(license_text())
+        self._browser.setOpenExternalLinks(True)
+        self._browser.setHtml(markdown_to_html(license_text()))
         layout.addWidget(self._tabs, 1)
 
         buttons = QHBoxLayout()
