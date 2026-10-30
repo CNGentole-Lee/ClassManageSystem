@@ -162,7 +162,7 @@ def main():
             startup_log.record([f"ledger rejected: {problem}"])
         elif chain.count():
             store.apply_ledger_state(chain.state())
-            chain.write_anchor(state.events, state.head)
+            chain.write_anchor(chain.count(), chain.head())
 
         # 只有链可信时才挂上：链不可信还继续追加，会把坏链写得更长
         if ledger_state["ok"]:
