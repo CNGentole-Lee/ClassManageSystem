@@ -16,8 +16,8 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt5.QtWidgets import QApplication, QPushButton, QScrollArea  # noqa: E402
-from PyQt5 import sip  # noqa: E402
+from PySide6.QtWidgets import QApplication, QPushButton, QScrollArea  # noqa: E402
+from shiboken6 import isValid  # noqa: E402
 
 from _settings_isolation import isolate_settings  # noqa: E402
 
@@ -201,7 +201,7 @@ def test_stress(store, points):
     points.save_now()
 
     print(f"  ran {rounds} rounds, up to {MAX_GROUP_COUNT} groups each")
-    check(f"panel not destroyed after {rounds} rounds", not sip.isdeleted(points))
+    check(f"panel not destroyed after {rounds} rounds", not not isValid(points))
     check(f"{rounds} rounds -> {MAX_GROUP_COUNT} cards",
           len(points._cards) == MAX_GROUP_COUNT, f"actual {len(points._cards)}")
     check("scores not all 0 after stress (consistency check is meaningful)",

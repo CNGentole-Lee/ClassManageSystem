@@ -14,7 +14,7 @@
     8. 原子写入：落盘后不留 .tmp 残留文件。
 
 脚本会在临时 HOME 里运行（不碰真实的 ~/.classmanage_key 和真实备份），
-没有装 PyQt5 时隐蔽备份退化成内存假实现，仍然覆盖回档链路。
+没有装 PySide6 时隐蔽备份退化成内存假实现，仍然覆盖回档链路。
 """
 
 import os
@@ -54,7 +54,7 @@ def is_binary(raw: bytes) -> bool:
         return True
 
 
-# --- 隐蔽备份：没有 PyQt5 时用内存假实现，链路照样能测 ---
+# --- 隐蔽备份：没有 PySide6 时用内存假实现，链路照样能测 ---
 if backup_store.QSettings is None:
     _fake_store = {}
 
@@ -68,13 +68,13 @@ if backup_store.QSettings is None:
     backup_store.save_backup = _fake_save
     backup_store.load_backup = _fake_load
     backup_store._fake = _fake_store
-    print("[INFO] PyQt5 is not installed: hidden backup uses an in-memory fake")
+    print("[INFO] PySide6 is not installed: hidden backup uses an in-memory fake")
 else:
-    # 有 PyQt5 时也把数据写进隔离的 org/app，避免污染真实备份槽位
-    # 有 PyQt5 时用共享的隔离工具：测试数据不写进真实注册表 / plist，退出时自动清空
+    # 有 PySide6 时也把数据写进隔离的 org/app，避免污染真实备份槽位
+    # 有 PySide6 时用共享的隔离工具：测试数据不写进真实注册表 / plist，退出时自动清空
     from _settings_isolation import isolate_settings  # noqa: E402
     isolate_settings('YourOrgCryptoCheck', 'ClassManageSystemCheck')
-    print("[INFO] PyQt5 detected: hidden backup uses real QSettings (isolated namespace)")
+    print("[INFO] PySide6 detected: hidden backup uses real QSettings (isolated namespace)")
 
 
 def hidden_bytes(tag):
@@ -314,9 +314,9 @@ crypto_utils.encrypt(b"probe")  # 触发重新读密钥
 check("key persists normally after recovery", crypto_utils.key_persisted(),
       crypto_utils.key_error()[:70])
 
-print("\n--- 13. Real QSettings hidden backup (only with PyQt5) ---")
+print("\n--- 13. Real QSettings hidden backup (only with PySide6) ---")
 if backup_store.QSettings is None:
-    print("[SKIP] PyQt5 is not installed")
+    print("[SKIP] PySide6 is not installed")
 else:
     d3 = new_dir("d3")
     ini3 = os.path.join(d3, "config.ini")

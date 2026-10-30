@@ -105,8 +105,8 @@ class _DialogRaiser:
         if sys.platform != "win32":
             return False
         try:
-            from PyQt5.QtCore import QEvent, QObject, QTimer
-            from PyQt5.QtWidgets import QDialog
+            from PySide6.QtCore import QEvent, QObject, QTimer
+            from PySide6.QtWidgets import QDialog
 
             from . import dialogs
 

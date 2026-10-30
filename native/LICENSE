@@ -1,0 +1,43 @@
+班级多用教学辅助终端 —— 原生模块许可协议
+Class Management Terminal — Native Module License
+
+Copyright (C) 2026 Gentole Lee. All rights reserved.
+
+本文件适用于随“班级多用教学辅助终端”分发的原生模块（以下称“模块”），
+包括但不限于 cmd_native、cmd_native.exe 及其在 macOS / Windows 上的等价产物。
+模块的源代码不公开。
+
+1. 许可授予
+   在遵守本协议的前提下，你可以在**配合本程序使用**的范围内运行模块，
+   并可随本程序一起原样复制、分发该模块。
+
+2. 限制
+   你不得：
+   a) 单独分发模块（脱离本程序的安装包或发行目录）；
+   b) 对模块进行反向工程、反编译、反汇编，或试图提取其中的算法与密钥，
+      除非适用法律明确允许且不可通过约定排除；
+   c) 修改、翻译、拆分或以模块为基础创作衍生作品；
+   d) 移除或更改模块中的任何版权、许可或其他权利声明；
+   e) 将模块用于违法用途，或用于规避本程序的安全机制。
+
+3. 无担保
+   模块按“现状”提供，不附带任何明示或默示的担保，包括但不限于
+   适销性、特定用途适用性和不侵权的担保。在任何情况下，作者均不对
+   因使用或无法使用模块而产生的任何直接、间接、附带或后果性损失负责。
+
+4. 终止
+   你一旦违反本协议，本协议授予的权利立即终止，你必须停止使用并删除
+   所有模块副本。
+
+5. 适用法律
+   本协议适用中华人民共和国法律（不含冲突法规则）。
+
+----------------------------------------------------------------------------
+
+English summary (the Chinese text above prevails):
+
+The native module (cmd_native / cmd_native.exe) is proprietary software.
+You may run it and redistribute it unmodified **only as part of this
+application**. You may not distribute it standalone, reverse engineer,
+decompile, modify, extract its algorithms or keys, or remove notices.
+Provided “AS IS”, without warranty of any kind. Rights terminate on breach.

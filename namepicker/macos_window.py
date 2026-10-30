@@ -48,6 +48,19 @@ POLICY_ACCESSORY = 1
 
 _objc = None
 
+
+def _is_cocoa() -> bool:
+    """当前 Qt 平台插件是不是 cocoa。
+
+    必须是 cocoa 才有真实的 NSView/NSWindow；offscreen（CI、截图脚本）下
+    winId() 不是 NSView，拿它去发 objc 消息会直接段错误。
+    """
+    try:
+        from PySide6.QtGui import QGuiApplication
+        return str(QGuiApplication.platformName()).startswith("cocoa")
+    except Exception:
+        return False
+
 #: 事件过滤器必须有人持有，否则会被 Python GC 掉（Qt 的 parent 只管 C++ 侧）
 _dialog_raiser = None
 
@@ -154,7 +167,7 @@ def ns_window(widget):
 
 def make_overlay(widget, level: int = DEFAULT_LEVEL) -> bool:
     """把窗口配成「全屏也压不住」的浮层。返回是否成功。"""
-    if sys.platform != "darwin":
+    if sys.platform != "darwin" or not _is_cocoa():
         return False
     try:
         window = ns_window(widget)
@@ -180,6 +193,8 @@ def make_overlay(widget, level: int = DEFAULT_LEVEL) -> bool:
 
 
 def bring_to_front(widget, level: int = DEFAULT_LEVEL) -> bool:
+    if sys.platform != "darwin" or not _is_cocoa():
+        return False
     """重新应用浮层属性并置前（窗口显示/隐藏后调用）。
 
     不用 `NSApp.activate`：那会抢走 PPT 的焦点，反而把全屏 App 切走。
@@ -213,10 +228,10 @@ class _DialogRaiser:
         if sys.platform != "darwin":
             return False
         try:
-            from PyQt5.QtCore import QObject, QEvent
+            from PySide6.QtCore import QObject, QEvent
 
-            from PyQt5.QtCore import QTimer
-            from PyQt5.QtWidgets import QDialog
+            from PySide6.QtCore import QTimer
+            from PySide6.QtWidgets import QDialog
 
             def raise_dialog(obj) -> None:
                 try:
@@ -263,6 +278,8 @@ def install_dialog_raiser(app) -> bool:
 
 def window_attrs(widget) -> dict | None:
     """读取 NSWindow 的关键属性（自检工具用）。"""
+    if sys.platform != "darwin" or not _is_cocoa():
+        return None
     try:
         window = ns_window(widget)
         if not window:

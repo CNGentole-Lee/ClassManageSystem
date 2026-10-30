@@ -14,8 +14,8 @@ import ctypes
 import ctypes.util
 import sys
 
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QWidget
 
 #: NSWindowStyleMaskFullScreen = 1 << 14
 FULLSCREEN_MASK = 1 << 14
@@ -66,7 +66,7 @@ def main() -> int:
 
     QTimer.singleShot(300, toggle)
     QTimer.singleShot(800, lambda: check(0))
-    return app.exec_()
+    return app.exec()
 
 
 if __name__ == "__main__":

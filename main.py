@@ -1,26 +1,24 @@
 """班级多用教学辅助终端 — 入口点。
 
-一个基于 PyQt5 的教师课堂终端。
+一个基于 PySide6 的教师课堂终端。
 功能：
   - 屏幕右侧悬浮球（不遮挡 PPT）
   - 公平加权抽选（加权少抽优先）+ 每个名字 10 分钟冷却
   - 揭晓被抽中名字前的滚动动画
   - 居中结果弹窗，带 X 按钮，5 秒后自动关闭
   - 连抽：右键点击悬浮球 → 一次抽取 2-10 个名字，在同一个弹窗中显示
-  - 小组积分面板（6 个小组，-1/+1/+2/+3），积分加密保存在 config.dat 中
-    （AES-256-GCM + 三级回档：同目录 .bak / 系统级隐蔽备份 / 默认值）
+  - 小组积分面板（默认 6 个小组），分数以**事件链**为准：
+    每次变动由原生模块 cmd_native 校验规则、加密、签名后追加到
+    Data/ledger.esc；启动时验签并重放。config.dat 里的分数只是缓存。
+  - 操作日志（points_log.dat）独立加密保存，入口是积分面板底栏「操作日志」
   - config.ini 只是明文查看副本，程序永不读取
-  - 每次积分变动自动写入加密操作日志（points_log.dat），唯一查看入口是
-    积分面板底栏「操作日志」按钮
-    
-  - config.ini 旁边生成 crash.log，以便在没有控制台的情况下诊断故障
+  - config.ini 旁边生成 crash.log / startup.log，便于无控制台时诊断
 """
-
 import sys
 import os
 
-from PyQt5.QtCore import Qt, QSettings, QTimer
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from namepicker import about_dialog
 from namepicker.about_dialog import VERSION
@@ -58,8 +56,9 @@ def main():
 # 必须在任何 Qt 对象之前存在，这样启动阶段的故障也能被捕获。
     crash_log.install(os.path.dirname(resolve_config_path()))
 
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # Qt6 起高分屏缩放与高清图标默认开启，AA_EnableHighDpiScaling /
+    # AA_UseHighDpiPixmaps 已废弃（设置它们只会产生 DeprecationWarning），
+    # 所以这里不再显式设置。
 
     app = QApplication(sys.argv)
 # 内部（ASCII）标识保持不变，这样在重命名后 QSettings 路径 / 单实例键 后仍能继续正常工作。
@@ -130,6 +129,50 @@ def main():
     migrate_legacy_plaintext()
 
     store = ConfigStore()
+
+    # --- 事件链：校验 / 迁移 / 重放 --------------------------------
+    # 分数以事件链为准：启动时先验签，通过则重放出组名与分数；
+    # 失败说明文件被替换或损坏，此时**不采用**链上数据，并记录告警。
+    ledger_state = {"ok": True, "error": ""}
+    try:
+        from namepicker import ledger as _ledger
+        chain = _ledger.Ledger(store.path)
+        if chain.count() == 0:
+            # 首次运行：把现有配置写成期初事件（只做一次）
+            chain.migrate_from(
+                store.group_count,
+                [store.get_group_name(i) for i in range(1, store.group_count + 1)],
+                store.all_scores(),
+            )
+        problem = ""
+        if chain.count() and not chain.verify():
+            problem = chain.verify_error() or "BAD_CHAIN"
+        elif chain.count():
+            problem = chain.rollback_reason()
+
+        if problem and chain.restore_from_shadow():
+            # 主链被删/被换，但安全副本完好：直接恢复，并告诉老师发生过什么
+            store.apply_ledger_state(chain.state())
+            ledger_state = {"ok": True, "error": problem, "recovered": True}
+            startup_log.record([f"ledger restored from shadow: {problem}"])
+        elif problem:
+            ledger_state = {"ok": False, "error": problem}
+            startup_log.record([f"ledger rejected: {problem}"])
+        elif chain.count():
+            store.apply_ledger_state(chain.state())
+            chain.write_anchor(chain.count(), chain.head())
+
+        # 只有链可信时才挂上：链不可信还继续追加，会把坏链写得更长
+        if ledger_state["ok"]:
+            store.attach_ledger(chain)
+        else:
+            startup_log.record(["ledger not attached: chain is not trustworthy"])
+    except Exception as exc:                      # noqa: BLE001
+        # 这里只可能是“安全模块不可用 / 程序内部错误”，不是数据被篡改。
+        # 两者必须分开提示：把程序 bug 说成“数据被替换”会误导老师。
+        ledger_state = {"ok": False, "internal": True, "error": str(exc)}
+        startup_log.record([f"ledger unavailable: {type(exc).__name__}: {exc}"])
+
     stats = StatsStore()
     engine = NameEngine()
 
@@ -198,6 +241,31 @@ def main():
     main_win.set_ball(ball)
     main_win.set_points_window(points_win)
     main_win.set_wipe_handler(wipe_everything)
+
+    # 事件链校验失败：必须让老师看见，而不是静默用旧数据
+    if ledger_state.get("recovered"):
+        main_win.statusBar().showMessage(
+            tr("⚠ 检测到数据被删除或替换，已从安全副本恢复（{e}）。",
+               "⚠ Data deletion or replacement detected; restored from a safe copy ({e}).",
+               e=ledger_state["error"]),
+            0,
+        )
+    elif ledger_state.get("internal"):
+        main_win.statusBar().showMessage(
+            tr("⚠ 安全模块异常：{e}。已暂停记录新变动，请检查安装是否完整。",
+               "⚠ Security module error: {e}. New changes are not being recorded; "
+               "check the installation.",
+               e=ledger_state["error"]),
+            0,
+        )
+    elif not ledger_state["ok"]:
+        main_win.statusBar().showMessage(
+            tr("⚠ 数据校验失败：{e}。分数可能被替换过，已暂停采用链上数据。",
+               "⚠ Integrity check failed: {e}. Scores may have been replaced; "
+               "chain data is not being used.",
+               e=ledger_state["error"]),
+            0,
+        )
 
     def restart_app() -> None:
         """切换语言后立即重启：先释放单实例锁，再拉起新进程，最后退出自己。"""
@@ -315,7 +383,7 @@ def main():
         popup.set_name_pool(engine.get_names())
 
     # --- Run ---
-    exit_code = app.exec_()
+    exit_code = app.exec()
     main_win.save_settings()
     points_win.save_now()
     save_stats()

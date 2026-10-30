@@ -14,8 +14,9 @@
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB">
-  <img alt="license" src="https://img.shields.io/badge/license-GPLv3-blue">
-  <img alt="PyQt5" src="https://img.shields.io/badge/PyQt5-GPLv3-orange">
+  <img alt="version" src="https://img.shields.io/badge/version-3.0-blue">
+  <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-blue">
+  <img alt="PySide6" src="https://img.shields.io/badge/PySide6-LGPLv3-orange">
 </p>
 
 <p align="center">
@@ -86,7 +87,7 @@
 
 ### 关于：版本与许可证
 
-版本号、版权、不担保声明，以及可直接滚动的 GPL-3.0 全文。
+版本号、版权、不担保声明，以及可直接滚动的 Apache-2.0 许可证全文。
 
 ![关于](docs/images/about-dialog.png)
 
@@ -160,7 +161,8 @@
 - 默认 6 组，可调 1~24 组；每组一张卡片。
 - 单击展开 `-1 / +1 / +2 / +3`；双击组名重命名；右键清零本组。
 - 支持 `Ctrl+Z` 撤销；快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
-- 分数加密保存在 `config.dat`，重启不丢；被改坏或删掉会自动回档。
+- 分数以加密签名的事件链（`Data/ledger.esc`）为准，重启不丢；
+  被改坏、被删掉或被换回旧文件都会自动检测并恢复。
 - 每次积分变动自动写入加密操作日志，底栏「操作日志」按钮只读查看；
   日志每条同时保存中英两版，切换语言后历史记录依然可读。
 - 「彻底重置」会先弹出**选择清空范围**的对话框：组名 / 积分 / 长期公平记录 /
@@ -189,7 +191,9 @@
 ### 环境要求
 
 - Windows 10 及以上（主要目标平台）、macOS 11 及以上；Linux 未验证。
-- Python 3.10+、PyQt5、cryptography（仅源码运行需要）。
+- Python 3.10+、PySide6、cryptography（仅源码运行需要）。
+- **原生模块** `native/cmd_native`（Windows 为 `cmd_native.exe`）：源码运行时必须存在，
+  否则程序降级为「只读 + 状态栏提示」，不会崩溃。构建方法见「开发注意事项」。
 
 ```bash
 pip install -r requirements.txt
@@ -212,6 +216,8 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 首次启动会在程序目录旁生成加密配置；没有历史名单时会自动生成 1~99 的数字名单。
 
 ### 下载可运行版本
+
+当前版本 **3.0**（`namepicker/about_dialog.py` 的 `VERSION = "3.0.0"`）。
 
 在 **GitHub Releases** 下载（若尚未发布，见 [打包](#打包) 自行构建）。
 
@@ -257,9 +263,11 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「开机自启动」：写入当前用户的自启动项。
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
-- 「关于」：版本、版权、不担保声明与 GPL-3.0 许可证全文（托盘菜单与悬浮球右键里也有）。
+- 「关于」：分四个分页 —— **许可证**（Apache-2.0 全文）、**原生模块**（`native/LICENSE` 专有许可）、
+  **第三方组件**（`THIRD-PARTY-NOTICES.md` 全文）、**依赖**（PySide6 / Qt 6 / libsodium 等清单与
+  Qt 可替换说明）。托盘菜单与悬浮球右键里也有入口。
   ~~版本号实际写在**三处**，升级时需同步修改（当前三处不一致）：
-  `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `2.0.0`）、
+  `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `3.0.0`）、
   `packaging/windows/version_info.txt` 的 `filevers`/`prodvers`（EXE 属性，现为 `1.0.0.0`）、
   `packaging/macos/ClassManageSystem.spec` 的 `CFBundleShortVersionString`（.app 版本，现为 `1.0.0`）。
   打包脚本读的是 `version_info.txt`，**不会**从 `about_dialog.py` 读取。~~
@@ -315,29 +323,83 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 ## 数据与安全
 
-积分和操作日志都是**防篡改存储**：同一份数据有四个副本，读取时逐级回退。
+数据分两套机制，**分数的权威来源是事件链，配置文件只是缓存**。
+
+### 一、事件链（分数）
+
+每次改分、改组名、改组数，都会先经原生模块 `cmd_native`：
+
+```text
+界面操作
+  → C++ 校验规则（组号 1..24、分数 ±100 万、组名长度）
+  → 加密（XChaCha20-Poly1305）+ 计算链头（BLAKE2b-256）+ 签名（Ed25519）
+  → 追加到 Data/ledger.esc
+```
+
+启动时整链验签并重放，用结果覆盖 `config.dat` 里的分数缓存。
+
+| 文件 / 位置 | 角色 |
+|---|---|
+| `Data/ledger.esc` | 事件链，base64 行，只追加不覆盖 |
+| `Data/anchor.json` | 基准：链曾经到过第几条、链头是什么 |
+| `~/.cache/classmanage/<哈希>/anchor.json` | 同一基准的隐藏副本 |
+| `~/.cache/classmanage/<哈希>/ledger.esc` | 安全副本，用于自动恢复 |
+| `native/cmd_native`（Windows 为 `.exe`） | 原生模块：密钥、规则、加解密、签名 |
+
+**能挡住什么**（均为实测）：
+
+| 攻击 | 结果 |
+|---|---|
+| 改任意一条记录 | 验签失败，拒绝加载 |
+| 删掉中间几条 | 序号断裂，拒绝加载 |
+| 用旧文件覆盖 `Data/` | 链比基准短 → 从安全副本自动恢复 |
+| 删空 `Data/` | 判定被删 → 从安全副本自动恢复 |
+| 连 `config.dat` 一起换 | 仍然被基准发现（基准不在 `Data/` 里） |
+| 把数据拷到别的电脑 | 机器指纹不同，验签失败 |
+| 读源码找改分接口 | 规则在 C++ 里，接口只接受“加几分” |
+
+**挡不住什么**（边界）：
+
+- 连 `~/.cache` 一起还原的**完整快照**（需要知道三处位置，属于蓄意伪造）；
+- 在老师电脑上**循环调用合法接口**加很多分（会留下 N 条带时间戳的签名事件，
+  一眼可辨，且删不掉）。
+
+### 二、配置文件（组名 / 组数 / 语言）
+
+组名、组数、界面语言等仍按四级容灾逐级回退：
 
 | 文件 / 位置 | 角色 | 程序行为 |
 |---|---|---|
-| `config.dat` | 积分主数据源（AES-256-GCM） | 读 + 写 |
+| `config.dat` | 加密主文件（AES-256-GCM） | 读 + 写 |
 | `config.dat.bak` | 同目录加密备份 | 读（回档）+ 写 |
 | `QSettings` 隐蔽备份 | Windows 注册表 / macOS plist / Linux conf | 读（回档）+ 写 |
 | `config.ini` | 明文查看副本 | **只写，永不读** |
-
-积分读取顺序：
 
 ```text
 config.dat → config.dat.bak → QSettings 隐蔽备份 → 旧版明文（一次性迁移）→ 默认值
 ```
 
-任何一级读成功，都会用成功的数据把前面的副本重新写一遍（自动修复）。
+任何一级读成功，都会把前面的副本重新写一遍（自动修复）。
 
 ### `config.dat` / `config.dat.bak`
 
 - 内容为 `nonce(12B) + 密文 + GCM tag(16B)`，用记事本打开是乱码；
+- **其中 `score_*` 只是缓存**：启动时会被事件链重放结果覆盖，单独改它无效；
 - GCM 是认证加密：改任何一个字节，解密必然失败，程序随即回档到下一级副本。
 
 ### 密钥
+
+**两套独立的密钥：**
+
+| 用途 | 位置 / 来源 | 谁能看到 |
+|---|---|---|
+| 配置文件 `config.dat` | `~/.classmanage_key`（32 字节，权限 `600`） | Python 侧 |
+| 事件链 `Data/ledger.esc` | 机器指纹派生，只存在于 C++ 进程内存 | Python 拿不到 |
+
+事件链的密钥 = `BLAKE2b(机器 UUID ‖ 用户目录 ‖ 编译期盐)`，再由它派生加密钥与签名种子；
+进程退出即清零。把数据拷到别的电脑（或换用户），派生出的密钥不同，验签必然失败。
+
+配置文件密钥的行为：
 
 - 首次运行自动生成 32 字节密钥到 `~/.classmanage_key`（macOS/Linux 权限 `600`）；
 - 不硬编码在源码里，随用户账户隔离；
@@ -455,27 +517,29 @@ python tools/fairness_burnin.py
 | 开机自启动 | ✅ 注册表 Run 项 | ✅ LaunchAgent | ❌（返回失败） |
 | 冻结后数据位置 | ✅ EXE 同级目录 | ✅ `.app` **同级**目录（不在包内） | — |
 
-设计约定：**不直接 `import winreg`**（改为 `try/except ImportError`），平台专有调用全部包在 `try/except` 里并静默降级；存储层统一走 PyQt5 自带的 `QSettings`；配色与字体统一由 `namepicker/theme.py` 提供。
+设计约定：**不直接 `import winreg`**（改为 `try/except ImportError`），平台专有调用全部包在 `try/except` 里并静默降级；存储层统一走 PySide6 自带的 `QSettings`；配色与字体统一由 `namepicker/theme.py` 提供。
 
 ---
 
 ## 打包
 
-> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上**本地**打包（CI 已弃用，见「已知限制」）。
+> **PyInstaller 不支持交叉编译**：在 macOS 上只能打出 macOS 程序，`.exe` 必须在 Windows 上打包
+> （本机或 Windows runner）。测试已支持无头运行（`QT_QPA_PLATFORM=offscreen`），
+> 不再依赖真实显示器。
 
 ### Windows —— 唯一可行方式：本机打包
 
-> ⚠️ **原「方式一：GitHub Actions」已弃用**，仓库中不再有 `.github/workflows`。
-> 原因见「已知限制」：CI 在冒烟测试阶段因无 GUI 会卡死，无法出包。
-> 下面的 `git push` / `git tag` 触发流程**已失效**，请勿照抄。
+> 说明：CI 出包流程目前**未启用**（`.github/workflows` 保留但不再自动触发）。
+> 打包本身仍是 PyInstaller 的一步，在任意一台 Windows 上执行即可；
+> 测试已可在无头环境运行，不再需要真实显示器。
 
-请在任意一台 Windows 上本地打包：
+请在任意一台 Windows 上打包：
 
 ```bat
 packaging\windows\build.bat
 ```
 
-脚本会自动建 `.venv-build` 虚拟环境、装依赖、跑自检、打包，产物 `dist\ClassManageSystem.exe`。
+脚本会自动建 `.venv-build` 虚拟环境、装依赖、跑自检、打包，产物是目录 `dist\ClassManageSystem\`（含 `ClassManageSystem.exe` 与 `_internal\`），再由安装程序打成安装包。
 
 **pip 源自动选择**（不用手动判断自己在国内还是国外）：
 
@@ -489,7 +553,7 @@ packaging\windows\build.bat
 
 没有 `curl`（Windows 10 17063 以下没有自带）时跳过测速，退回内置顺序 **清华 → 阿里 → 官方 pypi.org**。
 
-装依赖时如果当前源失败，脚本会**自动换下一个候选源重试**，而不是卡在第一次超时上退出——PyQt5 单包约 50 MB，这条比测速更保命。
+装依赖时如果当前源失败，脚本会**自动换下一个候选源重试**，而不是卡在第一次超时上退出——PySide6 基础包约 100 MB，这条比测速更保命。
 
 镜像只作用于这条命令，**不写 `pip.ini`、不改系统全局 pip 配置**。
 
@@ -499,11 +563,27 @@ packaging\windows\build.bat
 packaging/macos/build.command        # 双击也可以
 ```
 
-产物 `dist/ClassManageSystem.app`。打出来是**当前 CPU 架构**的原生程序（Apple Silicon 上是 arm64；要通用需 universal2 的 Python + PyQt5）。
+产物 `dist/ClassManageSystem.app`。打出来是**当前 CPU 架构**的原生程序（Apple Silicon 上是 arm64；要通用需 universal2 的 Python + PySide6）。
+
+### 安装包形态
+
+| 平台 | 产物 | 说明 |
+|---|---|---|
+| Windows | `ClassManageSystem-<版本>-Setup.exe` | Inno Setup 安装程序：**按用户安装**（`%LOCALAPPDATA%\Programs`），**不需要管理员权限**；带许可证页、开始菜单与桌面快捷方式、卸载器 |
+| Windows | `ClassManageSystem-<版本>-portable.zip` | 便携版，解压即用 |
+| macOS | `ClassManageSystem-<版本>.dmg` | 拖入「应用程序」即可；受限环境无法建 DMG 时退回落成 zip |
+
+Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）：
+测试 → PyInstaller 目录包 → Inno Setup → 上传安装包与便携版。
 
 ### 产物说明
 
-- 单文件窗口程序，目标机不需要装 Python；
+- 目录形态（`dist/ClassManageSystem/`）＋安装程序，目标机不需要装 Python；
+- **原生模块随包分发**：`_internal/native/cmd_native.exe`（macOS 为
+  `Contents/Frameworks/native/cmd_native`）。缺了它程序只能以只读模式运行，
+  因此打包配置会在缺失时**直接让构建失败**；
+- **Qt 库是独立文件**（`_internal/` 下的 `Qt*.dll` / `.framework`），安装后可被替换，
+  满足 LGPL v3 对「用户能替换库」的要求；单文件 EXE 做不到这一点，因此不再使用；
 - 配置与日志写在 EXE / `.app` 同级目录（只读目录则回退 `%APPDATA%\ClassTerminal2411`），密钥在用户主目录；
 - **未做代码签名**：Windows 首次运行 SmartScreen 会提示「未知发布者」，点「更多信息 → 仍要运行」；macOS 拷给别人后首次需**右键 → 打开**。
 
@@ -516,12 +596,21 @@ packaging/macos/build.command        # 双击也可以
 ├── main.py                          # 入口：组装组件、连接信号、进入事件循环
 ├── requirements.txt
 ├── names.txt                        # 示例名单
+├── LICENSE                          # Apache License 2.0 全文
+├── NOTICE                           # 版权与归属声明（Apache-2.0 要求）
+├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium 等第三方声明
+├── native/                          # 原生模块（只发布二进制；源码不进仓库）
+│   ├── LICENSE                      # 专有许可：随程序使用，禁止单独分发/逆向
+│   ├── CMakeLists.txt               # 构建定义（源码在 native/src/，已 gitignore）
+│   ├── build_macos.sh               # clang + 静态 libsodium，strip + ad-hoc 签名
+│   ├── build_windows.sh             # zig 交叉编译（无需 MSVC / 管理员）
+│   ├── cmd_native.exe               # Windows 构建产物
+│   └── cmd_native                   # macOS 构建产物
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
 │
 ├── namepicker/                      # 主程序包
-│   ├── __init__.py
 │   ├── _init_.md                    # 包内文件职责说明
-│   ├── config_store.py              # config.dat：加密配置 + 三级回档
+│   ├── config_store.py              # 配置持久化（四级容灾）+ 分数缓存
 │   ├── crypto_utils.py              # AES-256-GCM 与 ~/.classmanage_key 密钥管理
 │   ├── log_store.py                 # points_log.dat：加密操作日志 + 防回滚
 │   ├── backup_store.py              # QSettings 系统级隐蔽备份（跨平台）
@@ -568,16 +657,33 @@ packaging/macos/build.command        # 双击也可以
 │   ├── reset_fairness_benchmark.py  # 教师清空历史工作流模拟
 │   ├── weighting_demo.py            # 新旧算法分布对比
 │   ├── repro_quit.py                # 「关闭面板导致退出」最小复现
-│   └── _settings_isolation.py       # 测试用的 QSettings 命名空间隔离
+│   ├── _settings_isolation.py       # 测试用的 QSettings 命名空间隔离
+│   ├── _headless.py                 # 无头模式：屏蔽所有模态框，CI 不阻塞
+│   ├── run_all_tests.py             # 一键跑全套测试（自动找解释器 / 限时 / 隔离）
+│   ├── run_all_tests.command        # macOS 双击启动器
+│   └── run_all_tests.bat            # Windows 双击启动器
 │
-└── .github/workflows/build-windows.yml   # ❌ 已删除（目录不存在）：CI 无法编译含 GUI 的项目，见「已知限制」
+└── .github/workflows/build-windows.yml   # CI 构建流程（当前未启用，见「打包」）
 ```
 
 ---
 
 ## 测试
 
-所有测试从项目根目录运行。
+**最省事的方式**：双击 `tools/run_all_tests.command`（macOS）或
+`tools/run_all_tests.bat`（Windows），或运行：
+
+```bash
+python tools/run_all_tests.py            # 全套，offscreen（等价 CI）
+python tools/run_all_tests.py --gui      # 真实窗口，本机调试
+python tools/run_all_tests.py -k wipe    # 只跑名字含 wipe 的
+python tools/run_all_tests.py -q         # 只看失败摘要（默认打印全量输出）
+```
+
+它会自动选解释器（`.conda` → `.venv-build` → 当前 Python），给需要写数据的测试
+分配临时 `HOME`，并逐项限时（单项卡住不会拖垮整场）。
+
+单独运行某一项：
 
 ```bash
 python tools/config_check.py           # 最快，不依赖 Qt：存储读写/合并/清零/重置
@@ -590,6 +696,8 @@ python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、�
 python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
 python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
 python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志(需要GUI)
+python tools/native_check.py           # 原生模块：状态机、规则拒绝、篡改/重排/换机器
+python tools/ledger_check.py           # 事件链：迁移、C++ 改分、回档检测、安全副本恢复
 ```
 
 - `wipe_check` 现在覆盖：写盘失败必须被报告（只读目录）、失败后界面回退到磁盘真实数据、
@@ -597,7 +705,7 @@ python tools/i18n_check.py             # 双语：默认组名、重启参数、
 - `i18n_check` 现在覆盖：关于窗口非模态时悬浮球仍可抽人、隐藏父窗口下的对话框定位、
   语言双写、`--restarted` 参数、单实例重试（跨进程）。
 - `windows_check` 现在覆盖：对话框置顶（`WS_EX_TOPMOST`）、语言写入 `config.dat`。
-- `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PyQt5 时还会验证真实的 QSettings 隐蔽备份。
+- `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PySide6 时还会验证真实的 QSettings 隐蔽备份。
 - 冒烟测试构造 `MainWindow` 会读写真实注册表（Windows），脚本会先备份开机自启动项、跑完还原；macOS/Linux 自动跳过。
 - 测试统一使用隔离的 QSettings 命名空间，不会污染真实注册表 / plist。
 
@@ -643,6 +751,29 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
   重试 3 次（0.12s / 0.24s 退避）能吃掉杀软与索引服务的瞬时锁。
 - 「彻底重置」必须检查 `store.save()` 的返回值并读回校验；失败时先 `reload_from_disk()`
   让界面回到磁盘真实数据，再弹错误 —— **不要只刷内存**，否则界面和磁盘会长期不一致。
+- Qt 绑定是 **PySide6（Qt 6）**，不是 PyQt5。迁移时的坑：
+  * `QAction` 从 `QtWidgets` 移到了 **`QtGui`**；
+  * `pyqtSignal`/`pyqtSlot` → `Signal`/`Slot`，`exec_()` → `exec()`；
+  * `sip.isdeleted(x)` → `shiboken6.isValid(x)`；
+  * `PYQT_VERSION_STR` / `QT_VERSION_STR` 不存在，用 `qVersion()`；
+  * Qt6 里 `windowModality()` 返回**枚举**（`Qt.WindowModality.NonModal`），
+    不要和整数 `0` 比较。
+- **offscreen 下不能碰 macOS 原生窗口**：`QT_QPA_PLATFORM=offscreen` 时 `winId()`
+  不是真实 NSView，对它发 objc 消息会**段错误**（实测 exit=-11）。
+  `macos_window` 里所有入口都以 `QGuiApplication.platformName()` 是否 `cocoa` 为前置条件。
+- **测试里不能出现阻塞式对话框**：CI/无头环境没人点「确定」，会永久卡住。
+  `tools/_headless.py` 的 `install()` 会把 `QMessageBox` 的四个静态方法替换成
+  立即返回；新增测试请在创建 `QApplication` 前调用它。
+- **业务规则只在 C++ 里**：不要在图界面或 `ConfigStore` 里再判断“组号是否合法 /
+  分数是否超限”。新增操作走 `ConfigStore._ledger_apply(op, **kwargs)`，
+  由 `cmd_native apply` 校验；被拒绝时返回 `False`，调用方必须放弃本次改动。
+- **改完 C++ 一定要重编两个平台**：`native/build_macos.sh` 与
+  `native/build_windows.sh`（zig 交叉编译，无需 MSVC / 管理员）。
+  libsodium 源码放在 `native/third_party/`（已 gitignore）。
+- **事件格式由 C++ 定义**：Python 只把 `record` 当不透明字节追加到
+  `Data/ledger.esc`，不要解析；需要状态就调 `cmd_native state`。
+- **数值上限要对齐**：C++ 的 `MIN_GROUPS/MAX_GROUPS` 与 `config_store` 的
+  `MIN_GROUP_COUNT/MAX_GROUP_COUNT` 必须一致。
 - 打包相关：`config_store._app_dir()` 对 `.app` 有专门处理，避免把数据写进应用包内部；
   Windows 的 `.bat` 必须是**纯 ASCII + CRLF**（`.gitattributes` 已强制 `eol=crlf`），
   且 `REM` 行里不能出现未配对的圆括号 —— cmd 的括号配对统计会因此从行中间截断命令。
@@ -732,7 +863,8 @@ QSettings 隐蔽备份恢复。
 ## 已知限制
 
 - **未做代码签名/公证**：Windows 有 SmartScreen 提示，macOS 拷贝到别的机器需右键打开。
-- **无法使用CI，无法交叉编译**：CI在冒烟测试阶段因为无GUI会卡死，需要注意，受限于Pyinstaller，不支持交叉编译
+- **不能交叉编译**：受限于 PyInstaller，macOS 上打不出 `.exe`，Windows 包必须在 Windows 上构建。
+  （测试本身已可在无头环境运行：`tools/run_all_tests.py` 默认 offscreen。）
 - **macOS 全屏覆盖靠「应用激活策略」**：窗口层级再高也没用 —— regular 应用自己占着
   一个桌面 Space，别的 App 进全屏后它压根不在那个 Space 里。本程序启动时会切到
   **accessory** 策略（`LSUIElement`，与 Alfred / Raycast 相同），窗口才能加入
@@ -744,43 +876,60 @@ QSettings 隐蔽备份恢复。
   菜单栏收起时状态项按系统设计就不显示 —— 这不是程序问题。此时可用悬浮球右键菜单，
   里面已包含托盘的全部动作（抽取名字 / 积分管理 / 打开面板 / 彻底重置 / 退出）。
   想要常驻可见，请在 系统设置 → 外观（或桌面与程序坞）关闭「自动隐藏菜单栏」。
-- **密钥与账户同权限**：密钥在用户主目录，若教师与学生共用同一个系统登录账户，
-  学生理论上可以读取密钥。这是「用户级密钥」方案的固有边界。
+- **事件链也受同账户限制**：事件链的密钥由机器指纹派生、只存在于 C++ 进程内存，
+  不落盘；但若教师与学生共用同一个系统登录账户，能在这台机器上运行程序并调试的人，
+  理论上仍可提取运行中的密钥。这是「单机 + 同账户」的前提决定的上限，不是实现缺陷。
+- **完整快照还原不在防护范围**：同时替换 `Data/`、`config.dat` 与 `~/.cache/classmanage/`
+  的整机快照可以骗过校验（需要知道三处位置，属于蓄意伪造）。
 - **Linux 未验证**：代码有平台守卫不会崩，但托盘/置顶行为未测试。
 
 ---
 
 ## 许可证
 
-本项目以 **GNU General Public License v3.0（GPL-3.0）** 发布。
+本项目以 **Apache License 2.0** 发布。
 
 ```text
-Copyright (C) 2026 Gentole Lee
+Copyright 2026 Gentole Lee
 
-本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证
-第 3 版条款，重新分发和/或修改它。
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-本程序分发时希望它有用，但不提供任何担保，甚至不提供适销性或特定用途
-适用性的默示担保。详见 GNU 通用公共许可证。
+    http://www.apache.org/licenses/LICENSE-2.0
 
-你应当已收到本程序的 GNU 通用公共许可证副本；若没有，见
-<https://www.gnu.org/licenses/>。
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 ```
 
-- 完整条款：[`LICENSE`](LICENSE)（GPL-3.0 官方全文，逐字节未经修改）
-- 在线版本：<https://www.gnu.org/licenses/gpl-3.0.html>
+- 完整条款：[`LICENSE`](LICENSE)（Apache-2.0 官方全文 + 本项目版权声明）
+- 版权与归属：[`NOTICE`](NOTICE)
+- 第三方组件声明：[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+- 在线版本：<https://www.apache.org/licenses/LICENSE-2.0>
 
 **作为使用者你需要知道：**
 
-- 可以自由使用、修改、再分发，包括商用；
-- **分发时必须一并提供完整源代码**（含你对代码的修改），并保留版权声明与许可证；
-- 衍生作品必须同样以 GPL-3.0 授权；
+- 可以自由使用、修改、再分发，**包括商用和闭源分发**；
+- 再分发时须保留版权与许可声明，并提供许可证副本；如有 `NOTICE`，须一并附带；
+- 修改过的文件要**显著标注已修改**；
+- 附带**专利授权**：贡献者不会因你使用本程序而主张专利侵权；
 - 不提供任何担保。
 
-**关于依赖：** 本项目使用 **PyQt5**，其许可证为 **GPL v3**，因此本程序本身也必须以
-GPL 发布 —— 选择 GPL-3.0 与之一致。其余依赖：Qt 5.15（LGPL v3）、PyQt5-sip（BSD-2-Clause）、
-cryptography（Apache-2.0 OR BSD-3-Clause）、cffi（MIT-0）、pycparser（BSD-3-Clause），
-均与 GPL-3.0 兼容。
+**原生模块是另一套许可：** `native/` 下的编译产物
+（`cmd_native.exe` / `cmd_native`）**不属于 Apache-2.0**，而是专有许可：
+只能随本程序使用，禁止单独分发、反向工程或提取其中的算法与密钥。
+详见 [`native/LICENSE`](native/LICENSE)。
+
+**关于依赖：** 本项目使用 **PySide6**（LGPL v3）与 **Qt 6**（LGPL v3），
+因此 Qt 部分要求**动态链接并允许用户替换 Qt 库**（安装包以目录形态分发即满足）。
+其余依赖：shiboken6（LGPL v3）、cryptography（Apache-2.0 OR BSD-3-Clause）、
+cffi（MIT-0）、pycparser（BSD-3-Clause）、libsodium（ISC）。
+
+**历史版本：** 3.0.0 之前的版本（含 2.0.0）以 GPL-3.0 发布，收到过那些版本的
+人仍可继续按 GPL-3.0 使用它们（许可证不可收回）；自 **3.0.0** 起改为 Apache-2.0。
 
 ---
 
@@ -859,7 +1008,7 @@ close it with `✕` or let it disappear after 5 seconds.
 
 ### About: version and license
 
-Version, copyright, the no-warranty notice and the scrollable GPL-3.0 text.
+Version, copyright, the no-warranty notice and the scrollable Apache-2.0 text.
 
 ![About](docs/images/about-dialog.png)
 
@@ -987,7 +1136,10 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 ### Requirements
 
 - Windows 10 or later (primary target), macOS 11 or later; Linux untested.
-- Python 3.10+, PyQt5 and cryptography (only needed when running from source).
+- Python 3.10+, PySide6 and cryptography (only needed when running from source).
+- The **native module** `native/cmd_native` (`.exe` on Windows) must exist when running
+  from source; without it the app degrades to read-only with a status-bar notice and does
+  not crash. See Development notes for how to build it.
 
 ```bash
 pip install -r requirements.txt
@@ -1012,6 +1164,8 @@ The first run creates an encrypted config next to the program; with no saved nam
 a default list of the numbers 1–99 is generated.
 
 ### Download a ready-to-run build
+
+Current version: **3.0** (`VERSION = "3.0.0"` in `namepicker/about_dialog.py`).
 
 Grab it from **GitHub Releases** (if nothing is published yet, see
 [Packaging](#en-packaging) and build it yourself).
@@ -1063,16 +1217,18 @@ their custom name, untouched ones show `Group 4/5/6`.
 - "Hide ball": temporarily hide or show the ball.
 - "Clear history": clears draw history and cooldowns but **keeps** lifetime fairness
   counts.
-- "About": version, copyright, the no-warranty notice and the full GPL-3.0 text
-  (also available from the tray menu and the ball's right-click menu).
+- "About": four tabs — **License** (full Apache-2.0), **Native module** (`native/LICENSE`,
+  proprietary), **Third-party** (full `THIRD-PARTY-NOTICES.md`) and **Dependencies**
+  (PySide6 / Qt 6 / libsodium list plus the Qt replaceability note). Also reachable from
+  the tray menu and the ball's right-click menu.
   ~~The version actually lives in **three** places and must be bumped together (currently
   out of sync): `VERSION` in `namepicker/about_dialog.py` (shown in the dialog, now
-  `2.0.0`), `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties,
+  `3.0.0`), `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties,
   now `1.0.0.0`), and `CFBundleShortVersionString` in
   `packaging/macos/ClassManageSystem.spec` (app version, now `1.0.0`). The build script
   reads `version_info.txt`, **not** `about_dialog.py`.~~
   (Struck out because since 2.0.0 the version is a **single source of truth**.)
-  Only `VERSION` in `namepicker/about_dialog.py` needs editing:
+  Only `VERSION` in `namepicker/about_dialog.py` needs editing (currently `3.0.0`):
   - the Windows spec substitutes it into the `version_info.txt` template and writes
     `version_info.generated.txt` for PyInstaller (the template is no longer edited by hand);
   - the macOS spec reads it directly for `CFBundleShortVersionString` / `CFBundleVersion`.
@@ -1134,29 +1290,73 @@ or CI logs.
 
 ## Data and security
 
-Scores and the operation log use **tamper-resistant storage**: four copies of the same
-data with a level-by-level fallback on read.
+There are two mechanisms, and **the authoritative source for scores is the event chain**;
+the config file only caches them.
+
+### 1. Event chain (scores)
+
+Every score / group-name / group-count change goes through the native module `cmd_native`:
+
+```text
+UI action
+  → C++ validates the rules (group 1..24, score ±1,000,000, name length)
+  → encrypt (XChaCha20-Poly1305) + chain head (BLAKE2b-256) + sign (Ed25519)
+  → append to Data/ledger.esc
+```
+
+At startup the whole chain is verified and replayed; the result overwrites the cached
+`score_*` values in `config.dat`.
+
+| File / location | Role |
+|---|---|
+| `Data/ledger.esc` | event chain, base64 lines, append-only |
+| `Data/anchor.json` | anchor: how long the chain ever got, and its head |
+| `~/.cache/classmanage/<hash>/anchor.json` | hidden copy of the same anchor |
+| `~/.cache/classmanage/<hash>/ledger.esc` | shadow copy used for automatic restore |
+| `native/cmd_native` (`.exe` on Windows) | native module: keys, rules, crypto, chain |
+
+**What it stops** (all measured):
+
+| Attack | Result |
+|---|---|
+| Edit any record | signature fails, chain rejected |
+| Delete records in the middle | sequence gap, chain rejected |
+| Replace `Data/` with an old copy | chain shorter than anchor → restored from shadow |
+| Delete `Data/` entirely | detected as deleted → restored from shadow |
+| Replace `config.dat` too | still caught, because the anchor is not inside `Data/` |
+| Copy the data to another machine | different machine fingerprint, signature fails |
+| Read the source to find a "set score" API | rules live in C++; the API only accepts deltas |
+
+**What it does not stop** (the boundary):
+
+- a **full snapshot** restore that also replaces `~/.cache` (requires knowing all three
+  locations — that is deliberate forgery);
+- **looping the legitimate API** on the teacher's machine to add many points (it leaves N
+  signed, timestamped events that are obvious and cannot be deleted).
+
+### 2. Config file (group names / count / language)
+
+Group names, group count and UI language still use the four-level fallback:
 
 | File / location | Role | Program behaviour |
 |---|---|---|
-| `config.dat` | Primary score source (AES-256-GCM) | read + write |
-| `config.dat.bak` | Encrypted backup next to it | read (restore) + write |
+| `config.dat` | primary encrypted file (AES-256-GCM) | read + write |
+| `config.dat.bak` | encrypted backup next to it | read (restore) + write |
 | `QSettings` hidden backup | Windows registry / macOS plist / Linux conf | read (restore) + write |
-| `config.ini` | Plain-text view copy | **write only, never read** |
-
-Read order:
+| `config.ini` | plain-text view copy | **write only, never read** |
 
 ```text
 config.dat → config.dat.bak → QSettings hidden backup → legacy plaintext (one-time migration) → defaults
 ```
 
-Whenever a lower level succeeds, the data is written back to the levels above it
-(automatic repair).
+Whenever a lower level succeeds, the levels above it are rewritten (automatic repair).
 
 ### `config.dat` / `config.dat.bak`
 
 - Contents are `nonce(12B) + ciphertext + GCM tag(16B)`; opening it in a text editor
   shows nothing but garbage.
+- **The `score_*` entries are only a cache**: at startup they are overwritten by the
+  event-chain replay, so editing them alone has no effect.
 - GCM is authenticated encryption: changing a single byte makes decryption fail and the
   program falls back to the next copy.
 
@@ -1306,7 +1506,7 @@ python tools/fairness_burnin.py
 | Data location when frozen | ✅ next to the EXE | ✅ **next to** the `.app` (not inside) | — |
 
 Conventions: **never `import winreg` directly** (use `try/except ImportError`), wrap all
-platform-specific calls in `try/except` with silent degradation, use PyQt5's built-in
+platform-specific calls in `try/except` with silent degradation, use PySide6's built-in
 `QSettings` for storage, and keep colours and fonts in `namepicker/theme.py`.
 
 ---
@@ -1316,16 +1516,16 @@ platform-specific calls in `try/except` with silent degradation, use PyQt5's bui
 ## Packaging
 
 > **PyInstaller cannot cross-compile**: on macOS you only get a macOS build; the `.exe`
-> must be built **locally** on Windows (CI is retired, see Known limitations).
+> must be built on Windows (locally or on a Windows runner). The test suite is
+> headless-safe now (`QT_QPA_PLATFORM=offscreen`), so it no longer needs a display.
 
 ### Windows — the only working way: build locally
 
-> ⚠️ **The former "option 1: GitHub Actions" is retired**; the repository no longer
-> contains `.github/workflows`. See Known limitations: CI hangs at the smoke-test
-> stage because there is no GUI, so it cannot produce a build. The `git push` /
-> `git tag` flow below **no longer works** — do not copy it.
+> Note: the CI build pipeline is **currently disabled** (`.github/workflows` is kept but
+> no longer triggers automatically). Packaging is still a single PyInstaller step on any
+> Windows machine; the test suite is headless-safe, so no display is required.
 
-On any Windows machine, build locally:
+On any Windows machine, build with:
 
 ```bat
 packaging\windows\build.bat
@@ -1352,7 +1552,7 @@ Without `curl` (not bundled before Windows 10 17063) probing is skipped and the 
 is used instead: **Tsinghua → Aliyun → pypi.org**.
 
 If the chosen index dies mid-install, the script **automatically retries the next candidate**
-instead of aborting on the first timeout — the PyQt5 wheel alone is about 50 MB, so this
+instead of aborting on the first timeout — the PySide6 base wheel is about 100 MB, so this
 matters more than the probe does.
 
 The index only applies to that one command — **no `pip.ini`, no global pip changes**.
@@ -1364,11 +1564,29 @@ packaging/macos/build.command        # double-clicking also works
 ```
 
 Produces `dist/ClassManageSystem.app` for the **current CPU architecture** (arm64 on
-Apple Silicon; a universal build needs universal2 Python + PyQt5).
+Apple Silicon; a universal build needs universal2 Python + PySide6).
+
+### Installer artifacts
+
+| Platform | Artifact | Notes |
+|---|---|---|
+| Windows | `ClassManageSystem-<version>-Setup.exe` | Inno Setup installer: **per-user** (`%LOCALAPPDATA%\Programs`), **no admin rights**; license page, Start-menu and desktop shortcuts, uninstaller |
+| Windows | `ClassManageSystem-<version>-portable.zip` | portable, unzip and run |
+| macOS | `ClassManageSystem-<version>.dmg` | drag to Applications; falls back to a zip when DMG creation is not permitted |
+
+The Windows installer is produced by CI (`.github/workflows/build-windows.yml`):
+tests → PyInstaller onedir → Inno Setup → upload installer and portable zip.
 
 ### About the artifacts
 
-- Single-window GUI; the target machine needs no Python.
+- Directory layout (`dist/ClassManageSystem/`) plus an installer; the target machine
+  needs no Python.
+- **The native module ships inside the package**: `_internal/native/cmd_native.exe`
+  (macOS: `Contents/Frameworks/native/cmd_native`). Without it the app can only run
+  read-only, so the packaging config **fails the build** when it is missing.
+- **Qt ships as separate files** (`Qt*.dll` / `.framework` under `_internal/`) and can be
+  replaced after installation, which satisfies LGPL v3's "user can replace the library".
+  A single-file EXE cannot do that, so it is no longer used.
 - Config and logs are written next to the EXE / `.app` (falling back to
   `%APPDATA%\ClassTerminal2411` for read-only directories); the key lives in the home
   directory.
@@ -1387,12 +1605,21 @@ Apple Silicon; a universal build needs universal2 Python + PyQt5).
 ├── main.py                          # entry point: wire components, connect signals, run
 ├── requirements.txt
 ├── names.txt                        # sample name list
+├── LICENSE                          # full Apache License 2.0 text
+├── NOTICE                           # copyright / attribution (required by Apache-2.0)
+├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium and other notices
+├── native/                          # native module (binaries only; source not in repo)
+│   ├── LICENSE                      # proprietary: use with the app, no standalone/RE
+│   ├── cmd_native.exe               # Windows build artifact
+│   └── cmd_native                   # macOS build artifact
 ├── docs/images/                     # README screenshots (generated by tools/make_screenshots.py)
 │
 ├── namepicker/                      # main package
 │   ├── __init__.py
 │   ├── _init_.md                    # package file responsibilities
-│   ├── config_store.py              # config.dat: encrypted config + 3-level fallback
+│   ├── config_store.py              # config persistence (4-level recovery) + score cache
+│   ├── ledger.py                    # event chain: append, anchor, shadow copy, native calls
+│   ├── native_bridge.py             # calls cmd_native (fingerprint/state/apply/verify)
 │   ├── crypto_utils.py              # AES-256-GCM and ~/.classmanage_key handling
 │   ├── log_store.py                 # points_log.dat: encrypted log + anti-rollback
 │   ├── backup_store.py              # QSettings system-level hidden backup
@@ -1439,7 +1666,11 @@ Apple Silicon; a universal build needs universal2 Python + PyQt5).
 │   ├── reset_fairness_benchmark.py  # pre-lesson "clear history" workflow
 │   ├── weighting_demo.py            # old vs new distribution
 │   ├── repro_quit.py                # minimal repro for "closing the panel quits"
-│   └── _settings_isolation.py       # isolated QSettings namespace for tests
+│   ├── _settings_isolation.py       # isolated QSettings namespace for tests
+│   ├── _headless.py                 # headless: stub out every modal dialog (CI-safe)
+│   ├── run_all_tests.py             # one-click suite runner (interpreter / timeout / isolation)
+│   ├── run_all_tests.command        # macOS double-click launcher
+│   └── run_all_tests.bat            # Windows double-click launcher
 │
 └── .github/workflows/build-windows.yml   # CI: x64 Windows build # deprecated: CI cannot build GUI projects online
 ```
@@ -1450,7 +1681,21 @@ Apple Silicon; a universal build needs universal2 Python + PyQt5).
 
 ## Tests
 
-Run everything from the project root.
+**Easiest way**: double-click `tools/run_all_tests.command` (macOS) or
+`tools/run_all_tests.bat` (Windows), or run:
+
+```bash
+python tools/run_all_tests.py            # everything, offscreen (CI-equivalent)
+python tools/run_all_tests.py --gui      # real windows, for local debugging
+python tools/run_all_tests.py -k wipe    # only tests whose name contains "wipe"
+python tools/run_all_tests.py -q         # failures only (default prints everything)
+```
+
+It picks the interpreter (`.conda` → `.venv-build` → current Python), gives
+data-writing tests a temporary `HOME`, and applies a per-test timeout so one stuck test
+cannot block the run.
+
+Run a single test:
 
 ```bash
 python tools/config_check.py           # fastest, no Qt: storage read/write/merge/reset
@@ -1463,6 +1708,8 @@ python tools/smoke_test.py             # GUI smoke: signals, layout, persistence
 python tools/group_count_stress.py     # group count + 300-round stress test
 python tools/wipe_check.py             # full reset: selection and per-part clearing
 python tools/i18n_check.py             # bilingual: default group names, restart args, long-name elision, bilingual log (GUI required)
+python tools/native_check.py           # native module: state machine, rule rejections, tamper/reorder/other-machine
+python tools/ledger_check.py           # event chain: migration, C++ scoring, rollback detection, shadow restore
 ```
 
 - `wipe_check` now also covers: a failed write must be reported (read-only directory),
@@ -1474,7 +1721,7 @@ python tools/i18n_check.py             # bilingual: default group names, restart
 - `windows_check` now also covers: dialogs pinned topmost (`WS_EX_TOPMOST`) and the language
   persisted in `config.dat`.
 - `config_crypto_check` / `log_crypto_check` run under a temporary HOME, so your **real
-  data is never touched**; with PyQt5 installed they also verify the real QSettings
+  data is never touched**; with PySide6 installed they also verify the real QSettings
   hidden backup.
 - The smoke test builds `MainWindow`, which touches the real registry on Windows; the
   script backs up the autostart entry and restores it afterwards, and skips on macOS/Linux.
@@ -1519,6 +1766,32 @@ desktop, and it uses a temporary directory instead of your real config.
   memory segment is not released when a process dies, so an orphan left by `kill -9`
   makes every later start exit silently. Liveness is now determined by whether a
   `QLocalServer` accepts a connection, with shared memory as a fallback only.
+- The Qt binding is **PySide6 (Qt 6)**, not PyQt5. Migration traps:
+  * `QAction` moved from `QtWidgets` to **`QtGui`**;
+  * `pyqtSignal`/`pyqtSlot` → `Signal`/`Slot`, `exec_()` → `exec()`;
+  * `sip.isdeleted(x)` → `shiboken6.isValid(x)`;
+  * `PYQT_VERSION_STR` / `QT_VERSION_STR` do not exist — use `qVersion()`;
+  * `windowModality()` returns an **enum** (`Qt.WindowModality.NonModal`) in Qt 6;
+    do not compare it with the integer `0`.
+- **Never touch native macOS windows under offscreen**: with
+  `QT_QPA_PLATFORM=offscreen`, `winId()` is not a real NSView and sending it an objc
+  message segfaults (measured: exit=-11). Every entry point in `macos_window` is guarded
+  by `QGuiApplication.platformName()` starting with `cocoa`.
+- **No blocking dialogs in tests**: CI/headless has nobody to click OK, so `exec()` hangs
+  forever. `tools/_headless.py`'s `install()` replaces the four `QMessageBox` statics with
+  immediate returns; call it before creating `QApplication` in new tests.
+- **Business rules live only in C++**: do not re-check "group in range / score limit" in
+  the UI or in `ConfigStore`. New operations go through
+  `ConfigStore._ledger_apply(op, **kwargs)`, validated by `cmd_native apply`; a rejection
+  returns `False` and the caller must drop the change.
+- **Rebuild both native binaries after touching the C++**: `native/build_macos.sh` and
+  `native/build_windows.sh` (zig cross-compile, no MSVC or admin rights needed). The
+  libsodium sources live in `native/third_party/` (git-ignored).
+- **The event format is defined in C++**: Python treats `record` as opaque bytes and
+  appends them to `Data/ledger.esc`; ask `cmd_native state` for the state instead of
+  parsing events.
+- **Keep the limits in sync**: `MIN_GROUPS`/`MAX_GROUPS` in C++ and
+  `MIN_GROUP_COUNT`/`MAX_GROUP_COUNT` in `config_store` must match.
 - Packaging: `config_store._app_dir()` special-cases `.app` so data never ends up inside
   the bundle. Windows `.bat` files must be **pure ASCII + CRLF** (`.gitattributes` forces
   `eol=crlf`) and `REM` lines must not contain unbalanced parentheses — cmd's parenthesis
@@ -1656,9 +1929,14 @@ ASCII + CRLF.
   contains every tray action (draw / points / open panel / full reset / quit). To keep it
   always visible, disable "Automatically hide the menu bar" in System Settings →
   Appearance (or Desktop & Dock).
-- **The key has the same permissions as the account**: it lives in the home directory, so
-  if a teacher and students share one system login, students could theoretically read it.
-  This is inherent to a per-user key scheme.
+- **The event chain is limited by the same account too**: its key is derived from the
+  machine fingerprint and only ever exists in the C++ process memory (never on disk). If a
+  teacher and students share one system login, someone who can run and debug programs on
+  that machine could in principle extract the key while it is in use. That is the ceiling
+  imposed by "single machine + shared account", not an implementation flaw.
+- **Full snapshot restores are out of scope**: replacing `Data/`, `config.dat` *and*
+  `~/.cache/classmanage/` together can defeat verification (it requires knowing all three
+  locations — deliberate forgery).
 - **Linux is untested**: platform guards prevent crashes, but tray and topmost behaviour
   have not been verified.
 
@@ -1668,40 +1946,56 @@ ASCII + CRLF.
 
 ## License
 
-This project is released under the **GNU General Public License v3.0 (GPL-3.0)**.
+This project is released under the **Apache License 2.0**.
 
 ```text
-Copyright (C) 2026 Gentole Lee
+Copyright 2026 Gentole Lee
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, version 3 of the License.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 ```
 
-- Full terms: [`LICENSE`](LICENSE) — the official GPL-3.0 text, byte-for-byte unmodified
-- Online: <https://www.gnu.org/licenses/gpl-3.0.html>
+- Full terms: [`LICENSE`](LICENSE) — the official Apache-2.0 text plus this project's
+  copyright notice
+- Attribution: [`NOTICE`](NOTICE)
+- Third-party components: [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+- Online: <https://www.apache.org/licenses/LICENSE-2.0>
 
 **What this means for you:**
 
-- You may use, modify and redistribute it, including commercially;
-- **If you distribute it, you must also provide the complete source code**
-  (including your modifications), keeping the copyright and license notices;
-- Derivative works must also be licensed under GPL-3.0;
+- You may use, modify and redistribute it, **including commercially and in
+  closed-source form**;
+- When redistributing you must keep the copyright and license notices, include a copy of
+  the License, and pass along the `NOTICE` file if present;
+- **Mark modified files as changed**;
+- An **express patent grant** is included: contributors will not assert patent claims
+  against your use of this work;
 - There is no warranty.
 
-**About the dependencies:** this project uses **PyQt5**, which is licensed under
-**GPL v3**, so the program itself must be GPL-licensed — GPL-3.0 is consistent with
-that. The other dependencies are Qt 5.15 (LGPL v3), PyQt5-sip (BSD-2-Clause),
-cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0) and pycparser
-(BSD-3-Clause), all compatible with GPL-3.0.
+**The native module uses a different license:** the compiled artifacts under `native/`
+(`cmd_native.exe` / `cmd_native`) are **not** Apache-2.0. They are proprietary and may
+only be used together with this application; standalone distribution, reverse
+engineering and extracting their algorithms or keys are prohibited. See
+[`native/LICENSE`](native/LICENSE).
+
+**About the dependencies:** this project uses **PySide6** (LGPL v3) and **Qt 6**
+(LGPL v3). The Qt part therefore requires **dynamic linking and replaceable Qt
+libraries**, which the directory-style installer satisfies. The other dependencies are
+shiboken6 (LGPL v3), cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0),
+pycparser (BSD-3-Clause) and libsodium (ISC).
+
+**Historical versions:** versions before 3.0.0 (including 2.0.0) were released under
+GPL-3.0; anyone who received those versions may keep using them under GPL-3.0 (licenses
+are irrevocable). Starting with **3.0.0** the license is Apache-2.0.
 
 ---
 

@@ -103,7 +103,7 @@ def translator_for_qt(app, lang: str) -> None:
     语言在运行中切换时，先卸掉旧的翻译器再装新的。
     """
     try:
-        from PyQt5.QtCore import QLibraryInfo, QLocale, QTranslator
+        from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
     except Exception:
         return
     old = getattr(app, "_cmd_translator", None)

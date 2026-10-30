@@ -3,13 +3,13 @@
 import ctypes
 import sys
 
-from PyQt5.QtCore import (
-    Qt, QPoint, QTimer, pyqtSignal
+from PySide6.QtCore import (
+    Qt, QPoint, QTimer, Signal
 )
-from PyQt5.QtGui import (
-    QPainter, QBrush, QColor, QFont, QPen, QMouseEvent
+from PySide6.QtGui import (
+    QAction, QPainter, QBrush, QColor, QFont, QPen, QMouseEvent
 )
-from PyQt5.QtWidgets import QWidget, QApplication, QMenu, QAction
+from PySide6.QtWidgets import QWidget, QApplication, QMenu
 
 from . import theme
 from .i18n import tr
@@ -86,15 +86,15 @@ def force_topmost(widget: QWidget) -> None:
 class FloatingBall(QWidget):
     """50×50 的圆形悬浮按钮，始终置顶，显示「抽」，抽中时短暂闪烁。"""
 
-    ball_clicked = pyqtSignal()
-    open_panel_requested = pyqtSignal()  # 右键 → 打开管理面板
-    points_panel_requested = pyqtSignal()  # 右键 → 打开小组积分窗口
-    multi_draw_requested = pyqtSignal(int)  # 右键 → 连抽 N 人
+    ball_clicked = Signal()
+    open_panel_requested = Signal()  # 右键 → 打开管理面板
+    points_panel_requested = Signal()  # 右键 → 打开小组积分窗口
+    multi_draw_requested = Signal(int)  # 右键 → 连抽 N 人
     # 托盘被系统隐藏时（macOS 菜单栏自动隐藏 / 没有 Dock 图标），
     # 这些动作由悬浮球右键菜单兜底，保证功能不丢。
-    wipe_requested = pyqtSignal()           # 右键 → 彻底重置
-    quit_requested = pyqtSignal()           # 右键 → 退出程序
-    about_requested = pyqtSignal()          # 右键 → 关于（GPL 声明）
+    wipe_requested = Signal()           # 右键 → 彻底重置
+    quit_requested = Signal()           # 右键 → 退出程序
+    about_requested = Signal()          # 右键 → 关于（许可证声明）
 
     # 连抽人数（右键菜单里竖排展开的选项）
     MULTI_DRAW_CHOICES = tuple(range(2, 11))
@@ -303,7 +303,7 @@ class FloatingBall(QWidget):
 
     def _show_context_menu(self, pos: QPoint) -> None:
         """弹出右键菜单。"""
-        self.build_context_menu().exec_(pos)
+        self.build_context_menu().exec(pos)
 
     # --- 辅助 ---
 

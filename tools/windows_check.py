@@ -52,11 +52,11 @@ except Exception as e:
     check("cryptography imports", False, repr(e))
 
 try:
-    from PyQt5.QtCore import QSettings, QT_VERSION_STR
-    check("PyQt5 imports", True, f"Qt {QT_VERSION_STR}")
+    from PySide6.QtCore import QSettings, qVersion
+    check("PySide6 imports", True, f"Qt {qVersion()}")
     has_qt = True
 except Exception as e:
-    check("PyQt5 imports", False, repr(e))
+    check("PySide6 imports", False, repr(e))
     has_qt = False
 
 from namepicker import backup_store, config_store, crypto_utils, log_store  # noqa: E402
@@ -73,7 +73,7 @@ if IS_WINDOWS:
 
     # 验证「我们的代码不依赖 ctypes.wintypes」。
     # 注意：必须在**干净的独立子进程**里验证。本进程已经 import 了
-    # cryptography / PyQt5 / pyinstaller，其中 PyInstaller 的
+    # cryptography / PySide6 / pyinstaller，其中 PyInstaller 的
     # _pyi_rth_utils._win32 与 pip 的 truststore._windows 都会
     # `import ctypes.wintypes`，于是 ctypes 上多出 wintypes 属性 ——
     # 那是环境现象，不是本程序的问题（曾经误报过一次）。
@@ -100,7 +100,7 @@ try:
     from namepicker import win_window
     check("win_window module imports", win_window is not None)
     if IS_WINDOWS:
-        from PyQt5.QtWidgets import QApplication, QDialog
+        from PySide6.QtWidgets import QApplication, QDialog
         _app = QApplication.instance() or QApplication([])
         _dlg = QDialog()
         _dlg.setWindowTitle("topmost probe")
@@ -168,7 +168,7 @@ check("delete main + .bak -> restored from hidden backup",
 
 print("\n--- 7. QSettings hidden backup (Windows = HKCU registry) ---")
 if not has_qt:
-    skip("registry hidden backup live test", "PyQt5 not installed")
+    skip("registry hidden backup live test", "PySide6 not installed")
 else:
     s = backup_store._get_settings()
     where = s.fileName() if s is not None else "(unavailable)"

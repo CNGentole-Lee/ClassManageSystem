@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QTimer
-from PyQt5.QtGui import QCursor
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QApplication
 
 
 def visible_parent(parent=None):

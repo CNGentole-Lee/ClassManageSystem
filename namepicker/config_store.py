@@ -1,19 +1,23 @@
-"""ConfigStore —— 小组积分的防篡改持久化（加密主文件 + 三级回档）。
+"""ConfigStore —— 非分数配置的持久化 + 分数缓存。
 
-存储布局（四个副本，读取时逐级回退）：
+**分数的权威来源是事件链**（见 ledger.py 与原生模块 cmd_native）：
+每次改分/改组都会由 C++ 校验规则、加密、签名后追加一条事件；
+启动时校验整条链并重放，用重放结果覆盖这里的 score_* 缓存。
+所以本文件里的分数只是**缓存**，被单独篡改不会生效。
 
-    config.dat          加密主数据源（AES-256-GCM）              读 + 写
-    config.dat.bak      同目录加密备份                            读（回档）+ 写
-    QSettings 隐蔽备份  注册表 / plist，学生难找难删（backup_store） 读（回档）+ 写
-    config.ini          明文查看副本，程序**永不读取**             只写
+配置数据（组名、组数、语言等）仍按四级顺序读取，用于容灾：
+
+    config.dat          加密主文件（AES-256-GCM）               读 + 写
+    config.dat.bak      同目录加密备份                          读（回档）+ 写
+    QSettings 隐蔽备份  注册表 / plist（backup_store）           读（回档）+ 写
+    config.ini          明文查看副本，程序**永不读取**           只写
 
 读取顺序：
 
     config.dat → config.dat.bak → QSettings 隐蔽备份 → 旧版明文（一次性迁移）→ 默认值
 
-任何一级成功，都会用成功的数据把前面的副本全部修复回一致状态。
-config.ini 只是给人看的：老师/学生改它都不会影响分数（程序不读它），
-每次保存都会被加密数据重新覆盖。
+任何一级成功，都会用成功的数据把前面的副本修复回一致状态。
+config.ini 只是给人看的：老师/学生改它都不会影响程序（程序不读它）。
 
 结构（加密前的明文，仅用于说明字段）：
 
@@ -24,7 +28,7 @@ config.ini 只是给人看的：老师/学生改它都不会影响分数（程�
     [points]
     group_count = 6
     group_1 = 第一组          ; 显示名，可自由编辑
-    score_1 = 12              ; 可为负数
+    score_1 = 12              ; 可为负数；仅是缓存，实际以事件链重放为准
     ...
 
 长期抽取次数刻意放在 stats.ini（见 stats_store.py），
@@ -74,7 +78,8 @@ MAX_GROUP_COUNT = 24
 VIEW_MARKER = "# 仅供查看，修改无效"
 VIEW_MARKER_EN = "# view-only copy - edits are ignored"
 VIEW_HEADER = (
-    VIEW_MARKER + " —— 分数保存在加密文件 config.dat 中，程序不会读取本文件。\n"
+    VIEW_MARKER + " —— 本文件只是查看副本，程序不会读取它；"
+    "真正的分数在 Data/ledger.esc（加密签名的追加式事件链）。\n"
     + VIEW_MARKER_EN + "\n"
     + "# 手工修改这里不会影响程序里的分数，只作为人工查看/备份用。\n"
 )
@@ -530,6 +535,7 @@ class ConfigStore:
         self.backup_path = backup_path_for(self.path)
         self._cp = _new_parser()
         self._last_error = ""
+        self._ledger = None          # 可选：事件链（见 attach_ledger）
         self.reload()
 
     # --- 加载 ---
@@ -560,6 +566,55 @@ class ConfigStore:
     def _ensure_sections(self) -> None:
         _ensure_sections(self._cp)
 
+    # --- 事件链（可选） ---
+    #
+    # 业务规则在 C++ 里：Python 只把操作交给 Ledger.apply()，再用返回的状态
+    # 覆盖内存配置。规则不允许时（例如组号越界）apply 会抛错，此时不改内存。
+
+    def attach_ledger(self, ledger) -> None:
+        """挂上事件链；之后每次改分/改组都先经 C++ 校验并追加事件。"""
+        self._ledger = ledger
+
+    def _ledger_apply(self, op: str, **kwargs):
+        """把操作交给 C++。
+
+        返回：dict = 成功后的状态；None = 未挂载（调用方走本地逻辑）；
+              False = C++ 拒绝（调用方必须放弃这次改动）。
+        """
+        if self._ledger is None:
+            return None
+        try:
+            state = self._ledger.apply(op, **kwargs)
+        except Exception as exc:                      # noqa: BLE001
+            self._last_error = f"ledger rejected: {exc}"
+            return False
+        self._adopt_state(state)
+        return state
+
+    def _adopt_state(self, state: dict) -> bool:
+        """用 C++ 返回的状态覆盖内存配置（不落盘）。"""
+        try:
+            count = int(state.get("count", 0))
+        except (TypeError, ValueError):
+            return False
+        if count < MIN_GROUP_COUNT or count > MAX_GROUP_COUNT:
+            return False
+        self._cp.set("points", "group_count", str(count))
+        names = list(state.get("names", []))
+        scores = list(state.get("scores", []))
+        for i in range(1, count + 1):
+            raw_name = str(names[i - 1]) if i - 1 < len(names) else ""
+            # C++ 用空串表示“默认名”，显示时按当前语言生成
+            self._cp.set("points", f"group_{i}",
+                         raw_name or default_group_name(i))
+            score = int(scores[i - 1]) if i - 1 < len(scores) else 0
+            self._cp.set("points", f"score_{i}", str(score))
+        return True
+
+    def apply_ledger_state(self, state: dict) -> bool:
+        """兼容旧调用：接受 dict 形式的状态。"""
+        return self._adopt_state(state)
+
     # --- 小组 / 分数 ---
 
     @property
@@ -578,6 +633,11 @@ class ConfigStore:
         count = max(MIN_GROUP_COUNT, min(count, MAX_GROUP_COUNT))
         if count == self.group_count:
             return count  # 数量没变，不做任何事，避免白清一次分数
+        applied = self._ledger_apply("count", count=count)
+        if applied is False:
+            return self.group_count
+        if applied is not None:
+            return self.group_count
         self._write_default_groups(count)
         return count
 
@@ -595,6 +655,11 @@ class ConfigStore:
     def set_group_name(self, index: int, name: str) -> None:
         name = name.strip()
         if not name:
+            return
+        applied = self._ledger_apply("rename", group=index, name=name)
+        if applied is False:
+            return
+        if applied is not None:
             return
         self._cp.set("points", f"group_{index}", name)
 
@@ -632,7 +697,17 @@ class ConfigStore:
         except (TypeError, ValueError):
             return
         old = self.get_score(index)
-        self._cp.set("points", f"score_{index}", str(value))
+        delta = value - old
+        if delta != 0:
+            applied = self._ledger_apply("score", group=index, delta=delta)
+            if applied is False:
+                return                          # C++ 拒绝：不改内存
+            if applied is not None:
+                value = self.get_score(index)   # 以 C++ 的状态为准
+            else:
+                self._cp.set("points", f"score_{index}", str(value))
+        else:
+            self._cp.set("points", f"score_{index}", str(value))
         if value != old:
             zh_reason, en_reason = i18n.as_pair(reason)
             name = _shorten(self.get_group_name(index))
@@ -649,8 +724,12 @@ class ConfigStore:
     def reset_scores(self, reason=None) -> None:
         """所有小组归零，并把这次批量清零记成一条日志（而不是每组一条）。"""
         olds = self.all_scores()
-        for i in range(1, self.group_count + 1):
-            self._cp.set("points", f"score_{i}", "0")
+        applied = self._ledger_apply("wipe", parts="scores")
+        if applied is False:
+            return
+        if applied is None:
+            for i in range(1, self.group_count + 1):
+                self._cp.set("points", f"score_{i}", "0")
         if any(olds):
             zh_reason, en_reason = i18n.as_pair(reason)
             zh_reason = zh_reason or "全部清零"
@@ -662,16 +741,23 @@ class ConfigStore:
 
     def wipe_group_names(self) -> None:
         """只把组名恢复默认，保留分数与小组数量。"""
-        count = self.group_count
-        for i in range(1, count + 1):
-            self._cp.set("points", f"group_{i}", default_group_name(i))
+        applied = self._ledger_apply("wipe", parts="names")
+        if applied is False:
+            return
+        if applied is None:
+            for i in range(1, self.group_count + 1):
+                self._cp.set("points", f"group_{i}", default_group_name(i))
         self._log("彻底重置：组名已恢复默认", "Full reset: group names restored")
 
     def wipe_scores(self) -> None:
         """只把积分归零，保留组名。"""
         olds = self.all_scores()
-        for i in range(1, self.group_count + 1):
-            self._cp.set("points", f"score_{i}", "0")
+        applied = self._ledger_apply("wipe", parts="scores")
+        if applied is False:
+            return
+        if applied is None:
+            for i in range(1, self.group_count + 1):
+                self._cp.set("points", f"score_{i}", "0")
         if any(olds):
             joined = "/".join(str(v) for v in olds)
             self._log(f"彻底重置：积分已清零（原 {joined}）",
@@ -718,11 +804,16 @@ class ConfigStore:
         长期抽取次数不在这里，它存在 stats.ini（见 stats_store.py）。
         操作日志**不清空**：只追加一条标记，审计记录不能靠一个按钮抹掉。
         """
-        self._write_default_groups(
-            DEFAULT_GROUP_COUNT,
-            reason=i18n.both("彻底重置", "full reset"),
-            force_log=True,
-        )
+        names = ",".join(default_group_name(i) for i in range(1, DEFAULT_GROUP_COUNT + 1))
+        scores = ",".join("0" for _ in range(DEFAULT_GROUP_COUNT))
+        applied = self._ledger_apply(
+            "reset", count=DEFAULT_GROUP_COUNT, names=names, scores=scores)
+        if applied is None:
+            self._write_default_groups(
+                DEFAULT_GROUP_COUNT,
+                reason=i18n.both("彻底重置", "full reset"),
+                force_log=True,
+            )
         # 早期版本把抽取次数写在 [stats] 段里，一并删除避免留下误导性残留。
         if self._cp.has_section("stats"):
             self._cp.remove_section("stats")

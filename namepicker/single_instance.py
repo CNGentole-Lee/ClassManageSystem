@@ -19,8 +19,8 @@
 import os
 import time
 
-from PyQt5.QtCore import QObject, QSharedMemory, pyqtSignal
-from PyQt5.QtNetwork import QLocalServer, QLocalSocket
+from PySide6.QtCore import QObject, QSharedMemory, Signal
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 #: 套接字名按用户区分：多用户/多会话登录同一台机器时互不干扰
 SERVER_NAME = "RandomNamePicker_LocalServer"
@@ -39,7 +39,7 @@ class SingleInstance(QObject):
         guard.wake_up_requested.connect(main_win.showNormal)
     """
 
-    wake_up_requested = pyqtSignal()
+    wake_up_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

@@ -10,7 +10,7 @@
 """
 
 
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QLabel, QMessageBox, QVBoxLayout,
 )
 
@@ -114,6 +114,6 @@ def ask(parent=None) -> dict[str, bool] | None:
     窗口的矩形在屏幕外，拿它做基准会让对话框也跑到屏幕外。
     """
     dialog = WipeDialog(dialogs.visible_parent(parent))
-    if dialog.exec_() == QDialog.Accepted:
+    if dialog.exec() == QDialog.Accepted:
         return dialog.selected()
     return None

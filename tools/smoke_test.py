@@ -22,12 +22,12 @@ except ImportError:  # pragma: no cover - 取决于运行平台
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt5.QtWidgets import QApplication, QPlainTextEdit  # noqa: E402
-from PyQt5.QtCore import QTimer  # noqa: E402
-from PyQt5.QtGui import QFont, QFontMetrics  # noqa: E402
-from PyQt5 import sip  # noqa: E402
+from PySide6.QtWidgets import QApplication, QPlainTextEdit  # noqa: E402
+from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtGui import QFont, QFontMetrics  # noqa: E402
+from shiboken6 import isValid  # noqa: E402
 
-from namepicker import crash_log  # noqa: E402
+from namepicker import crash_log, theme  # noqa: E402
 from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()  # 测试数据不写进真实的隐蔽备份（Windows 注册表 / macOS plist）
@@ -162,7 +162,7 @@ def test_points_window(store, config_path):
           ConfigStore(config_path).get_score(4) == 100,
           f"actual {ConfigStore(config_path).get_score(4)}")
     check("adding points then closing the panel: panel not destroyed",
-          not sip.isdeleted(points) and points.isHidden())
+          not not isValid(points) and points.isHidden())
     points.show()
     app_process()
     check("reopens after closing", points.isVisible())
@@ -375,7 +375,7 @@ def test_popup(engine):
     # 老外的名字真的很长，用这个当测试标准稳稳的
     popup.set_name_pool(["abcdefghijklmn", "1", "2"])
     popup.show_result("abcdefghijklmn")
-    fm = QFontMetrics(QFont("Microsoft YaHei", popup._font_size, QFont.Bold))
+    fm = QFontMetrics(theme.font(popup._font_size, bold=True))
     check("long names are not clipped",
           popup._cell_width >= fm.horizontalAdvance("abcdefghijklmn") + 16,
           f"cell width {popup._cell_width}px")
@@ -390,7 +390,7 @@ def test_popup(engine):
           f"{popup.width()}x{popup.height()}")
 
     QTimer.singleShot(3000, app.quit)
-    app.exec_()
+    app.exec()
     shown = [lb.text() for lb in popup._name_labels]
     check("all 5 results revealed together when rolling stops", shown == results, f"actual {shown}")
     popup._on_close()

@@ -3,16 +3,18 @@
 六张小组卡片排成网格。先点卡片把它展开，露出 -1 / +1 / +2 / +3 四个按钮，
 点按钮即应用对应增减。同一时刻只展开一张卡片，老师始终知道下一击落在哪组。
 
-每次改动防抖写入加密的 config.dat（明文 config.ini 只是查看副本），关窗时再
-补一次落盘，分数跨重启保留。每次分数变动还会自动追加一条加密的操作日志，
-唯一入口是底栏「小组数量...」旁边的「操作日志」按钮（见 _LogViewerDialog）。
+每次改动都交给 ConfigStore：它会先让原生模块 cmd_native 校验并追加一条
+签名事件（Data/ledger.esc），再防抖把缓存写入加密的 config.dat（明文
+config.ini 只是查看副本）。分数以事件链重放结果为准，跨重启保留。
+每次分数变动还会自动追加一条加密的操作日志，唯一入口是底栏
+「小组数量...」旁边的「操作日志」按钮（见 _LogViewerDialog）。
 """
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QFontDatabase
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QFontDatabase
+from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QGridLayout, QVBoxLayout,
-    QHBoxLayout, QMessageBox, QInputDialog, QSizePolicy, QMenu, QAction,
+    QHBoxLayout, QMessageBox, QInputDialog, QSizePolicy, QMenu,
     QScrollArea, QLayout, QDialog, QPlainTextEdit,
 )
 
@@ -97,12 +99,17 @@ def _score_color(score: int) -> str:
 class GroupCard(QFrame):
     """一张可选中展开的小组卡片，收起时只显名称和分数，展开后露出按钮。"""
 
-    delta_requested = pyqtSignal(int, int)   # (group_index, delta)
-    selected = pyqtSignal(int)               # (group_index)
-    rename_requested = pyqtSignal(int)
-    reset_requested = pyqtSignal(int)
+    delta_requested = Signal(int, int)   # (group_index, delta)
+    selected = Signal(int)               # (group_index)
+    rename_requested = Signal(int)
+    reset_requested = Signal(int)
 
     BADGE_MS = 1200
+
+    @property
+    def index(self) -> int:
+        """小组序号（1 起）。"""
+        return self._index
 
     def __init__(self, index: int, group_name: str, score: int, parent=None):
         super().__init__(parent)
@@ -168,7 +175,7 @@ class GroupCard(QFrame):
         ops_layout.setContentsMargins(0, 0, 0, 0)
         ops_layout.setSpacing(6)
         for i, delta in enumerate(DELTAS):
-            btn = QPushButton(f"-1" if delta < 0 else f"+{delta}")
+            btn = QPushButton("-1" if delta < 0 else f"+{delta}")
             btn.setObjectName("minus" if delta < 0 else "plus")
             btn.setCursor(Qt.PointingHandCursor)
             btn.setFocusPolicy(Qt.NoFocus)
@@ -260,7 +267,7 @@ class GroupCard(QFrame):
         zero_action.triggered.connect(lambda: self.reset_requested.emit(self._index))
         menu.addAction(zero_action)
 
-        menu.exec_(pos)
+        menu.exec(pos)
 
     # --- 样式 ---
 
@@ -457,7 +464,8 @@ class PointsWindow(QWidget):
 
         new_score = card.score() + delta
         self._store.set_score(index, new_score, reason=f"{delta:+d}")
-        card.set_score(new_score)
+        # 以 store（也就是 C++ 的状态）为准：规则可能夹紧或拒绝
+        card.set_score(self._store.get_score(index))
         card.flash(delta)
 
         self._undo_stack.append((index, delta))
@@ -479,7 +487,7 @@ class PointsWindow(QWidget):
         new_score = card.score() - delta
         self._store.set_score(index, new_score,
                                   reason=i18n.both("撤销 {d:+d}", "undo {d:+d}", d=delta))
-        card.set_score(new_score)
+        card.set_score(self._store.get_score(index))
         card.flash(-delta)
 
         self._undo_btn.setEnabled(bool(self._undo_stack))
@@ -544,7 +552,7 @@ class PointsWindow(QWidget):
             return
         self._store.set_score(index, 0,
                                   reason=i18n.both("清零此组", "clear group"))
-        card.set_score(0)
+        card.set_score(self._store.get_score(index))
         self._schedule_save()
 
     def _on_reset_all(self) -> None:
@@ -558,7 +566,7 @@ class PointsWindow(QWidget):
             return
         self._store.reset_scores(reason=i18n.both("全部清零", "clear all"))
         for card in self._cards:
-            card.set_score(0)
+            card.set_score(self._store.get_score(card.index))
         self._undo_stack.clear()
         self._undo_btn.setEnabled(False)
         self._schedule_save()
@@ -653,7 +661,7 @@ class PointsWindow(QWidget):
         也不出现在托盘菜单或管理面板里。
         """
         dialog = _LogViewerDialog(self._store.path, self)
-        dialog.exec_()
+        dialog.exec()
 
 
 class _LogViewerDialog(QDialog):

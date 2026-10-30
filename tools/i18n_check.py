@@ -22,12 +22,14 @@ _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, _HERE)
 
+from _headless import install as silence_dialogs  # noqa: E402
 from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
+silence_dialogs()
 
-from PyQt5.QtCore import QSettings, Qt  # noqa: E402
-from PyQt5.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
+from PySide6.QtCore import QSettings, Qt  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
 
 from namepicker import (  # noqa: E402
     about_dialog, dialogs, i18n, log_store, restart, theme, wipe_dialog,
@@ -89,7 +91,7 @@ def main() -> int:
     en_points.close()
 
     print("\n--- 3. Language combo persists to QSettings ---")
-    from PyQt5.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox
     i18n.set_language("zh")
     settings = QSettings("NamePicker", "Config")
     settings.setValue("language", "zh")
@@ -253,7 +255,7 @@ def main() -> int:
     holder = subprocess.Popen(
         [sys.executable, "-c",
          "import sys, time; sys.path.insert(0, %r);"
-         "from PyQt5.QtWidgets import QApplication;"
+         "from PySide6.QtWidgets import QApplication;"
          "from namepicker.single_instance import SingleInstance;"
          "app = QApplication([]); g = SingleInstance();"
          "print(g.try_acquire(), flush=True); time.sleep(8)" % _ROOT],
@@ -278,7 +280,7 @@ def main() -> int:
         holder.wait(timeout=5)
 
     print("\n--- 8b. Dialogs must not block the ball (issue: license freezes drawing) ---")
-    from PyQt5.QtTest import QTest
+    from PySide6.QtTest import QTest
     from namepicker import win_window
     from namepicker.floating_ball import FloatingBall
 
@@ -340,18 +342,18 @@ def main() -> int:
 
     ball.close()
 
-    print("\n--- 9. About dialog / GPL compliance ---")
+    print("\n--- 9. About dialog / license compliance ---")
     check("LICENSE file is found next to the sources",
           bool(about_dialog.license_path()), about_dialog.license_path())
     text = about_dialog.license_text()
-    check("license text is the GPL-3.0", "GNU GENERAL PUBLIC LICENSE" in text
-          and "Version 3, 29 June 2007" in text)
+    check("license text is the Apache License 2.0",
+          "Apache License" in text and "Version 2.0" in text)
     check("license text carries the copyright line",
-          "Gentole Lee" in text and "Copyright (C)" in text)
-    check("license text is complete (has the FSF end notes)",
-          "END OF TERMS AND CONDITIONS" in text)
+          "Gentole Lee" in text and "Copyright" in text)
+    check("license text mentions the warranty disclaimer",
+          "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND" in text)
     check("license text states there is no warranty",
-          "WITHOUT ANY WARRANTY" in text.upper())
+          "WITHOUT WARRANTIES" in text.upper())
 
     version_file = os.path.join(_ROOT, "packaging", "windows", "version_info.txt")
     # 版本号单一来源：模板里的版本号在构建时被替换，所以这里验证的是
@@ -383,12 +385,31 @@ def main() -> int:
     finally:
         about_dialog.license_path = real_path_fn
     check("missing LICENSE falls back to the embedded text",
-          "GNU GENERAL PUBLIC LICENSE" in fallback
-          and "WITHOUT ANY WARRANTY" in fallback
+          "Apache License" in fallback
+          and "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND" in fallback
           and "Gentole Lee" in fallback,
           f"len={len(fallback)}")
     check("fallback mentions the online copy",
-          "gnu.org/licenses" in fallback)
+          "apache.org/licenses" in fallback)
+
+    # 关于窗口的四个分页：许可证 / 原生模块 / 第三方组件 / 依赖
+    from namepicker import about_dialog as ad
+    dlg = ad.AboutDialog(None)
+    tabs = [dlg._tabs.tabText(i) for i in range(dlg._tabs.count())]
+    check("about dialog has four tabs", len(tabs) == 4, " / ".join(tabs))
+    check("license tab is the first", tabs[0] in ("许可证", "License"), tabs[0])
+    native_text = dlg._native_view.toPlainText()
+    check("native tab shows the proprietary license",
+          "cmd_native" in native_text and ("专有" in native_text or "proprietary" in native_text))
+    notices_text = dlg._notices_view.toPlainText()
+    check("third-party tab lists PySide6 and Qt",
+          "PySide6" in notices_text and "Qt" in notices_text)
+    deps_text = dlg._deps_view.toPlainText()
+    check("dependencies tab lists libsodium and LGPL",
+          "libsodium" in deps_text and "LGPL" in deps_text)
+    check("dependencies tab explains Qt replaceability",
+          "替换" in deps_text or "replace" in deps_text)
+    dlg.deleteLater()
     dlg.close()
 
     print("\n" + "=" * 60)

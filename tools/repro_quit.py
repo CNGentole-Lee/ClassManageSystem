@@ -4,14 +4,14 @@
   - 悬浮球：Qt.Tool（不算"主窗口"，不影响 lastWindowClosed）
   - 积分面板：普通 QWidget（算"主窗口"）
 
-然后关掉面板，看 app.exec_() 是不是提前返回（= 程序被 quitOnLastWindowClosed 关掉）。
+然后关掉面板，看 app.exec() 是不是提前返回（= 程序被 quitOnLastWindowClosed 关掉）。
 """
 
 import sys
 import time
 
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QApplication, QWidget
 
 app = QApplication(sys.argv)
 print("quitOnLastWindowClosed =", app.quitOnLastWindowClosed())
@@ -28,7 +28,7 @@ start = time.time()
 QTimer.singleShot(300, panel.close)          # 关掉面板
 QTimer.singleShot(2000, app.quit)            # 安全网：如果没被关掉，2 秒后手动退出
 
-app.exec_()
+app.exec()
 elapsed = time.time() - start
 print(f"exec_ returned after {elapsed:.2f}s")
 if elapsed < 1.5:

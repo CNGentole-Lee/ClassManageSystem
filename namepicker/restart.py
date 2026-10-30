@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 
-from PyQt5.QtCore import QProcess
+from PySide6.QtCore import QProcess
 
 #: 新进程的标记参数（main.py 据此开启单实例重试）
 RESTART_FLAG = "--restarted"
