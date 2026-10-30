@@ -146,12 +146,25 @@ def main():
                 [store.get_group_name(i) for i in range(1, store.group_count + 1)],
                 store.all_scores(),
             )
+        problem = ""
         if chain.count() and not chain.verify():
-            ledger_state = {"ok": False, "error": chain.verify_error()}
-            startup_log.record([f"ledger verify failed: {chain.verify_error()}"])
+            problem = chain.verify_error() or "BAD_CHAIN"
+        elif chain.count():
+            problem = chain.rollback_reason()
+
+        if problem and chain.restore_from_shadow():
+            # 主链被删/被换，但安全副本完好：直接恢复，并告诉老师发生过什么
+            state = chain.replay()
+            store.apply_ledger_state(state)
+            ledger_state = {"ok": True, "error": problem, "recovered": True}
+            startup_log.record([f"ledger restored from shadow: {problem}"])
+        elif problem:
+            ledger_state = {"ok": False, "error": problem}
+            startup_log.record([f"ledger rejected: {problem}"])
         elif chain.count():
             state = chain.replay()
             store.apply_ledger_state(state)
+            chain.write_anchor(state.events, state.head)
         store.attach_ledger(chain)
     except Exception as exc:                      # noqa: BLE001
         # 原生模块缺失 / 文件不可读：降级为“无链模式”，不阻断上课
@@ -228,7 +241,14 @@ def main():
     main_win.set_wipe_handler(wipe_everything)
 
     # 事件链校验失败：必须让老师看见，而不是静默用旧数据
-    if not ledger_state["ok"]:
+    if ledger_state.get("recovered"):
+        main_win.statusBar().showMessage(
+            tr("⚠ 检测到数据被删除或替换，已从安全副本恢复（{e}）。",
+               "⚠ Data deletion or replacement detected; restored from a safe copy ({e}).",
+               e=ledger_state["error"]),
+            0,
+        )
+    elif not ledger_state["ok"]:
         main_win.statusBar().showMessage(
             tr("⚠ 数据校验失败：{e}。分数可能被替换过，已暂停采用链上数据。",
                "⚠ Integrity check failed: {e}. Scores may have been replaced; "

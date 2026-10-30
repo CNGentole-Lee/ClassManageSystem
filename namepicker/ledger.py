@@ -51,6 +51,21 @@ class LedgerError(Exception):
     pass
 
 
+def _anchor_dirs(config_path: str) -> list[str]:
+    """基准文件的位置：主目录一个，用户缓存目录一个（换个地方藏）。"""
+    import hashlib
+    import tempfile
+    data_dir = data_dir_for(config_path)
+    tag = hashlib.sha256(os.path.abspath(data_dir).encode("utf-8")).hexdigest()[:16]
+    # 可用 CLASSMANAGE_STATE_DIR 覆盖（测试用；生产环境不设置）
+    override = os.environ.get("CLASSMANAGE_STATE_DIR", "").strip()
+    cache_root = override or os.environ.get("XDG_CACHE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache")
+    if not cache_root or cache_root == os.path.join("~", ".cache"):
+        cache_root = tempfile.gettempdir()
+    return [data_dir, os.path.join(cache_root, "classmanage", tag)]
+
+
 def data_dir_for(config_path: str) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(config_path)), "Data")
 
@@ -126,6 +141,110 @@ class Ledger:
             self._head = head
         return ok
 
+    # --- 基准（seq/head） ---
+    #
+    # 为什么需要它：事件链本身是“自洽”的 —— 把整个 Data 目录换成一份旧的、
+    # 合法的副本，链依然能验签通过。只有记住“曾经到过第几条、链头是什么”，
+    # 才能在启动时发现“变短了 / 换了一条”。
+
+    def anchor_paths(self) -> list[str]:
+        return [os.path.join(d, "anchor.json") for d in _anchor_dirs(self.config_path)]
+
+    def read_anchor(self) -> tuple[int, bytes]:
+        """取所有基准里 seq 最大的一份；没有返回 (0, b"")。"""
+        best = (0, b"")
+        for path in self.anchor_paths():
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                seq = int(data.get("seq", 0))
+                head = base64.b64decode(data.get("head", ""))
+            except (OSError, ValueError, TypeError):
+                continue
+            if seq > best[0]:
+                best = (seq, head)
+        return best
+
+    def write_anchor(self, seq: int, head: bytes) -> None:
+        """把 (seq, head) 写到所有基准位置；失败不影响追加。"""
+        body = json.dumps({
+            "seq": int(seq),
+            "head": base64.b64encode(head).decode("ascii"),
+        }, separators=(",", ":")).encode("utf-8")
+        for path in self.anchor_paths():
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                tmp = path + ".tmp"
+                with open(tmp, "wb") as fh:
+                    fh.write(body)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, path)
+            except OSError:
+                continue
+
+    def shadow_path(self) -> str:
+        """安全副本：放在用户缓存目录，与 Data 分开，删 Data 删不到它。"""
+        return os.path.join(_anchor_dirs(self.config_path)[1], "ledger.esc")
+
+    def _append_shadow(self, line: str) -> None:
+        path = self.shadow_path()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a", encoding="ascii") as fh:
+                fh.write(line + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+        except OSError:
+            pass
+
+    def restore_from_shadow(self) -> bool:
+        """主链损坏/变短时，用安全副本恢复主链。成功返回 True。"""
+        path = self.shadow_path()
+        if not os.path.isfile(path):
+            return False
+        try:
+            with open(path, "r", encoding="ascii") as fh:
+                lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+            records = [base64.b64decode(ln, validate=True) for ln in lines]
+            ok, head, _err = native_bridge.verify(records)
+            if not ok:
+                return False
+            anchor_seq, anchor_head = self.read_anchor()
+            if anchor_seq and len(records) < anchor_seq:
+                return False                      # 副本也旧，不能用来恢复
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            tmp = self.path + ".tmp"
+            with open(tmp, "w", encoding="ascii") as out:
+                out.writelines(ln + "\n" for ln in lines)
+                out.flush()
+                os.fsync(out.fileno())
+            os.replace(tmp, self.path)
+        except (OSError, ValueError) as exc:
+            self._verify_error = f"RESTORE_FAILED {exc}"
+            return False
+        self._loaded = False
+        self.load()
+        self._verified = True
+        self._verify_error = ""
+        self._head = head
+        self.write_anchor(len(records), head)
+        return True
+
+    def rollback_reason(self) -> str:
+        """返回空串表示正常；否则返回回滚/删除的原因。"""
+        seq, head = self.read_anchor()
+        count = self.count()
+        if seq == 0:
+            return ""                      # 从未写过基准：首次运行
+        if count == 0:
+            return "DELETED"
+        if count < seq:
+            return f"SHORTER {count}<{seq}"
+        if count == seq and head and self.head() != head:
+            return "HEAD_MISMATCH"
+        return ""
+
     # --- 追加 ---
 
     def append(self, op: int, payload: dict) -> bytes:
@@ -148,10 +267,12 @@ class Ledger:
                 fh.write(line + "\n")
                 fh.flush()
                 os.fsync(fh.fileno())
+            self._append_shadow(line)
         except OSError as exc:
             raise LedgerError(str(exc)) from exc
         self._records.append(record)
         self._head = head
+        self.write_anchor(seq, head)
         return head
 
     # --- 重放 ---
