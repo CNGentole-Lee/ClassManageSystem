@@ -131,6 +131,33 @@ def main():
     migrate_legacy_plaintext()
 
     store = ConfigStore()
+
+    # --- 事件链：校验 / 迁移 / 重放 --------------------------------
+    # 分数以事件链为准：启动时先验签，通过则重放出组名与分数；
+    # 失败说明文件被替换或损坏，此时**不采用**链上数据，并记录告警。
+    ledger_state = {"ok": True, "error": ""}
+    try:
+        from namepicker import ledger as _ledger
+        chain = _ledger.Ledger(store.path)
+        if chain.count() == 0:
+            # 首次运行：把现有配置写成期初事件（只做一次）
+            chain.migrate_from(
+                store.group_count,
+                [store.get_group_name(i) for i in range(1, store.group_count + 1)],
+                store.all_scores(),
+            )
+        if chain.count() and not chain.verify():
+            ledger_state = {"ok": False, "error": chain.verify_error()}
+            startup_log.record([f"ledger verify failed: {chain.verify_error()}"])
+        elif chain.count():
+            state = chain.replay()
+            store.apply_ledger_state(state)
+        store.attach_ledger(chain)
+    except Exception as exc:                      # noqa: BLE001
+        # 原生模块缺失 / 文件不可读：降级为“无链模式”，不阻断上课
+        ledger_state = {"ok": False, "error": str(exc)}
+        startup_log.record([f"ledger unavailable: {exc}"])
+
     stats = StatsStore()
     engine = NameEngine()
 
@@ -199,6 +226,16 @@ def main():
     main_win.set_ball(ball)
     main_win.set_points_window(points_win)
     main_win.set_wipe_handler(wipe_everything)
+
+    # 事件链校验失败：必须让老师看见，而不是静默用旧数据
+    if not ledger_state["ok"]:
+        main_win.statusBar().showMessage(
+            tr("⚠ 数据校验失败：{e}。分数可能被替换过，已暂停采用链上数据。",
+               "⚠ Integrity check failed: {e}. Scores may have been replaced; "
+               "chain data is not being used.",
+               e=ledger_state["error"]),
+            0,
+        )
 
     def restart_app() -> None:
         """切换语言后立即重启：先释放单实例锁，再拉起新进程，最后退出自己。"""

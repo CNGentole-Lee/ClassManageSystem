@@ -530,6 +530,7 @@ class ConfigStore:
         self.backup_path = backup_path_for(self.path)
         self._cp = _new_parser()
         self._last_error = ""
+        self._ledger = None          # 可选：事件链（见 attach_ledger）
         self.reload()
 
     # --- 加载 ---
@@ -560,6 +561,42 @@ class ConfigStore:
     def _ensure_sections(self) -> None:
         _ensure_sections(self._cp)
 
+    # --- 事件链（可选） ---
+
+    def attach_ledger(self, ledger) -> None:
+        """挂上事件链；之后每次改分/改组都会追加一条签名事件。"""
+        self._ledger = ledger
+
+    @staticmethod
+    def _ops():
+        from . import ledger as _ledger_mod
+        return _ledger_mod
+
+    def _ledger_append(self, op: int, payload: dict) -> None:
+        """追加事件；失败只记录，不影响界面操作（原生模块缺失时降级）。"""
+        if self._ledger is None:
+            return
+        try:
+            self._ledger.append(op, payload)
+        except Exception as exc:                      # noqa: BLE001
+            self._last_error = f"ledger: {exc}"
+
+    def apply_ledger_state(self, state) -> bool:
+        """把重放结果写进内存配置（不落盘，由调用方决定何时 save）。"""
+        try:
+            count = int(state.group_count)
+        except (TypeError, ValueError):
+            return False
+        if count < MIN_GROUP_COUNT or count > MAX_GROUP_COUNT:
+            return False
+        self._cp.set("points", "group_count", str(count))
+        for i in range(1, count + 1):
+            name = state.names.get(i)
+            if name:
+                self._cp.set("points", f"group_{i}", str(name))
+            self._cp.set("points", f"score_{i}", str(int(state.scores.get(i, 0))))
+        return True
+
     # --- 小组 / 分数 ---
 
     @property
@@ -579,6 +616,7 @@ class ConfigStore:
         if count == self.group_count:
             return count  # 数量没变，不做任何事，避免白清一次分数
         self._write_default_groups(count)
+        self._ledger_append(self._ops().OP_COUNT, {"op": "count", "n": count})
         return count
 
     def get_group_name(self, index: int) -> str:
@@ -597,6 +635,9 @@ class ConfigStore:
         if not name:
             return
         self._cp.set("points", f"group_{index}", name)
+        self._ledger_append(self._ops().OP_RENAME, {
+            "op": "rename", "g": index, "name": name,
+        })
 
     def reload_from_disk(self) -> bool:
         """丢弃内存改动，重新从磁盘加载（写盘失败后让界面回到真实状态）。"""
@@ -642,6 +683,9 @@ class ConfigStore:
                 f"第{index}组（{name}）{old} → {value}{zh_suffix}",
                 f"Group {index} ({name}) {old} → {value}{en_suffix}",
             )
+            self._ledger_append(self._ops().OP_SCORE, {
+                "op": "score", "g": index, "v": value, "r": zh_reason,
+            })
 
     def all_scores(self) -> list[int]:
         return [self.get_score(i) for i in range(1, self.group_count + 1)]
@@ -651,12 +695,19 @@ class ConfigStore:
         olds = self.all_scores()
         for i in range(1, self.group_count + 1):
             self._cp.set("points", f"score_{i}", "0")
+        self._ledger_append(self._ops().OP_WIPE, {"op": "wipe", "parts": {"scores": True}})
         if any(olds):
             zh_reason, en_reason = i18n.as_pair(reason)
             zh_reason = zh_reason or "全部清零"
             en_reason = en_reason or "clear all"
             joined = "/".join(str(v) for v in olds)
             self._log(f"{zh_reason}：{joined} → 全 0", f"{en_reason}: {joined} -> all 0")
+            self._ledger_append(self._ops().OP_RESET, {
+                "op": "reset",
+                "count": self.group_count,
+                "names": [self.get_group_name(i) for i in range(1, self.group_count + 1)],
+                "scores": [0] * self.group_count,
+            })
 
     # --- 可选清空（彻底重置对话框用） ---
 
@@ -672,6 +723,7 @@ class ConfigStore:
         olds = self.all_scores()
         for i in range(1, self.group_count + 1):
             self._cp.set("points", f"score_{i}", "0")
+        self._ledger_append(self._ops().OP_WIPE, {"op": "wipe", "parts": {"scores": True}})
         if any(olds):
             joined = "/".join(str(v) for v in olds)
             self._log(f"彻底重置：积分已清零（原 {joined}）",

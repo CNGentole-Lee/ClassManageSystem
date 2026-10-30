@@ -261,3 +261,11 @@ native/*.cpp
 native/*.h
 native/*.o
 # 注意：发布用的二进制（cmd_native / cmd_native.exe）要提交，供 CI 打包
+
+# 运行时数据（事件链、备份、日志）：不进仓库
+Data/
+startup.log
+crash.log
+
+# 交叉编译工具链下载缓存
+.tools/

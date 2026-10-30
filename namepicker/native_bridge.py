@@ -170,6 +170,21 @@ def verify(records: list[bytes], expect_seq: int | None = None,
     return False, b"", str(data.get("error", "UNKNOWN"))
 
 
+def dump(records: list[bytes]) -> tuple[list[bytes], bytes, str]:
+    """校验并返回每条记录的明文，返回 (plaintexts, head, error)。
+
+    明文格式：prev_head(32) seq(4) ts(8) op(1) len(4) payload
+    """
+    if not records:
+        return [], b"", "EMPTY"
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    data = _run(["dump", "--fp", fingerprint()], stdin_text=lines, timeout=30)
+    if data.get("ok") is not True:
+        return [], b"", str(data.get("error", "UNKNOWN"))
+    plains = [base64.b64decode(x) for x in data.get("events", [])]
+    return plains, base64.b64decode(data.get("head", "")), ""
+
+
 def selftest() -> bool:
     """原生模块内置自检（同进程内 append→verify）。"""
     data = _run(["selftest"], timeout=10)
