@@ -278,7 +278,6 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
   - macOS 打包时 spec 直接读取 `VERSION`，填进 `CFBundleShortVersionString` / `CFBundleVersion`。
 - 托盘「彻底重置...」：组名、积分、长期公平记录、抽取历史全部回到出厂状态。
 - 「关于」窗口是**非模态**的：打开许可证时仍可双击悬浮球抽人；抽选结果会盖在它上面。
-  （GPL 只要求许可证可查看，不要求阻塞整个程序。）
 - 重置会**校验写盘**：若磁盘写入失败（Windows 上文件被占用/只读时 `os.replace` 会失败），
   会弹出「重置没有完全生效」并给出系统原因，界面回退到磁盘上的真实数据，不再假装成功。
 
@@ -625,7 +624,7 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 │   ├── dialogs.py                   # 对话框定位：隐藏父窗口、屏幕居中、延后打开
 │   ├── win_window.py                # Windows：对话框置顶（SetWindowPos）
 │   ├── startup_log.py               # 启动/重启诊断日志（startup.log）
-│   ├── about_dialog.py              # 关于窗口：版权 / 不担保声明 / GPL 全文
+│   ├── about_dialog.py              # 关于窗口：协议/版权声明/第三方引用说明
 │   ├── widgets.py                   # ElidedLabel：长名字按宽度省略 + tooltip 全名
 │   ├── restart.py                   # 切换语言后的「立即重启」（源码/打包两种参数）
 │   ├── wipe_dialog.py               # 彻底重置：勾选清空范围 + 二次确认
@@ -1235,8 +1234,7 @@ their custom name, untouched ones show `Group 4/5/6`.
 - Tray → "Full reset...": choose group names, scores, lifetime fairness counts and draw
   history individually.
 - The About window is **non-modal**: drawing from the floating ball still works while the
-  licence is open, and the result popup appears above it (GPL only requires the licence to
-  be viewable, not that it blocks the app).
+  licence is open, and the result popup appears above it 
 - A reset **verifies the write**: if the disk write fails (on Windows `os.replace` fails
   when the file is locked or read-only) a "Reset did not fully apply" dialog reports the
   OS reason and the UI falls back to the real on-disk data instead of pretending success.
@@ -1634,7 +1632,7 @@ tests → PyInstaller onedir → Inno Setup → upload installer and portable zi
 │   ├── dialogs.py                   # dialog placement: hidden parent, screen centring, defer
 │   ├── win_window.py                # Windows: dialogs pinned topmost (SetWindowPos)
 │   ├── startup_log.py               # startup/restart diagnostics (startup.log)
-│   ├── about_dialog.py              # About: copyright / no-warranty / GPL text
+│   ├── about_dialog.py              # About: LICENSE/copyright/Third-party-notices
 │   ├── widgets.py                   # ElidedLabel: elide long names + tooltip
 │   ├── restart.py                   # "restart now" after a language change
 │   ├── wipe_dialog.py               # full reset: choose parts + second confirmation
