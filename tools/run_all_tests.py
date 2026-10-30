@@ -40,6 +40,7 @@ TESTS = [
     ("log_crypto_check", 60),
     ("smoke_test", 120),
     ("group_count_stress", 180),
+    ("native_check", 120),        # 原生模块；缺失时返回 77 -> SKIP
     ("windows_check", 60),      # 非 Windows 上会自动跳过 Win32 分支
     ("macos_check", 120),       # 非 macOS / offscreen 下会自动跳过
 ]
@@ -65,7 +66,7 @@ def find_python() -> str:
 
 
 def run_one(python: str, name: str, timeout: int, gui: bool,
-            stream: bool = True) -> tuple[bool, float, str]:
+            stream: bool = True) -> tuple[bool | None, float, str]:
     """运行一项测试。
 
     stream=True 时把子进程输出**实时**转发到终端（能看见卡在哪一步），
@@ -120,6 +121,8 @@ def run_one(python: str, name: str, timeout: int, gui: bool,
         if stream:
             print(f"[timeout] 超过 {timeout}s，已终止", flush=True)
         return False, elapsed, out
+    if proc.returncode == 77:          # 约定：依赖缺失 -> 跳过，不算失败
+        return None, elapsed, out
     return proc.returncode == 0, elapsed, out
 
 
@@ -166,9 +169,9 @@ def main() -> int:
         print(f"\n>>> {name} ...", flush=True)
         ok, elapsed, output = run_one(python, name, timeout, args.gui,
                                       stream=not args.quiet)
-        status = "OK" if ok else "FAIL"
+        status = "SKIP" if ok is None else ("OK" if ok else "FAIL")
         print(f"<<< {status}  {elapsed:.1f}s")
-        if not ok:
+        if ok is False:
             failed.append(name)
             if args.quiet:
                 print(highlight(output))

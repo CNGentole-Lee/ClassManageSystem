@@ -255,9 +255,9 @@ startup.log
 # 原生模块：只发布二进制与许可协议，源码不进仓库
 native/src/
 native/build/
+native/third_party/
 native/*.c
 native/*.cpp
 native/*.h
 native/*.o
-native/*.exe
-native/cmd_native
+# 注意：发布用的二进制（cmd_native / cmd_native.exe）要提交，供 CI 打包
