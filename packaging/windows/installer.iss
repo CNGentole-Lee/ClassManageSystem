@@ -18,8 +18,13 @@
   #define MyAppVersion "0.0.0"
 #endif
 
-; 用脚本自身的位置推导仓库根目录，避免依赖 ISCC 的当前工作目录
-#define RepoRoot SourcePath + "\..\..\"
+; 仓库根目录由调用方以绝对路径传入：
+;   ISCC.exe /DRepoRoot=D:\path\to\repo packaging\windows\installer.iss
+; 不能用 "..\.." 推导 —— Inno 不会规范化，通配符会匹配失败
+; （CI 实测：No files found matching "...\packaging\windows\\..\\..\\dist\...\*"）。
+#ifndef RepoRoot
+  #error RepoRoot is required. Pass /DRepoRoot=<absolute path to the repo root>.
+#endif
 
 #define MyAppName "ClassManageSystem"
 #define MyAppDisplayName "Class Management Terminal"
@@ -37,14 +42,14 @@ DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppDisplayName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-OutputDir={#RepoRoot}dist
+OutputDir={#RepoRoot}\dist
 OutputBaseFilename=ClassManageSystem-{#MyAppVersion}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 SetupIconFile={#SourcePath}\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-LicenseFile={#RepoRoot}LICENSE
+LicenseFile={#RepoRoot}\LICENSE
 ; The app itself writes data next to the executable; installing under
 ; %LOCALAPPDATA% keeps that directory writable for the current user.
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -57,11 +62,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-Source: "{#RepoRoot}dist\ClassManageSystem\*"; DestDir: "{app}"; \
+Source: "{#RepoRoot}\dist\ClassManageSystem\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#RepoRoot}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#RepoRoot}NOTICE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#RepoRoot}THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\NOTICE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"
