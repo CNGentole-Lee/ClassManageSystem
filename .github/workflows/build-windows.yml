@@ -1,0 +1,120 @@
+name: build-windows-installer
+
+# 在 x64 Windows runner 上：测试 → PyInstaller 目录包 → Inno Setup 安装包 → 上传
+#
+# 为什么必须放 CI：PyInstaller 不支持交叉编译，macOS 上跑不出 EXE。
+# 为什么是 x64：windows-latest 是 x64，正好匹配学校电脑。
+#
+# 产物：
+#   ClassManageSystem-<version>-Setup.exe     安装程序（按用户安装，无需管理员）
+#   ClassManageSystem-<version>-portable.zip  解压即用（便携版）
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # 所有测试都在无头环境跑：CI 没有真实桌面
+  QT_QPA_PLATFORM: offscreen
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python x64
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Verify native module is present
+        shell: pwsh
+        run: |
+          $p = "native/cmd_native.exe"
+          if (-not (Test-Path $p)) {
+            throw "native/cmd_native.exe 缺失：安装包必须包含原生模块"
+          }
+          "native module: {0:N0} bytes" -f (Get-Item $p).Length
+          & $p selftest
+
+      - name: Platform self-check
+        run: python tools/windows_check.py
+
+      - name: Storage, log and chain checks
+        run: |
+          python tools/config_check.py
+          python tools/config_crypto_check.py
+          python tools/log_crypto_check.py
+          python tools/native_check.py
+          python tools/ledger_check.py
+
+      - name: GUI smoke test (headless)
+        run: python tools/smoke_test.py
+
+      - name: PyInstaller (onedir)
+        run: pyinstaller packaging/windows/ClassManageSystem.spec --noconfirm --clean
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path namepicker/about_dialog.py -Pattern '^VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          "value=$v" >> $env:GITHUB_OUTPUT
+          "Version: $v"
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found" }
+          & $iscc "packaging\windows\installer.iss" "/DMyAppVersion=${{ steps.version.outputs.value }}"
+          Get-ChildItem dist\*.exe | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - name: Build portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\ClassManageSystem\* `
+            -DestinationPath "dist\ClassManageSystem-${{ steps.version.outputs.value }}-portable.zip" -Force
+
+      - name: Show checksums
+        shell: pwsh
+        run: |
+          Get-FileHash dist\*.exe, dist\*.zip -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash, (Split-Path $_.Path -Leaf) }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClassManageSystem-windows-x64
+          path: |
+            dist/*Setup.exe
+            dist/*portable.zip
+          if-no-files-found: error
+
+      - name: Attach to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*Setup.exe
+            dist/*portable.zip
+          generate_release_notes: true
