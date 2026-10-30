@@ -13,6 +13,11 @@ import contextlib
 import io
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _encoding import utf8_output  # noqa: E402
+
+utf8_output()
 import tempfile
 
 try:  # 注册表模块只在 Windows 上存在（macOS/Linux 上跳过自启动备份）
