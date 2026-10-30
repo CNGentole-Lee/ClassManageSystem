@@ -1,4 +1,9 @@
 import os, sys, tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _encoding import utf8_output  # noqa: E402
+
+utf8_output()
 sys.path.insert(0, ".")
 
 from _settings_isolation import isolate_settings  # noqa: E402

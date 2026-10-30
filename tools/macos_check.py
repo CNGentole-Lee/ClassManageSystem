@@ -21,6 +21,11 @@ import ctypes.util
 import os
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _encoding import utf8_output  # noqa: E402
+
+utf8_output()
 import tempfile
 import time
 

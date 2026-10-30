@@ -19,6 +19,11 @@
 import os
 import shutil
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _encoding import utf8_output  # noqa: E402
+
+utf8_output()
 import tempfile
 
 _TMP_HOME = tempfile.mkdtemp(prefix="cm_log_home_")

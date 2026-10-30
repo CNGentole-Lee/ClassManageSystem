@@ -21,6 +21,11 @@ import os
 import shutil
 import stat
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _encoding import utf8_output  # noqa: E402
+
+utf8_output()
 import tempfile
 
 # --- 隔离：在临时 HOME 下运行，避免动到真实密钥/真实备份 ---

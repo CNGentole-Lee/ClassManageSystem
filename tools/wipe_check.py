@@ -14,6 +14,11 @@ Exit code 0 = all passed.
 
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _encoding import utf8_output  # noqa: E402
+
+utf8_output()
 import tempfile
 
 _HERE = os.path.dirname(os.path.abspath(__file__))

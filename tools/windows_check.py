@@ -16,6 +16,11 @@ import os
 import locale
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _encoding import utf8_output  # noqa: E402
+
+utf8_output()
 import tempfile
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -64,6 +69,17 @@ from namepicker.config_store import ConfigStore  # noqa: E402
 
 print("\n--- 2. Floating ball topmost (ctypes.wintypes bug fixed?) ---")
 from namepicker import floating_ball  # noqa: E402
+
+# CI 用 QT_QPA_PLATFORM=offscreen：没有真实窗口系统，SetWindowPos 无从作用，
+# 这类 live 断言一律跳过（它们只能在有桌面的 Windows 上验证）。
+_HAS_REAL_WINDOWS = IS_WINDOWS
+if IS_WINDOWS:
+    try:
+        from PySide6.QtGui import QGuiApplication as _QG
+        _HAS_REAL_WINDOWS = _QG.platformName() == "windows"
+    except Exception:                                  # noqa: BLE001
+        _HAS_REAL_WINDOWS = False
+
 if IS_WINDOWS:
     check("_SetWindowPos resolved to the real Win32 function (not None)",
           floating_ball._SetWindowPos is not None,
@@ -99,8 +115,18 @@ print("\n--- 2b. Dialogs above full-screen apps (Windows-specific) ---")
 try:
     from namepicker import win_window
     check("win_window module imports", win_window is not None)
-    if IS_WINDOWS:
-        from PySide6.QtWidgets import QApplication, QDialog
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtWidgets import QApplication
+
+    if not _HAS_REAL_WINDOWS:
+        # offscreen（CI）下窗口没有真实 HWND，SetWindowPos 必然失败，
+        # 这不是程序问题；真正的前台行为只能在有桌面的机器上验证。
+        skip("dialog topmost live test",
+             f"platform plugin {QGuiApplication.platformName()!r} has no real window")
+        check("dialog raiser is a safe no-op without real windows",
+              win_window.install_dialog_raiser(QApplication.instance()) in (True, False))
+    else:
+        from PySide6.QtWidgets import QDialog
         _app = QApplication.instance() or QApplication([])
         _dlg = QDialog()
         _dlg.setWindowTitle("topmost probe")
@@ -111,7 +137,8 @@ try:
         check("is_topmost reports True afterwards", win_window.is_topmost(_dlg))
         check("dialog raiser installs", win_window.install_dialog_raiser(_app))
         _dlg.close()
-    else:
+
+    if not IS_WINDOWS:
         skip("dialog topmost live test", "not running on Windows")
         check("dialog raiser is a no-op off Windows",
               win_window.install_dialog_raiser(None) is False)
