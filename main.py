@@ -165,7 +165,12 @@ def main():
             state = chain.replay()
             store.apply_ledger_state(state)
             chain.write_anchor(state.events, state.head)
-        store.attach_ledger(chain)
+
+        # 只有链可信时才挂上：链不可信还继续追加，会把坏链写得更长
+        if ledger_state["ok"]:
+            store.attach_ledger(chain)
+        else:
+            startup_log.record(["ledger not attached: chain is not trustworthy"])
     except Exception as exc:                      # noqa: BLE001
         # 原生模块缺失 / 文件不可读：降级为“无链模式”，不阻断上课
         ledger_state = {"ok": False, "error": str(exc)}

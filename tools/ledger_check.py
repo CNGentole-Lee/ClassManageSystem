@@ -88,6 +88,14 @@ def main() -> int:
     state2 = chain2.replay()
     check("appended score replays", state2.scores.get(1) == 7, str(state2.scores))
 
+    # ---- appending to a chain loaded from disk ---------------------
+    # 重新打开后直接 append：必须先校验拿到真实链头，否则 prev 会指向创世块
+    reopened = L.Ledger(cfg)
+    reopened.load()
+    reopened.append(L.OP_SCORE, {"op": "score", "g": 1, "v": 3})
+    check("append after reopen keeps the chain valid", reopened.verify(),
+          reopened.verify_error())
+
     # ---- tampering -------------------------------------------------
     lines = [ln for ln in open(chain2.path, encoding="ascii") if ln.strip()]
     raw = bytearray(base64.b64decode(lines[-1]))

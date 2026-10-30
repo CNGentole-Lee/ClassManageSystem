@@ -250,6 +250,11 @@ class Ledger:
     def append(self, op: int, payload: dict) -> bytes:
         """追加一条事件，返回新链头；失败抛 LedgerError。"""
         records = self.load()
+        # 关键：从磁盘加载后 _head 仍是创世值，必须先校验一次拿到真实链头，
+        # 否则新记录的 prev_head 会指向创世块，整条链立刻断裂。
+        if records and not self._verified:
+            if not self.verify():
+                raise LedgerError("chain invalid: " + (self._verify_error or "UNKNOWN"))
         seq = len(records) + 1
         gen = (seq - 1) // GEN_SIZE
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
