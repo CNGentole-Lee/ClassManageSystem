@@ -269,3 +269,8 @@ crash.log
 
 # 交叉编译工具链下载缓存
 .tools/
+
+# Windows 构建中间产物
+native/*.pdb
+native/*.lib
+native/*.obj
