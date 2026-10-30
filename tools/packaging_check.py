@@ -95,6 +95,14 @@ def main() -> int:
     # ---- CI ---------------------------------------------------------
     check("workflow builds the Inno Setup installer",
           "innosetup" in workflow and "ISCC" in workflow)
+    # ISCC 的 /D 定义必须在脚本路径之前，否则会被当成第二个脚本文件
+    iscc_line = next((l for l in workflow.splitlines() if "& $iscc" in l), "")
+    check("ISCC receives /D before the script path",
+          iscc_line.find('"/DMyAppVersion=') < iscc_line.find('installer.iss')
+          and iscc_line.find('"/DMyAppVersion=') != -1, iscc_line.strip()[:80])
+    check("workflow fails fast when ISCC fails", "LASTEXITCODE" in workflow)
+    check("installer paths are derived from the script location",
+          "RepoRoot" in iss and "SourcePath" in iss)
     check("workflow uploads the installer",
           "Setup.exe" in workflow and "upload-artifact" in workflow)
     check("workflow builds a portable zip", "portable.zip" in workflow)
