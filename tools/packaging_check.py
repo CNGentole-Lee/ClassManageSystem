@@ -101,8 +101,14 @@ def main() -> int:
           iscc_line.find('"/DMyAppVersion=') < iscc_line.find('installer.iss')
           and iscc_line.find('"/DMyAppVersion=') != -1, iscc_line.strip()[:80])
     check("workflow fails fast when ISCC fails", "LASTEXITCODE" in workflow)
-    check("installer paths are derived from the script location",
-          "RepoRoot" in iss and "SourcePath" in iss)
+    check("installer requires an absolute repo root",
+          "#ifndef RepoRoot" in iss and "#error" in iss)
+    check("installer does not rely on unnormalised dot-dot wildcards",
+          "..\\..\\dist" not in iss and "..\\..\\LICENSE" not in iss)
+    check("workflow passes an absolute RepoRoot to ISCC",
+          "/DRepoRoot=$root" in workflow and "GITHUB_WORKSPACE" in workflow)
+    check("local installer script exists",
+          os.path.isfile(os.path.join(_ROOT, "packaging", "windows", "make_installer.bat")))
     check("workflow uploads the installer",
           "Setup.exe" in workflow and "upload-artifact" in workflow)
     check("workflow builds a portable zip", "portable.zip" in workflow)
