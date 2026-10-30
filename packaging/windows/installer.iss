@@ -18,6 +18,9 @@
   #define MyAppVersion "0.0.0"
 #endif
 
+; 用脚本自身的位置推导仓库根目录，避免依赖 ISCC 的当前工作目录
+#define RepoRoot SourcePath + "\..\..\"
+
 #define MyAppName "ClassManageSystem"
 #define MyAppDisplayName "Class Management Terminal"
 #define MyAppPublisher "Gentole Lee"
@@ -34,14 +37,14 @@ DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppDisplayName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-OutputDir=..\..\dist
+OutputDir={#RepoRoot}dist
 OutputBaseFilename=ClassManageSystem-{#MyAppVersion}-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=app.ico
+SetupIconFile={#SourcePath}\app.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-LicenseFile=..\..\LICENSE
+LicenseFile={#RepoRoot}LICENSE
 ; The app itself writes data next to the executable; installing under
 ; %LOCALAPPDATA% keeps that directory writable for the current user.
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -54,11 +57,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-Source: "..\..\dist\ClassManageSystem\*"; DestDir: "{app}"; \
+Source: "{#RepoRoot}dist\ClassManageSystem\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\NOTICE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}NOTICE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#RepoRoot}THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppDisplayName}"; Filename: "{app}\{#MyAppExeName}"
