@@ -11,7 +11,7 @@ NATIVE = {
         "verify": ("cmd_verify", "79e07efa270c2d270e2d4b1dc40092d314cca16a478fc7181bc4b6451f78f208", 173888, "cmd_verify.gz"),
     },
     "win32": {
-        "sign": ("cmd_sign.exe", "2bc6c58f5f9b70a5a2ceb53aa0ae4255e18d5586feefb6e4abac831dd3fb8866", 915968, "cmd_sign.exe.gz"),
-        "verify": ("cmd_verify.exe", "5cd6d6e250671124ab0b1e9c978f1dd8d1e921353b91e40fa4d32792ab554e58", 838656, "cmd_verify.exe.gz"),
+        "sign": ("cmd_sign.exe", "2edeef71b7b57febfcb7278319b2d9e661f59b97224fcdf9c1a2cf2901c4d932", 918528, "cmd_sign.exe.gz"),
+        "verify": ("cmd_verify.exe", "e1f57d6c1b1d82dd518f817858a60b07258588ad747dee0dc60a58c8240c3a6a", 842240, "cmd_verify.exe.gz"),
     },
 }
