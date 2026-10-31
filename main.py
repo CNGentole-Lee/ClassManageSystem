@@ -135,6 +135,13 @@ def main():
         native_state = _guard.check_both()
         if native_state["restored"]:
             startup_log.record([f"native module restored from backup: {native_state['reason']}"])
+            try:
+                from namepicker import integrity as _integrity_pre
+                _integrity_pre.append_tamper_log(
+                    os.path.dirname(resolve_config_path()), "critical",
+                    "NATIVE_REPLACED", native_state["reason"])
+            except Exception:                  # noqa: BLE001
+                pass
         elif not native_state["ok"]:
             startup_log.record([f"native module rejected: {native_state['reason']}"])
     except Exception as exc:                      # noqa: BLE001
@@ -194,6 +201,12 @@ def main():
         elif problem:
             ledger_state = {"ok": False, "error": problem}
             startup_log.record([f"ledger rejected: {problem}"])
+            try:
+                from namepicker import integrity as _integrity_rej
+                _integrity_rej.append_tamper_log(
+                    os.path.dirname(store.path), "critical", "LEDGER_REJECTED", problem)
+            except Exception:                  # noqa: BLE001
+                pass
         elif chain.count():
             state = chain.state()
             store.apply_ledger_state(state)

@@ -186,7 +186,8 @@ def main() -> int:
 
     # ---- macOS build script ----------------------------------------
     check("macOS build produces a dmg", "hdiutil create" in build_cmd and ".dmg" in build_cmd)
-    check("macOS build checks the native module", "native/cmd_native" in build_cmd)
+    check("macOS build checks both native modules",
+          "cmd_sign" in build_cmd and "cmd_verify" in build_cmd)
     check("macOS build no longer depends on PyQt5", "PyQt5" not in build_cmd)
 
     print("\n" + "=" * 60)

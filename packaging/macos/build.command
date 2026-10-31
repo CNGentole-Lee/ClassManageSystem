@@ -61,11 +61,13 @@ rm -rf "$HOME_ISOLATED"
 "$PY" tools/windows_check.py | tail -1
 
 # --- 4. 生成图标（可选，缺 Pillow 也不影响，因为走 Qt）---
-# 原生模块必须存在，否则打出来的包只能只读运行
-if [ ! -f native/cmd_native ]; then
-  echo "[x] 缺少 native/cmd_native，请先运行 native/build_macos.sh"
-  exit 1
-fi
+# 两个原生模块必须存在，否则打出来的包只能只读运行
+for bin in cmd_sign cmd_verify; do
+  if [ ! -f "native/$bin" ]; then
+    echo "[x] 缺少 native/$bin，请先运行 native/build_macos.sh"
+    exit 1
+  fi
+done
 
 echo "[4/5] 生成图标"
 if [ ! -f packaging/macos/app.icns ]; then

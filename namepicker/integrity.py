@@ -23,7 +23,32 @@ import time
 from . import native_manifest
 
 #: 备份文件所在目录（随包分发）
-BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "native_backup")
+#: 打包后与原生模块放在一起（_MEIPASS/native），源码运行时在包目录下。
+def _backup_dir() -> str:
+    package_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "native_backup")
+    candidates = []
+    try:
+        from . import native_bridge
+        bin_dir = os.path.dirname(native_bridge.native_path("sign"))
+        candidates.append(bin_dir)
+        # macOS .app：二进制在 Contents/Frameworks/native，data 在 Contents/Resources/native
+        candidates.append(os.path.join(os.path.dirname(os.path.dirname(bin_dir)),
+                                       "Resources", "native"))
+        # Windows/Linux onedir：二进制与 data 同在 _internal/native
+        candidates.append(os.path.join(os.path.dirname(bin_dir), "native"))
+    except Exception:                                  # noqa: BLE001
+        pass
+    candidates.append(package_dir)
+    for path in candidates:
+        try:
+            if any(name.endswith(".gz") for name in os.listdir(path)):
+                return path
+        except OSError:
+            continue
+    return package_dir
+
+
+BACKUP_DIR = _backup_dir()
 
 #: ctime 与最后事件时间相差多少秒视为“文件被整体替换”
 CTIME_TOLERANCE_S = 600

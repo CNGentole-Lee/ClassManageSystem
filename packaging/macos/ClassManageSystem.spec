@@ -51,6 +51,15 @@ for _name in _NATIVE_BINS:
             f"[x] native/{_name} is missing.\n    Build both: native/build_macos.sh")
     NATIVE_PAIRS.append((_path, "native"))
 
+# 一键还原用的原始副本：BUNDLE 的 resources 不复制目录，
+# 必须作为 data 文件逐个加入（落在 Resources/native，与二进制同名的 .gz）。
+_BACKUP_DIR = os.path.join(ROOT, "namepicker", "native_backup")
+_BACKUP_DATAS = []
+if os.path.isdir(_BACKUP_DIR):
+    for _name in sorted(os.listdir(_BACKUP_DIR)):
+        if _name.endswith(".gz"):
+            _BACKUP_DATAS.append((os.path.join(_BACKUP_DIR, _name), "native"))
+
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
@@ -63,7 +72,7 @@ a = Analysis(
         (os.path.join(ROOT, "LICENSE"), "."),
         (os.path.join(ROOT, "NOTICE"), "."),
         (os.path.join(ROOT, "THIRD-PARTY-NOTICES.md"), "."),
-    ],
+    ] + _BACKUP_DATAS,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -126,10 +135,6 @@ LICENSE_LIST = [
 _NATIVE_LICENSE = os.path.join(ROOT, "native", "LICENSE")
 if os.path.isfile(_NATIVE_LICENSE):
     LICENSE_LIST.append(("Resources/native/LICENSE", _NATIVE_LICENSE, "DATA"))
-# 一键还原用的原始副本
-_BACKUP_DIR = os.path.join(ROOT, "namepicker", "native_backup")
-if os.path.isdir(_BACKUP_DIR):
-    LICENSE_LIST.append(("namepicker/native_backup", _BACKUP_DIR, "DATA"))
 
 app = BUNDLE(
     coll,
