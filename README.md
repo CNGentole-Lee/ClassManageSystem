@@ -192,8 +192,10 @@
 
 - Windows 10 及以上（主要目标平台）、macOS 11 及以上；Linux 未验证。
 - Python 3.10+、PySide6、cryptography（仅源码运行需要）。
-- **原生模块** `native/cmd_native`（Windows 为 `cmd_native.exe`）：源码运行时必须存在，
-  否则程序降级为「只读 + 状态栏提示」，不会崩溃。构建方法见「开发注意事项」。
+- **原生模块**（两个闭源程序，必须成对出现）：
+  `native/cmd_sign` + `native/cmd_verify`（Windows 为 `.exe`）。
+  源码运行时必须存在，否则程序降级为「只读 + 状态栏提示」，不会崩溃。
+  构建方法见「开发注意事项」。
 
 ```bash
 pip install -r requirements.txt
@@ -335,6 +337,31 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 两个二进制还**互为校验**：同一次构建会给它们注入同一个随机令牌，
 任何一方被替换（令牌不同），另一方直接拒绝工作（`PEER_MISMATCH`）。
 
+#### 一句话版本：七个独立检查 + 两程序互校
+
+```text
+分数只认事件链，事件链由两个闭源程序共同把关：
+
+  cmd_sign   只能“提议”一条记录（有密钥，但说了不算）
+  cmd_verify 用公钥决定“接受还是拒绝”（没有密钥，但有否决权）
+
+七道检查，任何一道失败都不会静默通过：
+  1 签名       改记录 → 验不过
+  2 哈希清单   换程序 → 对不上，可一键还原
+  3 锚点       链变短 / 链头不符 / 状态不符 / 公钥被换
+  4 单调时间   时间回退 → 拒绝
+  5 ctime      拷回旧文件 → 文件年龄对不上
+  6 NTP        整盘镜像 / 改系统时间 → 联网后暴露
+  7 归档       异常分级写入 tamper.log，不打断上课
+
+外加一道互校：
+  cmd_sign ↔ cmd_verify 共享同一构建令牌
+  任意一方被替换 → 另一方拒绝工作（PEER_MISMATCH）
+```
+
+**设计取舍**：把“判定权”和“签名权”拆开。签名器被换，攻击者拿到的是
+一个签不出合法记录的废程序；验证器被换，攻击者要同时骗过哈希清单和令牌。
+
 构建时还会做一轮**源码级混淆**：字符串字面量编译期加密、命令名改哈希比较、
 盐以异或形式存放、LTO + 去符号表。`strings` 已经找不到 `BAD_SIG`、
 `fingerprint`、`PEER_MISMATCH`、`cmenc001` 这些明文（有回归测试守着）。
@@ -342,14 +369,18 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 ### 一、事件链（分数）
 
-每次改分、改组名、改组数，都会先经原生模块 `cmd_native`：
+每次改分、改组名、改组数，都要经过两个闭源程序：
 
 ```text
 界面操作
-  → C++ 校验规则（组号 1..24、分数 ±100 万、组名长度）
-  → 加密（XChaCha20-Poly1305）+ 计算链头（BLAKE2b-256）+ 签名（Ed25519）
-  → 追加到 Data/ledger.esc
+  → cmd_sign：校验规则（组号 1..24、分数 ±100 万、组名长度）
+              加密（XChaCha20-Poly1305）+ 签名（Ed25519）
+  → cmd_verify：用公钥验签 + 校验明文哈希 + 重放
+  → 两者都通过，才追加到 Data/ledger.esc
 ```
+
+**任何一步失败，记录都不会落盘**：签名器出问题会被验证器挡下，
+验证器出问题会被哈希清单挡下。
 
 启动时整链验签并重放，用结果覆盖 `config.dat` 里的分数缓存。
 
@@ -359,14 +390,15 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | `Data/anchor.json` | 基准：链曾经到过第几条、链头是什么 |
 | `~/.cache/classmanage/<哈希>/anchor.json` | 同一基准的隐藏副本 |
 | `~/.cache/classmanage/<哈希>/ledger.esc` | 安全副本，用于自动恢复 |
-| `native/cmd_native`（Windows 为 `.exe`） | 原生模块：密钥、规则、加解密、签名 |
+| `native/cmd_sign`（Windows 为 `.exe`） | 签名器：密钥、规则、加解密、签名、迁移 |
+| `native/cmd_verify`（Windows 为 `.exe`） | 验证器：只有公钥，负责验签、重放、规则 |
 
 **完整性检查分七层**（前五层离线可用，第六层需要网络）：
 
 | 层 | 手段 | 挡住什么 | 离线 |
 |---|---|---|---|
 | 1 | Ed25519 签名（闭源模块） | 改记录、伪造记录 | ✅ |
-| 2 | 原生模块 SHA-256 清单 + 随包副本 | 替换/损坏 `cmd_native`；可一键还原 | ✅ |
+| 2 | 原生模块 SHA-256 清单 + 随包副本 | 替换/损坏任一原生程序；可一键还原 | ✅ |
 | 3 | 锚点 `seq/head/ts/digest/pubkey` | 链变短、链头不符、状态不符、公钥被换 | ✅ |
 | 4 | **单调时间戳**（每条记录，签名保护） | 时间回退、事件乱序 | ✅ |
 | 5 | **ctime 见证** | 文件被整体替换（拷回旧目录） | ✅ |
@@ -554,13 +586,12 @@ python tools/fairness_burnin.py
 > （本机或 Windows runner）。测试已支持无头运行（`QT_QPA_PLATFORM=offscreen`），
 > 不再依赖真实显示器。
 
-### Windows —— 唯一可行方式：本机打包
+### Windows —— 两种方式：本机打包或 GitHub Actions
 
-> 说明：CI 出包流程目前**未启用**（`.github/workflows` 保留但不再自动触发）。
-> 打包本身仍是 PyInstaller 的一步，在任意一台 Windows 上执行即可；
-> 测试已可在无头环境运行，不再需要真实显示器。
+> 推荐用 CI（`build-windows.yml`）：它会跑全量测试、检查包内两个原生模块、
+> 校验哈希，再出安装程序。本机打包适合调试安装脚本。
 
-请在任意一台 Windows 上打包：
+在本机 Windows 上打包：
 
 ```bat
 packaging\windows\build.bat
@@ -619,15 +650,17 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 | `release.yml` → `release` | **同时**下载 Windows 与 macOS 的 artifact（按同一提交），校验后一起发到 Release | 两个构建都成功后自动 / 手动 |
 | `build-macos.yml` → `build-macos-app` | 在 macos-14（arm64）跑测试 → 打包 .app/DMG → 校验包内二进制哈希、备份文件 → 冒烟测试（含“换掉 verify 自动还原”） | push / PR / 手动 |
 
-`release` 默认发布到标签 **`V3.0`**：下载 artifact、解压、校验便携版里
-确实有主程序与 `cmd_native.exe`，再上传 `Setup.exe` 与 `portable.zip`，
-并把 SHA-256 写进 Release 说明。手动触发时可指定其他 tag 或某次运行 ID。
+`release` 默认发布到标签 **`V3.0`**：按同一个提交取两个平台的 artifact，
+校验便携版里的主程序与两个原生模块、**.app 里二进制的哈希**，再上传
+`Setup.exe`、`portable.zip` 与 `.dmg`，并把 SHA-256 写进 Release 说明。
+手动触发时可指定其他 tag 或提交。
 
 ### 产物说明
 
 - 目录形态（`dist/ClassManageSystem/`）＋安装程序，目标机不需要装 Python；
-- **原生模块随包分发**：`_internal/native/cmd_native.exe`（macOS 为
-  `Contents/Frameworks/native/cmd_native`）。缺了它程序只能以只读模式运行，
+- **两个原生模块随包分发**：Windows 在 `_internal/native/cmd_sign.exe` 与
+  `cmd_verify.exe`；macOS 在 `Contents/Frameworks/native/`，原始副本
+  （`.gz`）在 `Contents/Resources/native/`。缺了任一个程序只能以只读模式运行，
   因此打包配置会在缺失时**直接让构建失败**；
 - **Qt 库是独立文件**（`_internal/` 下的 `Qt*.dll` / `.framework`），安装后可被替换，
   满足 LGPL v3 对「用户能替换库」的要求；单文件 EXE 做不到这一点，因此不再使用；
@@ -655,13 +688,6 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 ├── namepicker/                      # 主程序包
 │   ├── _init_.md                    # 包内文件职责说明
 │   ├── config_store.py              # 配置持久化（四级容灾）+ 分数缓存
-│   ├── ledger.py                    # 事件链：落盘、锚点、安全副本、调用原生模块
-│   ├── native_bridge.py             # 调用 cmd_native（fingerprint/identity/state/apply）
-│   ├── integrity.py                 # 原生模块哈希/还原、ctime 见证、tamper.log
-│   ├── guard.py                     # 启动判定（层 2/3/5/6/7）与分级
-│   ├── sntp.py                      # 极简 NTP 客户端（可信时间）
-│   ├── native_manifest.py           # 钉死的二进制哈希（工具生成）
-│   └── native_backup/               # 原始二进制副本（一键还原来源）
 │   ├── crypto_utils.py              # AES-256-GCM 与 ~/.classmanage_key 密钥管理
 │   ├── log_store.py                 # points_log.dat：加密操作日志 + 防回滚
 │   ├── backup_store.py              # QSettings 系统级隐蔽备份（跨平台）
@@ -679,6 +705,13 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 │   ├── about_dialog.py              # 关于窗口：协议/版权声明/第三方引用说明
 │   ├── widgets.py                   # ElidedLabel：长名字按宽度省略 + tooltip 全名
 │   ├── restart.py                   # 切换语言后的「立即重启」（源码/打包两种参数）
+│   ├── ledger.py                    # 事件链：落盘、锚点、安全副本、调用原生模块
+│   ├── native_bridge.py             # 调用 cmd_sign / cmd_verify（两套角色）
+│   ├── integrity.py                 # 原生模块哈希/还原、ctime 见证、tamper.log
+│   ├── guard.py                     # 启动判定（层 2/3/5/6/7）与分级
+│   ├── sntp.py                      # 极简 NTP 客户端（可信时间）
+│   ├── native_manifest.py           # 钉死的二进制哈希（工具生成）
+│   └── native_backup/               # 原始二进制副本（一键还原来源）
 │   ├── wipe_dialog.py               # 彻底重置：勾选清空范围 + 二次确认
 │   ├── wipe_service.py              # 按勾选项逐项清空（可单测）
 │   ├── theme.py                     # 浅/深色配色 token、跨平台字体、托盘图标
@@ -712,9 +745,16 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 │   ├── _headless.py                 # 无头模式：屏蔽所有模态框，CI 不阻塞
 │   ├── run_all_tests.py             # 一键跑全套测试（自动找解释器 / 限时 / 隔离）
 │   ├── run_all_tests.command        # macOS 双击启动器
-│   └── run_all_tests.bat            # Windows 双击启动器
+│   ├── run_all_tests.bat            # Windows 双击启动器
+│   ├── ledger_check.py              # 事件链：迁移 / 改分 / 回档 / 安全副本 / v1→v2
+│   ├── native_check.py              # 两个原生程序的协议与拒绝路径
+│   ├── tamper_check.py              # 篡改专项：换二进制 / 改记录 / 回滚 / ctime / NTP / 互校
+│   ├── packaging_check.py           # spec / 安装脚本 / CI / 清单哈希的一致性
+│   ├── lint_check.py                # pyflakes：未定义名字（曾导致关于窗口崩溃）
+│   ├── make_native_manifest.py      # 重编后生成钉死哈希与随包副本
+│   └── obfuscate_source.py          # 构建期字符串加密（不改仓库源码）
 │
-└── .github/workflows/build-windows.yml   # CI 构建流程（当前未启用，见「打包」）
+└── .github/workflows/               # CI：build-windows / build-macos / release
 ```
 
 ---
@@ -747,9 +787,9 @@ python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、�
 python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
 python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
 python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志(需要GUI)
-python tools/native_check.py           # 原生模块：状态机、规则拒绝、篡改/重排/换机器
+python tools/native_check.py           # 两个原生程序：协议、规则拒绝、篡改/重排/换机器
 python tools/ledger_check.py           # 事件链：迁移、C++ 改分、回档检测、安全副本恢复
-python tools/tamper_check.py           # 篡改专项：换二进制/改记录/删记录/回滚/ctime/NTP/单调时间
+python tools/tamper_check.py           # 篡改专项：换二进制/改记录/回滚/ctime/NTP/互校/混淆回归
 python tools/lint_check.py             # pyflakes：未定义名字（曾导致关于窗口崩溃）
 ```
 
@@ -819,12 +859,14 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
   立即返回；新增测试请在创建 `QApplication` 前调用它。
 - **业务规则只在 C++ 里**：不要在图界面或 `ConfigStore` 里再判断“组号是否合法 /
   分数是否超限”。新增操作走 `ConfigStore._ledger_apply(op, **kwargs)`，
-  由 `cmd_native apply` 校验；被拒绝时返回 `False`，调用方必须放弃本次改动。
-- **原生模块的源码不在仓库里**：`native/` 只提交 `cmd_native` / `cmd_native.exe`
-  两个二进制与 `LICENSE`（专有许可）。C++ 源码、构建脚本、libsodium 源码都只在你
-  本地私有目录，`.gitignore` 已排除 `native/src/`、`native/third_party/`。
+  由 `cmd_sign` 签名、再由 `cmd_verify` 复核；任一步拒绝都返回 `False`，
+调用方必须放弃本次改动。
+- **两个原生模块的源码不在仓库里**：`native/` 只提交
+  `cmd_sign` / `cmd_verify`（Windows 为 `.exe`）与 `LICENSE`（专有许可）。
+  C++ 源码、构建脚本、libsodium 源码都在本地私有目录，
+  `.gitignore` 已排除 `native/src/`、`native/third_party/`。
 - **事件格式由 C++ 定义**：Python 只把 `record` 当不透明字节追加到
-  `Data/ledger.esc`，不要解析；需要状态就调 `cmd_native state`。
+  `Data/ledger.esc`，不要解析；需要状态就调 `cmd_verify state`（验证器重放）。
 - **数值上限要对齐**：C++ 的 `MIN_GROUPS/MAX_GROUPS` 与 `config_store` 的
   `MIN_GROUP_COUNT/MAX_GROUP_COUNT` 必须一致。
 - 打包相关：`config_store._app_dir()` 对 `.app` 有专门处理，避免把数据写进应用包内部；
@@ -972,7 +1014,7 @@ limitations under the License.
 - 不提供任何担保。
 
 **原生模块是另一套许可：** `native/` 下的编译产物
-（`cmd_native.exe` / `cmd_native`）**不属于 Apache-2.0**，而是专有许可：
+（`cmd_sign` / `cmd_verify`，Windows 为 `.exe`）**不属于 Apache-2.0**，而是专有许可：
 只能随本程序使用，禁止单独分发、反向工程或提取其中的算法与密钥。
 详见 [`native/LICENSE`](native/LICENSE)。
 
@@ -1187,9 +1229,9 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 
 - Windows 10 or later (primary target), macOS 11 or later; Linux untested.
 - Python 3.10+, PySide6 and cryptography (only needed when running from source).
-- The **native module** `native/cmd_native` (`.exe` on Windows) must exist when running
-  from source; without it the app degrades to read-only with a status-bar notice and does
-  not crash. See Development notes for how to build it.
+- The **native binaries** — `native/cmd_sign` + `native/cmd_verify` (`.exe` on Windows) —
+  must both exist when running from source; without them the app degrades to read-only
+  with a status-bar notice and does not crash. See Development notes for how to build them.
 
 ```bash
 pip install -r requirements.txt
@@ -1352,7 +1394,33 @@ the config file only caches them.
 Replacing the signer cannot produce records the verifier accepts; replacing the verifier
 is caught by the hash manifest. The two binaries also **check each other**: a build
 injects the same random token into both, so replacing either one makes the other refuse
-to work (`PEER_MISMATCH`). The build also applies **source-level obfuscation**: string
+to work (`PEER_MISMATCH`).
+
+#### One-paragraph version: seven independent checks + mutual verification
+
+```text
+Scores come only from the event chain, and two closed programs guard it:
+
+  cmd_sign   may only "propose" a record (holds keys, but has no final say)
+  cmd_verify decides "accept or reject" using the public key (no keys, but can veto)
+
+Seven checks; none of them fails silently:
+  1 signature     edit a record        -> rejected
+  2 hash manifest replace a binary     -> mismatch, one-click restore
+  3 anchor        shorter chain / wrong head / wrong state / swapped key
+  4 monotonic ts  time going backwards -> rejected
+  5 ctime         old file copied back -> file age does not line up
+  6 NTP           full disk image / clock tampering -> exposed once online
+  7 tamper.log    graded anomaly archive; never interrupts class
+
+Plus mutual verification:
+  cmd_sign <-> cmd_verify share one build token
+  replace either one -> the other refuses to work (PEER_MISMATCH)
+```
+
+**Design trade-off**: signing and judging are separated. Replace the signer and the
+attacker holds a program that cannot produce acceptable records; replace the verifier and
+the attacker must defeat both the hash manifest and the build token. The build also applies **source-level obfuscation**: string
 literals are encrypted at compile time, command names are compared by hash, the salt is
 stored XOR-masked, and LTO + strip remove symbols. `strings` no longer finds `BAD_SIG`,
 `fingerprint`, `PEER_MISMATCH` or `cmenc001` (a regression test guards this). The verifier contains **no salt and no private key**, so
@@ -1360,14 +1428,18 @@ reverse-engineering it yields nothing forgeable.
 
 ### 1. Event chain (scores)
 
-Every score / group-name / group-count change goes through the native module `cmd_native`:
+Every score / group-name / group-count change goes through both closed binaries:
 
 ```text
 UI action
-  → C++ validates the rules (group 1..24, score ±1,000,000, name length)
-  → encrypt (XChaCha20-Poly1305) + chain head (BLAKE2b-256) + sign (Ed25519)
-  → append to Data/ledger.esc
+  → cmd_sign:   validates the rules (group 1..24, score ±1,000,000, name length)
+                encrypt (XChaCha20-Poly1305) + sign (Ed25519)
+  → cmd_verify: verify signature with the public key + plaintext hash + replay
+  → only if both agree is the record appended to Data/ledger.esc
 ```
+
+**If either step fails, nothing is written**: a broken signer is rejected by the verifier,
+and a broken verifier is caught by the hash manifest.
 
 At startup the whole chain is verified and replayed; the result overwrites the cached
 `score_*` values in `config.dat`.
@@ -1378,14 +1450,15 @@ At startup the whole chain is verified and replayed; the result overwrites the c
 | `Data/anchor.json` | anchor: how long the chain ever got, and its head |
 | `~/.cache/classmanage/<hash>/anchor.json` | hidden copy of the same anchor |
 | `~/.cache/classmanage/<hash>/ledger.esc` | shadow copy used for automatic restore |
-| `native/cmd_native` (`.exe` on Windows) | native module: keys, rules, crypto, chain |
+| `native/cmd_sign` (`.exe` on Windows) | signer: keys, rules, crypto, signing, migration |
+| `native/cmd_verify` (`.exe` on Windows) | verifier: public key only — verify, replay, rules |
 
 **Integrity checks, seven layers** (the first five work offline; the sixth needs network):
 
 | Layer | Mechanism | Stops | Offline |
 |---|---|---|---|
 | 1 | Ed25519 signature (closed module) | edited/forged records | ✅ |
-| 2 | native SHA-256 manifest + bundled copy | replaced/corrupt `cmd_native`; one-click restore | ✅ |
+| 2 | native SHA-256 manifest + bundled copy | replaced/corrupt either binary; one-click restore | ✅ |
 | 3 | anchor `seq/head/ts/digest/pubkey` | shorter chain, wrong head/state, swapped key | ✅ |
 | 4 | **monotonic timestamps** (signed) | time rollback, reordering | ✅ |
 | 5 | **ctime witness** | whole-file replacement (old copy restored) | ✅ |
@@ -1669,18 +1742,20 @@ The Windows installer is produced by two CI workflows:
 | `release.yml` → `release` | downloads **both** the Windows and macOS artifacts for the same commit, verifies them, publishes them together | after both builds succeed / manual |
 | `build-macos.yml` → `build-macos-app` | on macos-14 (arm64): tests → package .app/DMG → verify bundled binary hashes and backups → smoke test (including "replace verify → auto restore") | push / PR / manual |
 
-`release` publishes to tag **`V3.0`** by default: it downloads the artifact,
-extracts it, checks that the portable zip really contains the main executable and
-`cmd_native.exe`, then uploads `Setup.exe` and `portable.zip` and writes the SHA-256
-checksums into the release notes. Manual runs may pick another tag or a specific run id.
+`release` publishes to tag **`V3.0`** by default: it takes both platforms' artifacts for
+the same commit, verifies the portable zip's main executable and both native binaries,
+verifies the **hashes inside the .app**, then uploads `Setup.exe`, `portable.zip` and the
+`.dmg`, writing the SHA-256 checksums into the release notes. Manual runs may pick another
+tag or commit.
 
 ### About the artifacts
 
 - Directory layout (`dist/ClassManageSystem/`) plus an installer; the target machine
   needs no Python.
-- **The native module ships inside the package**: `_internal/native/cmd_native.exe`
-  (macOS: `Contents/Frameworks/native/cmd_native`). Without it the app can only run
-  read-only, so the packaging config **fails the build** when it is missing.
+- **Both native binaries ship inside the package**: `_internal/native/cmd_sign.exe` and
+  `cmd_verify.exe` (macOS: `Contents/Frameworks/native/`, with the pristine `.gz` copies
+  under `Contents/Resources/native/`). Without either one the app can only run read-only,
+  so the packaging config **fails the build** when one is missing.
 - **Qt ships as separate files** (`Qt*.dll` / `.framework` under `_internal/`) and can be
   replaced after installation, which satisfies LGPL v3's "user can replace the library".
   A single-file EXE cannot do that, so it is no longer used.
@@ -1707,21 +1782,14 @@ checksums into the release notes. Manual runs may pick another tag or a specific
 ├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium and other notices
 ├── native/                          # native module (binaries only; source not in repo)
 │   ├── LICENSE                      # proprietary: use with the app, no standalone/RE
-│   ├── cmd_native.exe               # Windows build artifact
-│   └── cmd_native                   # macOS build artifact
+│   ├── cmd_sign.exe / cmd_sign      # signer (holds the keys)
+│   └── cmd_verify.exe / cmd_verify  # verifier (public key only)
 ├── docs/images/                     # README screenshots (generated by tools/make_screenshots.py)
 │
 ├── namepicker/                      # main package
 │   ├── __init__.py
 │   ├── _init_.md                    # package file responsibilities
 │   ├── config_store.py              # config persistence (4-level recovery) + score cache
-│   ├── integrity.py                 # native hash/restore, ctime witness, tamper.log
-│   ├── guard.py                     # startup verdict (layers 2/3/5/6/7)
-│   ├── sntp.py                      # minimal NTP client (trusted time)
-│   ├── native_manifest.py           # pinned binary hashes (generated)
-│   └── native_backup/               # pristine binaries for one-click restore
-│   ├── ledger.py                    # event chain: append, anchor, shadow copy, native calls
-│   ├── native_bridge.py             # calls cmd_native (fingerprint/state/apply/verify)
 │   ├── crypto_utils.py              # AES-256-GCM and ~/.classmanage_key handling
 │   ├── log_store.py                 # points_log.dat: encrypted log + anti-rollback
 │   ├── backup_store.py              # QSettings system-level hidden backup
@@ -1739,6 +1807,13 @@ checksums into the release notes. Manual runs may pick another tag or a specific
 │   ├── about_dialog.py              # About: LICENSE/copyright/Third-party-notices
 │   ├── widgets.py                   # ElidedLabel: elide long names + tooltip
 │   ├── restart.py                   # "restart now" after a language change
+│   ├── ledger.py                    # event chain: append, anchor, shadow copy, native calls
+│   ├── native_bridge.py             # calls cmd_sign / cmd_verify (two roles)
+│   ├── integrity.py                 # native hash/restore, ctime witness, tamper.log
+│   ├── guard.py                     # startup verdict (layers 2/3/5/6/7)
+│   ├── sntp.py                      # minimal NTP client (trusted time)
+│   ├── native_manifest.py           # pinned binary hashes (generated)
+│   └── native_backup/               # pristine binaries for one-click restore
 │   ├── wipe_dialog.py               # full reset: choose parts + second confirmation
 │   ├── wipe_service.py              # clear the selected parts only
 │   ├── theme.py                     # light/dark tokens, fonts, tray icon
@@ -1810,9 +1885,9 @@ python tools/smoke_test.py             # GUI smoke: signals, layout, persistence
 python tools/group_count_stress.py     # group count + 300-round stress test
 python tools/wipe_check.py             # full reset: selection and per-part clearing
 python tools/i18n_check.py             # bilingual: default group names, restart args, long-name elision, bilingual log (GUI required)
-python tools/native_check.py           # native module: state machine, rule rejections, tamper/reorder/other-machine
+python tools/native_check.py           # both native programs: protocol, rule rejections, tamper/reorder/other-machine
 python tools/ledger_check.py           # event chain: migration, C++ scoring, rollback detection, shadow restore
-python tools/tamper_check.py           # tamper suite: swapped binary / edited record / rollback / ctime / NTP / monotonic time
+python tools/tamper_check.py           # tamper suite: swapped binary / edited record / rollback / ctime / NTP / peer check / obfuscation
 python tools/lint_check.py             # pyflakes: undefined names (once crashed the About dialog)
 ```
 
@@ -1886,14 +1961,16 @@ desktop, and it uses a temporary directory instead of your real config.
   immediate returns; call it before creating `QApplication` in new tests.
 - **Business rules live only in C++**: do not re-check "group in range / score limit" in
   the UI or in `ConfigStore`. New operations go through
-  `ConfigStore._ledger_apply(op, **kwargs)`, validated by `cmd_native apply`; a rejection
+  `ConfigStore._ledger_apply(op, **kwargs)`, signed by `cmd_sign` and re-checked by
+`cmd_verify`; a rejection
   returns `False` and the caller must drop the change.
 - **The native module source is not in the repository**: only the two binaries
-  (`cmd_native` / `cmd_native.exe`) and `LICENSE` (proprietary) are committed. The C++
+  (`cmd_sign` / `cmd_verify`, plus `.exe` on Windows) and `LICENSE` (proprietary) are
+committed. The C++
   sources, build scripts and libsodium sources stay in your private working copy;
   `.gitignore` excludes `native/src/` and `native/third_party/`.
 - **The event format is defined in C++**: Python treats `record` as opaque bytes and
-  appends them to `Data/ledger.esc`; ask `cmd_native state` for the state instead of
+  appends them to `Data/ledger.esc`; ask `cmd_verify state` for the state instead of
   parsing events.
 - **Keep the limits in sync**: `MIN_GROUPS`/`MAX_GROUPS` in C++ and
   `MIN_GROUP_COUNT`/`MAX_GROUP_COUNT` in `config_store` must match.
@@ -2087,7 +2164,8 @@ limitations under the License.
 - There is no warranty.
 
 **The native module uses a different license:** the compiled artifacts under `native/`
-(`cmd_native.exe` / `cmd_native`) are **not** Apache-2.0. They are proprietary and may
+(`cmd_sign` / `cmd_verify`, Windows `.exe` included) are **not** Apache-2.0. They are
+proprietary and may
 only be used together with this application; standalone distribution, reverse
 engineering and extracting their algorithms or keys are prohibited. See
 [`native/LICENSE`](native/LICENSE).

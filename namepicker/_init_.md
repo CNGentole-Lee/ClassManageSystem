@@ -2,17 +2,55 @@
 
 > 程序入口为同级目录下的 `main.py`。`main.py` 负责组装下列组件、连接 Qt 信号，并进入事件循环。本文件仅包含说明，不含任何可执行代码。
 
+## 零、先读这一节：两个闭源程序与七道检查
+
+分数的权威来源是**事件链**（`Data/ledger.esc`），不是 `config.dat`。事件链由两个
+闭源程序共同把关，职责刻意不对称：
+
+| 程序 | 持有 | 能做什么 | 不能做什么 |
+|---|---|---|---|
+| `cmd_sign` | 密钥（加密钥 + 签名私钥） | 签名、加密、解密、v1→v2 迁移 | **不能**决定一条记录是否被接受 |
+| `cmd_verify` | **只有公钥** | 验签、重放、规则判定 | **不能**伪造签名 |
+
+写入是两段式的：`cmd_sign` 产生记录 → `cmd_verify` 复核整条链 → 通过才落盘。
+换掉签名器，它签不出验证器认的记录；换掉验证器，会被哈希清单拦住。
+
+### 七道独立检查 + 两程序互校
+
+```text
+1 签名        改记录            → BAD_SIG
+2 哈希清单    换程序            → HASH_MISMATCH，可一键还原
+3 锚点        链变短/头不符/状态不符/公钥被换
+4 单调时间    时间回退          → TIME_WENT_BACK
+5 ctime       拷回旧文件        → CTIME_AHEAD
+6 NTP         整盘镜像/改系统时间 → 联网后暴露
+7 归档        异常分级写入 tamper.log，不打断上课
+
+互校：cmd_sign ↔ cmd_verify 共享同一构建令牌
+      任意一方被替换 → 另一方拒绝工作（PEER_MISMATCH）
+```
+
+前五道离线可用，第六道需要网络，第七道只记录、不阻断。
+
+**边界**：这些检查防的是“替换程序 / 篡改数据 / 恢复旧数据”，
+**不防“修改源码”和“整盘镜像”**——任何本地程序都防不住这两件事。
+
+---
+
 ## 数据流
 
 数据流为单向，按以下顺序阅读：
 
 ```text
-文件（config.dat 加密主数据 / config.ini 查看副本 / points_log.dat 加密操作日志 / stats.ini）
-    ↓ 读取
+文件（Data/ledger.esc 事件链 / config.dat 加密缓存 / stats.ini 长期次数）
+    ↓ 校验与重放（cmd_sign 解密 → cmd_verify 验签+重放）
 逻辑层（NameEngine 决定抽取对象）
     ↓ Qt 信号
 界面层（弹窗 / 悬浮球 / 面板展示结果）
 ```
+
+`config.ini` 只是给人看的只写副本，程序永不读取；`points_log.dat` 仍是独立的
+加密操作日志，不参与分数裁决。
 
 ---
 
@@ -23,7 +61,10 @@
 ### `config_store.py`
 
 加密读写程序所在目录下的 `config.dat`（明文 `config.ini` 只是给人看的副本，
-程序永不读取）：
+程序永不读取）。
+
+**注意**：`config.dat` 里的分数是**缓存**，权威来源是 `Data/ledger.esc`。
+启动时先验链、再重放，用链上的结果覆盖缓存；链不可信时不会采用链上数据。
 
 - `[meta]`：应用名称、最后修改时间。
 - `[points]`：小组数量、每个小组的名称与分数。
@@ -58,7 +99,7 @@ AES-256-GCM 加解密与密钥管理：`encrypt()` / `decrypt()`，
 
 ### `backup_store.py`
 
-用 PyQt5 自带的 `QSettings` 存系统级隐蔽备份，一套代码三平台通用
+用 Qt（PySide6）自带的 `QSettings` 存系统级隐蔽备份，一套代码三平台通用
 （Windows 注册表 / macOS plist / Linux conf），因此**不需要** `import winreg`，
 macOS 下不会 `ModuleNotFoundError`。所有失败静默处理。
 
@@ -89,6 +130,73 @@ macOS 下不会 `ModuleNotFoundError`。所有失败静默处理。
 - `save()` 是合并而非覆盖：更换花名册不会清除上一个班级或名单的累计记录。
 - 次数为 0 时删除整行，而不是写入 `name = 0`，避免为 99 人名单留下 99 行冗余记录。
 - `clear()` 执行完全清空，只在托盘菜单的“彻底重置”中调用。
+
+---
+
+### `ledger.py`
+
+事件链：分数与组名的唯一权威来源。
+
+- 记录格式：`seq | gen | nonce | ct_len | plain_hash | ct | sig`，
+  其中 `plain_hash` 是被签名覆盖的明文 BLAKE2b-256，让验证器**不需要解密**也能
+  确认签名方没有在明文上撒谎。
+- 明文头含**单调时间戳**：每条 `max(现在, 上一条+1)`，系统时钟被调回也不会倒退。
+- 写入是两段式：`cmd_sign.apply()` 出记录 → `cmd_verify.state()` 复核 →
+  通过才追加到 `Data/ledger.esc`。任一步失败都不落盘。
+- 锚点 `Data/anchor.json` 与隐藏副本记录 `seq/head/ts/digest/pubkey`；
+  `anchor_problems()` 负责比对，返回 `SHORTER` / `HEAD_MISMATCH` /
+  `TIME_ROLLBACK` / `STATE_MISMATCH` / `PUBKEY_MISMATCH`。
+- 安全副本：追加时同步写 `~/.cache/classmanage/<哈希>/ledger.esc`，
+  主链变短或损坏时用 `restore_from_shadow()` 自愈。
+- v1→v2 迁移：首次启动检测到旧链时调用 `cmd_sign migrate` 重签，
+  原文件备份为 `ledger.esc.v1.bak`，并写 `Data/format` 标记。
+
+### `native_bridge.py`
+
+两个闭源程序的唯一调用入口，按角色定位二进制（`sign` / `verify`）。
+
+- `fingerprint()` / `identity()`：机器指纹与公钥，只有签名器能提供。
+- `apply()`：签名器产生记录与明文。
+- `dump()`：签名器解密整条链，返回明文（供验证器重放）。
+- `migrate()`：v1 链重签为 v2。
+- `state()` / `verify()`：验证器用公钥验签并重放，不需要密钥。
+- Windows 下用 `CREATE_NO_WINDOW`，避免每次调用弹出控制台窗口。
+
+### `integrity.py`
+
+文件层面的完整性：
+
+- `check_native(path, role)`：SHA-256 与 `native_manifest.py` 的钉死值比对，
+  失败原因分 `MISSING` / `SIZE` / `HASH_MISMATCH`。
+- `restore_native()`：从随包 `.gz` 副本解出原始二进制并复验。
+- `check_ctime()`：文件 ctime 与最后事件时间差超过 10 分钟判为“被整体替换”；
+  无法读取 ctime 的文件系统降级为“未知”，不误报。
+- `append_tamper_log()`：异常分级写入 `tamper.log`（独立文件，不进链）。
+
+### `guard.py`
+
+启动判定，把上面各项组合成一个结论：
+
+- `check_both()`：检查两个二进制，能还原就还原。
+- `network_time()`：查 NTP，失败静默跳过，绝不阻断启动。
+- `evaluate()`：综合锚点、ctime、NTP，返回 `info` / `warn` / `critical`。
+- `describe()`：把内部错误码翻译成老师能看懂的一句话。
+
+### `sntp.py`
+
+极简 NTP 客户端（RFC 5905 子集）：
+
+- UDP 123，一次查询约 50~120 ms，断网 0.6 s 超时。
+- 多服务器取 RTT 最小的一份；`t1/t4` 用 `perf_counter` 计算间隔，
+  避免查询期间系统时间被改动影响结果。
+- 返回 `offset` / `rtt` / `samples` / `spread`，由 `guard` 决定如何判定。
+
+### `native_manifest.py` / `native_backup/`
+
+- `native_manifest.py`：四个二进制（两平台 × 两角色）的 SHA-256 与大小，
+  由 `tools/make_native_manifest.py` 生成，**不要手改**。
+- `native_backup/`：对应的 `.gz` 原始副本，是一键还原的来源。
+  打包时会与二进制一起放进 `native/` 目录（macOS 在 `Resources/native/`）。
 
 ---
 
@@ -230,6 +338,53 @@ macOS 下不会 `ModuleNotFoundError`。所有失败静默处理。
 ## 五、`tools/` 下的测试程序
 
 这些程序不属于主程序，仅用于验证。修改核心逻辑后，应运行相关测试。
+
+### 一键入口
+
+#### `run_all_tests.py`
+
+一次跑完全部测试（默认 13~15 秒）：自动寻找解释器、隔离设置、逐项限时，
+任一失败即汇总报告。CI 与本地都用它。
+
+### 安全 / 篡改专项
+
+#### `tamper_check.py`（24 项）
+
+篡改专项。覆盖：翻转/截断二进制、从备份还原、改记录、删记录、重排、
+回滚旧链、锚点时间倒退、digest 不符、公钥不符、ctime 异常、NTP 离线、
+NTP 时间戳往返精度、单调时间戳递增、**二进制不得泄漏协议字符串**、
+**换掉 peer 后另一方拒绝工作**。
+
+#### `ledger_check.py`（22 项）
+
+事件链：迁移、由 C++ 改分、回档检测、安全副本恢复、v1→v2 重签。
+
+#### `native_check.py`（20 项）
+
+两个原生程序的协议层：签名器出记录、验证器重放、单字节篡改被拒、
+跨机器指纹无法通过。
+
+#### `lint_check.py`
+
+pyflakes 静态检查，把“未定义名字”设为失败。它抓到过一次真实崩溃：
+`about_dialog` 引用了已删除的常量，只有在第三方声明缺失时才触发。
+
+#### `packaging_check.py`
+
+打包一致性：spec / 安装脚本 / CI / 清单哈希 / 备份文件 / README 的约定，
+包括“release 不许执行 macOS 二进制”这类回归。
+
+### 工具
+
+#### `make_native_manifest.py`
+
+重编原生程序后重新生成 `native_manifest.py` 与 `native_backup/*.gz`。
+**忘了这一步，启动会报 `HASH_MISMATCH`**（这是设计如此：宁可报错也不静默）。
+
+#### `obfuscate_source.py`
+
+构建期把字符串字面量包成 `OBF("...")`，并自动补 `#include "obf.hpp"`。
+只在构建目录里生成，不改动仓库源码。
 
 ### 功能回归
 
