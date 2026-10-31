@@ -8,8 +8,8 @@
 # 默认就是 UTF-8，声明一下可以避免任何工具按系统 ANSI 代码页（中文 Windows 是 GBK）去解。
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 0, 0, 0),
-    prodvers=(2, 0, 0, 0),
+    filevers=(3, 0, 0, 0),
+    prodvers=(3, 0, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -25,12 +25,12 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', '班级多用教学辅助终端'),
             StringStruct('FileDescription', '班级多用教学辅助终端（随机点名 + 小组积分）'),
-            StringStruct('FileVersion', '2.0.0.0'),
+            StringStruct('FileVersion', '3.0.0.0'),
             StringStruct('InternalName', 'ClassManageSystem'),
             StringStruct('LegalCopyright', 'See LICENSE'),
             StringStruct('OriginalFilename', 'ClassManageSystem.exe'),
             StringStruct('ProductName', '班级多用教学辅助终端'),
-            StringStruct('ProductVersion', '2.0.0.0'),
+            StringStruct('ProductVersion', '3.0.0.0'),
           ]
         )
       ]
