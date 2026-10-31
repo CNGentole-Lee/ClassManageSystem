@@ -109,6 +109,23 @@ def main() -> int:
     check("installer version is injected at build time",
           "#ifndef MyAppVersion" in iss and "MyAppVersion" in iss)
 
+    # ---- release workflow -------------------------------------------
+    release = read(".github/workflows/release.yml")
+    check("release workflow exists", bool(release))
+    check("release workflow triggers after the build",
+          "workflow_run" in release and "build-windows-installer" in release)
+    check("release workflow can also be started manually",
+          "workflow_dispatch" in release)
+    check("release defaults to tag V3.0", '"V3.0"' in release)
+    check("release downloads the build artifact by name",
+          "ClassManageSystem-windows-x64" in release)
+    check("release extracts the portable zip and checks contents",
+          "unzip" in release and "cmd_native.exe" in release)
+    check("release has permission to write releases",
+          "contents: write" in release)
+    check("release uploads installer and portable zip",
+          "*.exe" in release and "*.zip" in release)
+
     # ---- CI ---------------------------------------------------------
     check("windows spec builds a directory (ONEFILE = False)",
           "ONEFILE = False" in win_spec, "installer requires the onedir layout")

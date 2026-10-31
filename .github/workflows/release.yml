@@ -1,0 +1,142 @@
+name: release
+
+# 把 build-windows-installer 的产物发到 GitHub Release（默认标签 V3.0）
+#
+# 为什么不复用 build 工作流：
+#   * build 只负责「能跑、能出包」，失败就停；
+#   * release 只负责「把已验证的产物发出去」，可以重跑、可以补发，
+#     不会因为发布失败而重跑一遍 15 分钟的打包。
+#
+# 触发方式：
+#   1) build-windows-installer 成功后自动触发（workflow_run）
+#   2) 手动：Actions → release → Run workflow（可指定 tag / 运行 ID）
+#
+# 产物（Actions 里的 artifact 是 zip，这里会先下载并解压）：
+#   ClassManageSystem-<版本>-Setup.exe      安装程序
+#   ClassManageSystem-<版本>-portable.zip   便携版
+
+on:
+  workflow_run:
+    workflows: ["build-windows-installer"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag"
+        required: true
+        default: "V3.0"
+      run_id:
+        description: "build-windows-installer 的运行 ID（留空则用最近一次成功运行）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write        # 创建 release / 上传资产
+  actions: read          # 跨运行下载 artifact
+
+jobs:
+  publish:
+    # 只有构建成功才发布；手动触发时不看结论
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve run id and tag
+        id: meta
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            RUN_ID="${{ inputs.run_id }}"
+          else
+            TAG="V3.0"
+            RUN_ID="${{ github.event.workflow_run.id }}"
+          fi
+
+          if [ -z "$RUN_ID" ]; then
+            echo "no run id given; looking for the latest successful build"
+            RUN_ID=$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow build-windows.yml \
+              --status success --limit 1 \
+              --json databaseId --jq '.[0].databaseId')
+          fi
+          [ -n "$RUN_ID" ] || { echo "::error::no successful build run found"; exit 1; }
+
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "using run $RUN_ID, tag $TAG"
+
+      - name: Download build artifacts (and extract)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          # gh run download 会把 artifact 的 zip 解压到目标目录
+          gh run download "${{ steps.meta.outputs.run_id }}" \
+            --repo "${{ github.repository }}" \
+            --name ClassManageSystem-windows-x64 \
+            --dir artifacts
+          echo "downloaded:"
+          find artifacts -maxdepth 2 -type f -printf '  %p (%s bytes)\n' | sort
+
+      - name: Verify artifacts
+        run: |
+          set -euo pipefail
+          setup=$(find artifacts -maxdepth 2 -name '*Setup.exe' | head -n1)
+          portable=$(find artifacts -maxdepth 2 -name '*portable.zip' | head -n1)
+          [ -n "$setup" ] || { echo "::error::Setup.exe not found in artifacts"; exit 1; }
+          [ -n "$portable" ] || { echo "::error::portable.zip not found in artifacts"; exit 1; }
+
+          # 便携版必须能解开，且里面要有主程序和原生模块
+          mkdir -p portable-check
+          unzip -q "$portable" -d portable-check
+          exe=$(find portable-check -name ClassManageSystem.exe | head -n1)
+          native=$(find portable-check -name cmd_native.exe | head -n1)
+          [ -n "$exe" ] || { echo "::error::ClassManageSystem.exe missing in portable.zip"; exit 1; }
+          [ -n "$native" ] || { echo "::error::cmd_native.exe missing in portable.zip"; exit 1; }
+          echo "portable.zip OK: main exe + native module present"
+
+          {
+            echo "### SHA-256"
+            echo '```'
+            sha256sum "$setup" "$portable"
+            echo '```'
+          } > checksums.md
+          cat checksums.md
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # 版本号从源码读取，写进 release 标题
+          VER=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' namepicker/about_dialog.py | head -n1)
+          TITLE="ClassManageSystem ${VER}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists; updating notes"
+            gh release edit "$TAG" --title "$TITLE" --notes-file checksums.md
+          else
+            echo "creating release $TAG"
+            gh release create "$TAG" \
+              --title "$TITLE" \
+              --notes-file checksums.md \
+              --target "${{ github.event.repository.default_branch }}"
+          fi
+
+          # 只上传最终产物；artifact 目录里的中间文件不发布
+          gh release upload "$TAG" artifacts/*.exe artifacts/*.zip --clobber
+          echo "uploaded:"
+          gh release view "$TAG" --json assets --jq '.assets[].name'
