@@ -332,6 +332,8 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | `cmd_verify` | **只有公钥** | 验签、重放、规则判定 |
 
 换掉签名器 → 它签不出验证器认的记录；换掉验证器 → 被哈希清单拦住。
+两个二进制还**互为校验**：同一次构建会给它们注入同一个随机令牌，
+任何一方被替换（令牌不同），另一方直接拒绝工作（`PEER_MISMATCH`）。
 验证器里不含盐、不含私钥，**逆向它拿不到能伪造的东西**。
 
 ### 一、事件链（分数）
@@ -1343,7 +1345,9 @@ the config file only caches them.
 | `cmd_verify` | **public key only** | verify, replay, rules |
 
 Replacing the signer cannot produce records the verifier accepts; replacing the verifier
-is caught by the hash manifest. The verifier contains **no salt and no private key**, so
+is caught by the hash manifest. The two binaries also **check each other**: a build
+injects the same random token into both, so replacing either one makes the other refuse
+to work (`PEER_MISMATCH`). The verifier contains **no salt and no private key**, so
 reverse-engineering it yields nothing forgeable.
 
 ### 1. Event chain (scores)

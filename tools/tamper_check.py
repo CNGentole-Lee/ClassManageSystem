@@ -27,6 +27,7 @@ import gzip
 import hashlib
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -103,6 +104,22 @@ def main() -> int:
     open(fake, "wb").write(pristine)
     check("restored copy matches the pinned hash",
           hashlib.sha256(pristine).hexdigest() == info[1])
+
+    # ---- 3b. cross-token: 换掉一个二进制，另一个拒绝工作 -------------
+    fake_peer = os.path.join(work, "fake_peer")
+    with open(fake_peer, "wb") as fh:
+        fh.write(b"not a native module")
+    proc = subprocess.run([real, "identity", "--fp", "00" * 32,
+                           "--peer", fake_peer],
+                          capture_output=True, text=True, timeout=10)
+    check("signer rejects a peer without the build token",
+          "PEER_MISMATCH" in (proc.stdout + proc.stderr))
+
+    vpath = nb.native_path("verify")
+    proc = subprocess.run([vpath, "state", "--pubkey", "AAAA", "--peer", fake_peer],
+                          input="", capture_output=True, text=True, timeout=10)
+    check("verifier rejects a peer without the build token",
+          "PEER_MISMATCH" in (proc.stdout + proc.stderr))
 
     # ---- 4-6. chain integrity ----------------------------------------
     chain = fresh_chain()
