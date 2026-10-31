@@ -40,6 +40,17 @@ def check(label, ok, detail=""):
         failed.append(label)
 
 
+def _tracked_native_files() -> set[str]:
+    """仓库里 native/ 下实际被跟踪的文件名（不含子目录）。"""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "ls-files", "native/"], cwd=_ROOT,
+                             capture_output=True, text=True, timeout=20)
+        return {line.split("/")[-1] for line in out.stdout.splitlines() if line.strip()}
+    except Exception:                                  # noqa: BLE001
+        return set()
+
+
 def read(rel: str) -> str:
     path = os.path.join(_ROOT, rel)
     try:
@@ -75,6 +86,12 @@ def main() -> int:
     # ---- native binaries -------------------------------------------
     check("macOS native binary exists", os.path.isfile(os.path.join(_ROOT, "native", "cmd_native")))
     check("Windows native binary exists", os.path.isfile(os.path.join(_ROOT, "native", "cmd_native.exe")))
+    # 闭源要求：仓库里只能有二进制与 native/LICENSE，不能有构建脚本或源码
+    tracked = _tracked_native_files()
+    check("native/ only ships binaries and the license",
+          tracked == {"LICENSE", "cmd_native", "cmd_native.exe"}, str(sorted(tracked)))
+    check("native build scripts are not tracked",
+          not any(t.endswith(".sh") or t.endswith(".txt") for t in tracked), str(sorted(tracked)))
     check("native binaries are committed (not ignored)",
           "native/cmd_native" not in read(".gitignore").replace("# 注意：发布用的二进制", ""))
 
@@ -109,6 +126,15 @@ def main() -> int:
           "/DRepoRoot=$root" in workflow and "GITHUB_WORKSPACE" in workflow)
     check("local installer script exists",
           os.path.isfile(os.path.join(_ROOT, "packaging", "windows", "make_installer.bat")))
+
+    build_bat = read("packaging/windows/build.bat")
+    check("build.bat checks the directory package (not the old single exe)",
+          "dist\\ClassManageSystem\\ClassManageSystem.exe" in build_bat)
+    check("build.bat refuses to ship without the native module",
+          "_internal\\native\\cmd_native.exe" in build_bat)
+    check("build.bat runs the chain tests", "ledger_check" in build_bat)
+    check("build.bat builds the installer as the last step",
+          "make_installer.bat" in build_bat)
     check("workflow uploads the installer",
           "Setup.exe" in workflow and "upload-artifact" in workflow)
     check("workflow builds a portable zip", "portable.zip" in workflow)
