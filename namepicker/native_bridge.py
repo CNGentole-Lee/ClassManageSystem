@@ -72,6 +72,19 @@ def available() -> bool:
         return False
 
 
+def _peer_args(role: str) -> list[str]:
+    """显式告诉原生程序“另一个程序在哪”。
+
+    C++ 侧虽然能从 argv[0] 推断，但 Windows 上要补 .exe、打包后路径也可能
+    不同；由 Python 传绝对路径最稳。
+    """
+    other = "verify" if role == "sign" else "sign"
+    try:
+        return ["--peer", native_path(other)]
+    except NativeMissing:
+        return []
+
+
 def _run(args: list[str], stdin_text: str | None = None, timeout: float = 20.0,
          role: str = "sign") -> dict:
     exe = native_path(role)
@@ -134,7 +147,7 @@ def reset_cache() -> None:
 
 def identity() -> bytes:
     """原生模块的 Ed25519 公钥（32 字节）。首启时钉进锚点。"""
-    data = _run(["identity", "--fp", fingerprint()], timeout=5)
+    data = _run(["identity", "--fp", fingerprint()] + _peer_args("sign"), timeout=5)
     pub = base64.b64decode(data.get("pubkey", ""))
     if len(pub) != 32:
         raise NativeError("bad pubkey length")
@@ -147,7 +160,8 @@ def state(records: list[bytes], plains: list[bytes]) -> dict:
         base64.b64encode(r).decode("ascii") + "," + base64.b64encode(p).decode("ascii")
         for r, p in zip(records, plains))
     pub = base64.b64encode(identity()).decode("ascii")
-    return _run(["state", "--pubkey", pub], stdin_text=pairs, timeout=30, role="verify")
+    return _run(["state", "--pubkey", pub] + _peer_args("verify"),
+                stdin_text=pairs, timeout=30, role="verify")
 
 
 def apply(records: list[bytes], op: str, **kwargs) -> dict:
@@ -155,7 +169,7 @@ def apply(records: list[bytes], op: str, **kwargs) -> dict:
 
     签名器只负责产生签名数据；是否采纳由验证器复核（见 ledger）。
     """
-    args = ["apply", "--fp", fingerprint(), "--op", op]
+    args = ["apply", "--fp", fingerprint(), "--op", op] + _peer_args("sign")
     for key, value in kwargs.items():
         args += ["--" + key.replace("_", "-"), str(value)]
     lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
@@ -168,7 +182,8 @@ def apply(records: list[bytes], op: str, **kwargs) -> dict:
 def dump(records: list[bytes]) -> dict:
     """让签名器解密整条链，返回 plains/state/ts/head（供验证器使用）。"""
     lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    data = _run(["dump", "--fp", fingerprint()], stdin_text=lines, timeout=30, role="sign")
+    data = _run(["dump", "--fp", fingerprint()] + _peer_args("sign"),
+                stdin_text=lines, timeout=30, role="sign")
     if data.get("ok") is not True:
         raise NativeError(str(data.get("error", "DUMP_FAILED")))
     return data
@@ -177,7 +192,8 @@ def dump(records: list[bytes]) -> dict:
 def migrate(records: list[bytes]) -> dict:
     """把 v1 链重签成 v2（迁移方案 A）。"""
     lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    data = _run(["migrate", "--fp", fingerprint()], stdin_text=lines, timeout=60, role="sign")
+    data = _run(["migrate", "--fp", fingerprint()] + _peer_args("sign"),
+                stdin_text=lines, timeout=60, role="sign")
     if data.get("ok") is not True:
         raise NativeError(str(data.get("error", "MIGRATE_FAILED")))
     return data
@@ -192,7 +208,8 @@ def verify(records: list[bytes], plains: list[bytes],
         base64.b64encode(r).decode("ascii") + "," + base64.b64encode(p).decode("ascii")
         for r, p in zip(records, plains))
     pub = base64.b64encode(identity()).decode("ascii")
-    data = _run(["verify", "--pubkey", pub], stdin_text=pairs, timeout=30, role="verify")
+    data = _run(["verify", "--pubkey", pub] + _peer_args("verify"),
+                stdin_text=pairs, timeout=30, role="verify")
     if data.get("ok") is True:
         return True, base64.b64decode(data.get("head", "")), ""
     return False, b"", str(data.get("error", "UNKNOWN"))

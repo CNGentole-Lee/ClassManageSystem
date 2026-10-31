@@ -648,7 +648,7 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 |---|---|---|
 | `build-windows.yml` → `build-windows-installer` | 测试 → PyInstaller 目录包 → Inno Setup → 上传 artifact | push / tag / 手动 |
 | `release.yml` → `release` | **同时**下载 Windows 与 macOS 的 artifact（按同一提交），校验后一起发到 Release | 两个构建都成功后自动 / 手动 |
-| `build-macos.yml` → `build-macos-app` | 在 macos-14（arm64）跑测试 → 打包 .app/DMG → 校验包内二进制哈希、备份文件 → 冒烟测试（含“换掉 verify 自动还原”） | push / PR / 手动 |
+| `build-macos.yml` → `build-macos-app` | 在 macos-15（arm64）跑测试 → 打包 .app/DMG → 校验包内二进制哈希、备份文件 → 冒烟测试（含“换掉 verify 自动还原”） | push / PR / 手动 |
 
 `release` 默认发布到标签 **`V3.0`**：按同一个提交取两个平台的 artifact，
 校验便携版里的主程序与两个原生模块、**.app 里二进制的哈希**，再上传
@@ -1740,7 +1740,7 @@ The Windows installer is produced by two CI workflows:
 |---|---|---|
 | `build-windows.yml` → `build-windows-installer` | tests → PyInstaller onedir → Inno Setup → upload artifact | push / tag / manual |
 | `release.yml` → `release` | downloads **both** the Windows and macOS artifacts for the same commit, verifies them, publishes them together | after both builds succeed / manual |
-| `build-macos.yml` → `build-macos-app` | on macos-14 (arm64): tests → package .app/DMG → verify bundled binary hashes and backups → smoke test (including "replace verify → auto restore") | push / PR / manual |
+| `build-macos.yml` → `build-macos-app` | on macos-15 (arm64): tests → package .app/DMG → verify bundled binary hashes and backups → smoke test (including "replace verify → auto restore") | push / PR / manual |
 
 `release` publishes to tag **`V3.0`** by default: it takes both platforms' artifacts for
 the same commit, verifies the portable zip's main executable and both native binaries,

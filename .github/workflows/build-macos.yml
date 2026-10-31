@@ -2,9 +2,10 @@ name: build-macos-app
 
 # 在 macOS 上打包 .app / DMG，并验证原生模块与备份确实进了包。
 #
-# 为什么用 macos-14：仓库里的 cmd_sign / cmd_verify 是 arm64 构建，
-# macos-14 的 runner 就是 arm64，可以直接跑 selftest；换成 macos-13
-# （x86_64）会因为架构不符而无法执行。
+# 为什么用 macos-15：仓库里的 cmd_sign / cmd_verify 是 arm64 构建，
+# macos-15 的 runner 是 arm64，可以直接跑 selftest。
+# （macos-14 已进入退役/限流（brownout），不要再指回去；
+#   需要 Intel 时用 macos-15-intel，但那样跑不了这些二进制。）
 #
 # 本工作流只负责“能打、能跑、包内容正确”，不做公证（notarization）：
 # 那需要 Apple Developer 证书与密钥，属于后续可选项。
@@ -32,11 +33,18 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify the runner is arm64
+        run: |
+          arch="$(uname -m)"
+          echo "runner arch: $arch"
+          [ "$arch" = "arm64" ] || {
+            echo "::error::this job needs an arm64 runner; got $arch"; exit 1; }
 
       - uses: actions/setup-python@v5
         with:

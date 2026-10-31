@@ -53,6 +53,13 @@ def main() -> int:
     print(f"verify: {vexe}")
     check("sign binary exists", os.path.isfile(exe))
     check("verify binary exists", os.path.isfile(vexe))
+
+    # 两个二进制必须来自同一次构建（共享令牌），否则任何调用都会 PEER_MISMATCH
+    try:
+        nb.identity()
+        check("signer and verifier share one build token", True)
+    except nb.NativeError as exc:
+        check("signer and verifier share one build token", False, str(exc))
     check("selftest passes", nb.selftest())
 
     fp = nb.fingerprint()
