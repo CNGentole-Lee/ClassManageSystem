@@ -157,15 +157,34 @@ jobs:
       - name: Verify macOS artifacts
         run: |
           set -euo pipefail
+          # 注意：release 跑在 ubuntu 上，**不能执行** macOS 二进制。
+          # 这里只做文件与哈希校验；真正的 selftest 在 build-macos.yml 里跑过。
           app=$(find artifacts/macos -maxdepth 2 -name 'ClassManageSystem.app' -type d | head -n1)
           [ -n "$app" ] || { echo "::error::ClassManageSystem.app not found"; exit 1; }
 
-          for bin in cmd_sign cmd_verify; do
-            path="$app/Contents/Frameworks/native/$bin"
-            [ -f "$path" ] || { echo "::error::$bin missing in .app"; exit 1; }
-            chmod +x "$path" || true
-            "$path" selftest || { echo "::error::$bin selftest failed"; exit 1; }
-          done
+          python3 - "$app" <<'PY'
+          import hashlib, pathlib, re, sys
+
+          app = pathlib.Path(sys.argv[1])
+          manifest = pathlib.Path("namepicker/native_manifest.py").read_text(encoding="utf-8")
+          pinned = set(re.findall(r"[0-9a-f]{64}", manifest))
+
+          bad = []
+          for name in ("cmd_sign", "cmd_verify"):
+              path = app / "Contents" / "Frameworks" / "native" / name
+              if not path.is_file():
+                  bad.append(f"{name}: missing in .app")
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              if digest not in pinned:
+                  bad.append(f"{name}: bundled hash is not in the pinned manifest")
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print("macOS native binaries match the pinned manifest")
+          PY
+
+          # 一键还原的原始副本必须随包
           ls "$app/Contents/Resources/native/"*.gz >/dev/null 2>&1 || {
             echo "::error::native backups missing from .app"; exit 1; }
 
@@ -174,7 +193,7 @@ jobs:
             installer=$(find artifacts/macos -maxdepth 1 -name '*macos*.zip' | head -n1)
           fi
           [ -n "$installer" ] || { echo "::error::no .dmg or macOS .zip produced"; exit 1; }
-          echo "macOS OK: .app with both binaries + backups; installer: $(basename "$installer")"
+          echo "macOS OK: both binaries + backups present; installer: $(basename "$installer")"
 
       - name: Build checksum notes
         run: |
