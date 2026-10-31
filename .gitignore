@@ -260,7 +260,10 @@ native/*.c
 native/*.cpp
 native/*.h
 native/*.o
-# 注意：发布用的二进制（cmd_native / cmd_native.exe）要提交，供 CI 打包
+# 构建脚本与构建定义也不公开（闭源的一部分）
+native/CMakeLists.txt
+native/build_*.sh
+# 注意：发布用的二进制（cmd_native / cmd_native.exe）与 native/LICENSE 要提交，供 CI 打包
 
 # 运行时数据（事件链、备份、日志）：不进仓库
 Data/
@@ -281,3 +284,6 @@ sw2_*/
 
 # 手动上传用的临时副本目录
 native_副本*/
+
+# 本地保留的闭源构建脚本备份
+.private-native/

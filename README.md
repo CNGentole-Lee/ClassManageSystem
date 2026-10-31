@@ -611,9 +611,6 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 ├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium 等第三方声明
 ├── native/                          # 原生模块（只发布二进制；源码不进仓库）
 │   ├── LICENSE                      # 专有许可：随程序使用，禁止单独分发/逆向
-│   ├── CMakeLists.txt               # 构建定义（源码在 native/src/，已 gitignore）
-│   ├── build_macos.sh               # clang + 静态 libsodium，strip + ad-hoc 签名
-│   ├── build_windows.sh             # zig 交叉编译（无需 MSVC / 管理员）
 │   ├── cmd_native.exe               # Windows 构建产物
 │   └── cmd_native                   # macOS 构建产物
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
@@ -777,9 +774,9 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
 - **业务规则只在 C++ 里**：不要在图界面或 `ConfigStore` 里再判断“组号是否合法 /
   分数是否超限”。新增操作走 `ConfigStore._ledger_apply(op, **kwargs)`，
   由 `cmd_native apply` 校验；被拒绝时返回 `False`，调用方必须放弃本次改动。
-- **改完 C++ 一定要重编两个平台**：`native/build_macos.sh` 与
-  `native/build_windows.sh`（zig 交叉编译，无需 MSVC / 管理员）。
-  libsodium 源码放在 `native/third_party/`（已 gitignore）。
+- **原生模块的源码不在仓库里**：`native/` 只提交 `cmd_native` / `cmd_native.exe`
+  两个二进制与 `LICENSE`（专有许可）。C++ 源码、构建脚本、libsodium 源码都只在你
+  本地私有目录，`.gitignore` 已排除 `native/src/`、`native/third_party/`。
 - **事件格式由 C++ 定义**：Python 只把 `record` 当不透明字节追加到
   `Data/ledger.esc`，不要解析；需要状态就调 `cmd_native state`。
 - **数值上限要对齐**：C++ 的 `MIN_GROUPS/MAX_GROUPS` 与 `config_store` 的
@@ -937,9 +934,6 @@ limitations under the License.
 因此 Qt 部分要求**动态链接并允许用户替换 Qt 库**（安装包以目录形态分发即满足）。
 其余依赖：shiboken6（LGPL v3）、cryptography（Apache-2.0 OR BSD-3-Clause）、
 cffi（MIT-0）、pycparser（BSD-3-Clause）、libsodium（ISC）。
-
-**历史版本：** 3.0.0 之前的版本（含 2.0.0）以 GPL-3.0 发布，收到过那些版本的
-人仍可继续按 GPL-3.0 使用它们（许可证不可收回）；自 **3.0.0** 起改为 Apache-2.0。
 
 ---
 
@@ -1803,9 +1797,10 @@ desktop, and it uses a temporary directory instead of your real config.
   the UI or in `ConfigStore`. New operations go through
   `ConfigStore._ledger_apply(op, **kwargs)`, validated by `cmd_native apply`; a rejection
   returns `False` and the caller must drop the change.
-- **Rebuild both native binaries after touching the C++**: `native/build_macos.sh` and
-  `native/build_windows.sh` (zig cross-compile, no MSVC or admin rights needed). The
-  libsodium sources live in `native/third_party/` (git-ignored).
+- **The native module source is not in the repository**: only the two binaries
+  (`cmd_native` / `cmd_native.exe`) and `LICENSE` (proprietary) are committed. The C++
+  sources, build scripts and libsodium sources stay in your private working copy;
+  `.gitignore` excludes `native/src/` and `native/third_party/`.
 - **The event format is defined in C++**: Python treats `record` as opaque bytes and
   appends them to `Data/ledger.esc`; ask `cmd_native state` for the state instead of
   parsing events.
@@ -2011,10 +2006,6 @@ engineering and extracting their algorithms or keys are prohibited. See
 libraries**, which the directory-style installer satisfies. The other dependencies are
 shiboken6 (LGPL v3), cryptography (Apache-2.0 OR BSD-3-Clause), cffi (MIT-0),
 pycparser (BSD-3-Clause) and libsodium (ISC).
-
-**Historical versions:** versions before 3.0.0 (including 2.0.0) were released under
-GPL-3.0; anyone who received those versions may keep using them under GPL-3.0 (licenses
-are irrevocable). Starting with **3.0.0** the license is Apache-2.0.
 
 ---
 
