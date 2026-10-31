@@ -38,6 +38,7 @@ ROOT = os.path.dirname(HERE)
 
 #: 按「快 → 慢」排序；平台专属的放在最后
 TESTS = [
+    ("preflight_check", 30),     # 仓库文件是否齐全（手工上传最容易漏）
     ("config_check", 60),
     ("wipe_check", 60),
     ("i18n_check", 90),
