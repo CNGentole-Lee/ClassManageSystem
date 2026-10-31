@@ -121,6 +121,15 @@ def main() -> int:
     check("verifier rejects a peer without the build token",
           "PEER_MISMATCH" in (proc.stdout + proc.stderr))
 
+    # ---- 3c. 混淆：协议字符串不应以明文出现 -------------------------
+    leaked = []
+    for path, label in ((real, "sign"), (nb.native_path("verify"), "verify")):
+        raw = open(path, "rb").read()
+        for word in (b"BAD_SIG", b"fingerprint", b"PEER_MISMATCH", b"cmenc001"):
+            if word in raw:
+                leaked.append(f"{label}:{word.decode()}")
+    check("binaries do not leak protocol strings", not leaked, str(leaked))
+
     # ---- 4-6. chain integrity ----------------------------------------
     chain = fresh_chain()
     records = chain.load()

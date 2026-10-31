@@ -334,6 +334,10 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 换掉签名器 → 它签不出验证器认的记录；换掉验证器 → 被哈希清单拦住。
 两个二进制还**互为校验**：同一次构建会给它们注入同一个随机令牌，
 任何一方被替换（令牌不同），另一方直接拒绝工作（`PEER_MISMATCH`）。
+
+构建时还会做一轮**源码级混淆**：字符串字面量编译期加密、命令名改哈希比较、
+盐以异或形式存放、LTO + 去符号表。`strings` 已经找不到 `BAD_SIG`、
+`fingerprint`、`PEER_MISMATCH`、`cmenc001` 这些明文（有回归测试守着）。
 验证器里不含盐、不含私钥，**逆向它拿不到能伪造的东西**。
 
 ### 一、事件链（分数）
@@ -1347,7 +1351,10 @@ the config file only caches them.
 Replacing the signer cannot produce records the verifier accepts; replacing the verifier
 is caught by the hash manifest. The two binaries also **check each other**: a build
 injects the same random token into both, so replacing either one makes the other refuse
-to work (`PEER_MISMATCH`). The verifier contains **no salt and no private key**, so
+to work (`PEER_MISMATCH`). The build also applies **source-level obfuscation**: string
+literals are encrypted at compile time, command names are compared by hash, the salt is
+stored XOR-masked, and LTO + strip remove symbols. `strings` no longer finds `BAD_SIG`,
+`fingerprint`, `PEER_MISMATCH` or `cmenc001` (a regression test guards this). The verifier contains **no salt and no private key**, so
 reverse-engineering it yields nothing forgeable.
 
 ### 1. Event chain (scores)
