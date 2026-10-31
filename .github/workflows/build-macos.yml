@@ -1,0 +1,159 @@
+name: build-macos-app
+
+# 在 macOS 上打包 .app / DMG，并验证原生模块与备份确实进了包。
+#
+# 为什么用 macos-14：仓库里的 cmd_sign / cmd_verify 是 arm64 构建，
+# macos-14 的 runner 就是 arm64，可以直接跑 selftest；换成 macos-13
+# （x86_64）会因为架构不符而无法执行。
+#
+# 本工作流只负责“能打、能跑、包内容正确”，不做公证（notarization）：
+# 那需要 Apple Developer 证书与密钥，属于后续可选项。
+
+on:
+  push:
+    branches: [main, master, migrate/pyside6]
+    paths:
+      - "main.py"
+      - "namepicker/**"
+      - "native/**"
+      - "packaging/macos/**"
+      - "tools/**"
+      - "requirements.txt"
+      - ".github/workflows/build-macos.yml"
+  pull_request:
+    paths:
+      - "namepicker/**"
+      - "native/**"
+      - "packaging/macos/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller pyflakes
+
+      - name: Verify native modules and the manifest
+        run: |
+          python - <<'PY'
+          import hashlib, pathlib, sys
+          manifest = pathlib.Path("namepicker/native_manifest.py").read_text(encoding="utf-8")
+          bad = []
+          for name in ("cmd_sign", "cmd_verify"):
+              path = pathlib.Path("native") / name
+              if not path.is_file():
+                  bad.append(f"native/{name}: missing")
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              if digest not in manifest:
+                  bad.append(f"native/{name}: hash not in manifest")
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print("native binaries match the pinned manifest")
+          PY
+          chmod +x native/cmd_sign native/cmd_verify
+          native/cmd_sign selftest
+          native/cmd_verify selftest
+
+      - name: Run test suite (headless)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/run_all_tests.py
+
+      - name: Build .app and DMG
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: bash packaging/macos/build.command
+
+      - name: Verify bundle contents
+        run: |
+          APP="dist/ClassManageSystem.app"
+          test -d "$APP" || { echo "no .app produced"; exit 1; }
+          for bin in cmd_sign cmd_verify; do
+            test -f "$APP/Contents/Frameworks/native/$bin" || {
+              echo "missing $bin in bundle"; exit 1; }
+            "$APP/Contents/Frameworks/native/$bin" selftest
+          done
+          # 一键还原的原始副本必须随包
+          ls "$APP/Contents/Resources/native/"*.gz >/dev/null || {
+            echo "native backups are missing from the bundle"; exit 1; }
+          # 包内二进制的哈希必须与清单一致（否则启动会一直要求还原）
+          python - <<'PY'
+          import hashlib, pathlib, sys
+          app = pathlib.Path("dist/ClassManageSystem.app/Contents/Frameworks/native")
+          manifest = pathlib.Path("namepicker/native_manifest.py").read_text(encoding="utf-8")
+          bad = []
+          for name in ("cmd_sign", "cmd_verify"):
+              digest = hashlib.sha256((app / name).read_bytes()).hexdigest()
+              if digest not in manifest:
+                  bad.append(f"{name}: bundled hash != manifest")
+          for line in bad:
+              print(line)
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Smoke test the packaged app
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -e
+          HOME_DIR="$(mktemp -d)"
+          DIST="$(pwd)/dist"
+          rm -rf "$DIST/Data" "$DIST/config.dat" "$DIST/config.dat.bak" "$DIST/config.ini"
+          HOME="$HOME_DIR" "$DIST/ClassManageSystem.app/Contents/MacOS/ClassManageSystem" \
+            >/tmp/smoke.log 2>&1 &
+          pid=$!
+          sleep 12
+          kill $pid 2>/dev/null || true
+          wait $pid 2>/dev/null || true
+          test -f "$DIST/Data/ledger.esc" || { echo "app did not create a chain"; cat /tmp/smoke.log; exit 1; }
+          test -f "$DIST/Data/anchor.json" || { echo "app did not write an anchor"; exit 1; }
+          python - <<'PY'
+          import json, pathlib
+          anchor = json.loads(pathlib.Path("dist/Data/anchor.json").read_text(encoding="utf-8"))
+          for key in ("seq", "head", "ts", "digest", "pubkey"):
+              assert key in anchor, f"anchor missing {key}"
+          print("anchor:", {k: anchor[k] for k in ("seq", "ts")})
+          PY
+          # 被替换的原生模块应能自动还原
+          V="$DIST/ClassManageSystem.app/Contents/Frameworks/native/cmd_verify"
+          before="$(shasum -a 256 "$V" | cut -d' ' -f1)"
+          printf 'garbage' > "$V"
+          HOME="$HOME_DIR" "$DIST/ClassManageSystem.app/Contents/MacOS/ClassManageSystem" \
+            >/tmp/smoke2.log 2>&1 &
+          pid=$!
+          sleep 12
+          kill $pid 2>/dev/null || true
+          wait $pid 2>/dev/null || true
+          after="$(shasum -a 256 "$V" | cut -d' ' -f1)"
+          test "$before" = "$after" || { echo "native module was not restored"; exit 1; }
+          echo "native restore OK"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp -R dist/ClassManageSystem.app out/
+          if ls dist/*.dmg >/dev/null 2>&1; then cp dist/*.dmg out/; fi
+          if ls dist/*.zip >/dev/null 2>&1; then cp dist/*.zip out/; fi
+          du -sh out/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClassManageSystem-macos-arm64
+          path: out/
+          if-no-files-found: error

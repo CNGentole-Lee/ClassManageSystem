@@ -617,6 +617,7 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 |---|---|---|
 | `build-windows.yml` → `build-windows-installer` | 测试 → PyInstaller 目录包 → Inno Setup → 上传 artifact | push / tag / 手动 |
 | `release.yml` → `release` | 下载并解压该次构建的 artifact，校验内容后发到 Release | 构建成功后自动 / 手动 |
+| `build-macos.yml` → `build-macos-app` | 在 macos-14（arm64）跑测试 → 打包 .app/DMG → 校验包内二进制哈希、备份文件 → 冒烟测试（含“换掉 verify 自动还原”） | push / PR / 手动 |
 
 `release` 默认发布到标签 **`V3.0`**：下载 artifact、解压、校验便携版里
 确实有主程序与 `cmd_native.exe`，再上传 `Setup.exe` 与 `portable.zip`，
@@ -1666,6 +1667,7 @@ The Windows installer is produced by two CI workflows:
 |---|---|---|
 | `build-windows.yml` → `build-windows-installer` | tests → PyInstaller onedir → Inno Setup → upload artifact | push / tag / manual |
 | `release.yml` → `release` | download and extract that build's artifact, verify it, publish to a Release | after a successful build / manual |
+| `build-macos.yml` → `build-macos-app` | on macos-14 (arm64): tests → package .app/DMG → verify bundled binary hashes and backups → smoke test (including "replace verify → auto restore") | push / PR / manual |
 
 `release` publishes to tag **`V3.0`** by default: it downloads the artifact,
 extracts it, checks that the portable zip really contains the main executable and
