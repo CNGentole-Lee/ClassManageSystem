@@ -38,9 +38,9 @@ def _platform_key() -> str:
     return "win32" if sys.platform == "win32" else "darwin"
 
 
-def expected() -> tuple[str, str, int, str] | None:
+def expected(role: str = "sign") -> tuple[str, str, int, str] | None:
     """(binary_name, sha256, size, backup_name)；不支持的平台返回 None。"""
-    return native_manifest.NATIVE.get(_platform_key())
+    return native_manifest.NATIVE.get(_platform_key(), {}).get(role)
 
 
 def sha256_file(path: str) -> str:
@@ -51,13 +51,13 @@ def sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def check_native(path: str) -> dict:
+def check_native(path: str, role: str = "sign") -> dict:
     """检查原生模块是否与固定值一致。
 
     返回 {"ok": bool, "reason": str, "expected": str, "actual": str,
           "restorable": bool}
     """
-    info = expected()
+    info = expected(role)
     if info is None:
         return {"ok": True, "reason": "unsupported-platform"}
     _name, want_hash, want_size, backup = info
@@ -84,12 +84,12 @@ def check_native(path: str) -> dict:
     return result
 
 
-def restore_native(path: str) -> dict:
+def restore_native(path: str, role: str = "sign") -> dict:
     """用随包的原始副本覆盖原生模块，然后复验。
 
     返回 {"ok": bool, "reason": str}
     """
-    info = expected()
+    info = expected(role)
     if info is None:
         return {"ok": False, "reason": "unsupported-platform"}
     _name, want_hash, _size, backup = info
@@ -115,7 +115,7 @@ def restore_native(path: str) -> dict:
             os.system(f'xattr -d com.apple.quarantine "{path}" 2>/dev/null')
     except OSError as exc:
         return {"ok": False, "reason": f"RESTORE_FAILED {exc}"}
-    again = check_native(path)
+    again = check_native(path, role)
     return {"ok": again["ok"], "reason": "RESTORED" if again["ok"] else again["reason"]}
 
 

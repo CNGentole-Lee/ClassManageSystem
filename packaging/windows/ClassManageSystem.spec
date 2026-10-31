@@ -68,20 +68,21 @@ def version_file() -> str:
 
 VERSION_FILE = version_file()
 
-NATIVE_SRC = os.path.join(ROOT, "native", "cmd_native.exe")
+NATIVE_DIR = os.path.join(ROOT, "native")
+NATIVE_BINS = ("cmd_sign.exe", "cmd_verify.exe")
 
 
-def require_native() -> str:
-    """原生模块必须随包分发，否则程序只能以只读模式运行。
-
-    宁可让构建失败，也不要打出一个“看起来正常、实际不能记分”的安装包。
-    """
-    if not os.path.isfile(NATIVE_SRC):
-        raise SystemExit(
-            "[x] native/cmd_native.exe is missing.\n"
-            "    Build it first (native/build_windows.sh on macOS, or on Windows)\n"
-            "    or fetch it from the private native repository.")
-    return NATIVE_SRC
+def require_native() -> list:
+    """两个原生模块都必须随包分发，否则程序只能以只读模式运行。"""
+    pairs = []
+    for name in NATIVE_BINS:
+        path = os.path.join(NATIVE_DIR, name)
+        if not os.path.isfile(path):
+            raise SystemExit(
+                f"[x] native/{name} is missing.\n"
+                "    Build both binaries first (native/build_windows.sh).")
+        pairs.append((path, "native"))
+    return pairs
 
 
 a = Analysis(
@@ -89,7 +90,7 @@ a = Analysis(
     pathex=[ROOT],
     # 原生模块：rules + crypto + chain. Destination "native" keeps the layout
     # the Python bridge expects (_MEIPASS/native/cmd_native.exe).
-    binaries=[(require_native(), "native")],
+    binaries=require_native(),
     # 程序运行时不读取包内资源：名单文件由老师自己选；配置/日志写在 EXE 旁边，
     # 只读目录则回退到 %APPDATA%\ClassTerminal2411。
     # 随包资源：LICENSE（Apache-2.0 全文）、NOTICE、第三方声明。

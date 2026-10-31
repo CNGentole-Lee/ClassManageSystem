@@ -14,11 +14,16 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 
 from . import native_bridge
 
 #: 链头占位（创世）
 GENESIS = b"\x00" * 32
+
+#: 记录格式版本文件（v1 无此文件；迁移后写 2）
+FORMAT_FILE = "format"
+FORMAT_V2 = "2"
 
 
 class LedgerError(Exception):
@@ -56,6 +61,7 @@ class Ledger:
         self._verify_error = ""
         self._verified = False
         self._state: dict | None = None
+        self._plains: list[bytes] | None = None
         self._pubkey_b64 = ""
 
     # --- 读取 ---
@@ -80,7 +86,50 @@ class Ledger:
             raise LedgerError(str(exc)) from exc
         self._records = records
         self._loaded = True
-        return records
+        if records and not self._has_format_marker():
+            # 先判断是不是已经是 v2（新版本创建的链）：能 dump 就是 v2
+            try:
+                native_bridge.dump(records)
+            except native_bridge.NativeError:
+                self._migrate_v1()
+            else:
+                self._write_format_marker()
+        return self._records
+
+    def _has_format_marker(self) -> bool:
+        return os.path.isfile(os.path.join(os.path.dirname(self.path), FORMAT_FILE))
+
+    def _write_format_marker(self) -> None:
+        try:
+            with open(os.path.join(os.path.dirname(self.path), FORMAT_FILE),
+                      "w", encoding="ascii") as fh:
+                fh.write(FORMAT_V2 + "\n")
+        except OSError:
+            pass
+
+    def _migrate_v1(self) -> None:
+        """v1 → v2：用签名器重签整条链，原文件备份为 ledger.esc.v1.bak。"""
+        try:
+            data = native_bridge.migrate(self._records)
+        except native_bridge.NativeError as exc:
+            raise LedgerError(f"migrate failed: {exc}") from exc
+        new_records = [base64.b64decode(x) for x in data.get("records", [])]
+        if len(new_records) != len(self._records):
+            raise LedgerError("migrate returned a different record count")
+        try:
+            shutil.copy2(self.path, self.path + ".v1.bak")
+        except OSError:
+            pass
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="ascii") as fh:
+            for rec in new_records:
+                fh.write(base64.b64encode(rec).decode("ascii") + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, self.path)
+        self._records = new_records
+        self._plains = [base64.b64decode(x) for x in data.get("plains", [])]
+        self._write_format_marker()
 
     def count(self) -> int:
         return len(self.load())
@@ -96,8 +145,25 @@ class Ledger:
 
     # --- 校验 / 状态 ---
 
+    def plains(self) -> list[bytes]:
+        """拿到每条记录的明文（签名器解密），用于验证器重放。"""
+        records = self.load()
+        if self._plains is not None and len(self._plains) == len(records):
+            return self._plains
+        if not records:
+            self._plains = []
+            return self._plains
+        try:
+            data = native_bridge.dump(records)
+        except native_bridge.NativeError as exc:
+            raise LedgerError(str(exc)) from exc
+        self._plains = [base64.b64decode(x) for x in data.get("plains", [])]
+        if len(self._plains) != len(records):
+            raise LedgerError("dump returned a different record count")
+        return self._plains
+
     def verify(self) -> bool:
-        """空链视为通过（尚未初始化）。"""
+        """空链视为通过；有记录则交给【验证器】验签 + 重放。"""
         records = self.load()
         if not records:
             self._verified = True
@@ -105,19 +171,25 @@ class Ledger:
             self._head = GENESIS
             self._state = {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
             return True
-        data = self._call_state(records)
-        self._verified = data is not None
-        return self._verified
-
-    def _call_state(self, records: list[bytes]) -> dict | None:
         try:
-            data = native_bridge.state(records)
+            plains = self.plains()
+        except LedgerError as exc:
+            self._verify_error = str(exc)
+            self._verified = False
+            return False
+        return self._verify_with(records, plains)
+
+    def _verify_with(self, records: list[bytes], plains: list[bytes]) -> bool:
+        try:
+            data = native_bridge.state(records, plains)
         except native_bridge.NativeError as exc:
             self._verify_error = str(exc)
-            return None
-        if not data.get("ok"):
+            self._verified = False
+            return False
+        if data.get("ok") is not True:
             self._verify_error = str(data.get("error", "CHAIN_BROKEN"))
-            return None
+            self._verified = False
+            return False
         self._head = base64.b64decode(data["head"])
         self._state = {
             "count": int(data.get("count", 0)),
@@ -127,7 +199,8 @@ class Ledger:
             "ts": int(data.get("ts", 0) or 0),
         }
         self._verify_error = ""
-        return self._state
+        self._verified = True
+        return True
 
     def state(self) -> dict:
         """返回当前业务状态；必要时先校验。"""
@@ -135,7 +208,7 @@ class Ledger:
         if not records:
             return {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
         if self._state is None:
-            if self._call_state(records) is None:
+            if not self.verify():
                 raise LedgerError(self._verify_error or "CHAIN_BROKEN")
         return self._state or {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
 
@@ -213,7 +286,9 @@ class Ledger:
             with open(path, "r", encoding="ascii") as fh:
                 lines = [ln.strip() for ln in fh if ln.strip()]
             records = [base64.b64decode(ln, validate=True) for ln in lines]
-            ok, _head, _err = native_bridge.verify(records)
+            dumped = native_bridge.dump(records)
+            plains = [base64.b64decode(x) for x in dumped.get("plains", [])]
+            ok, _head, _err = native_bridge.verify(records, plains)
             if not ok:
                 return False
             anchor_seq, _anchor_head = self.read_anchor()
@@ -293,11 +368,9 @@ class Ledger:
     # --- 业务操作（交给 C++） ---
 
     def apply(self, op: str, **kwargs) -> dict:
-        """执行一个业务操作，落盘并返回新状态。
-
-        C++ 负责校验规则；规则不允许时抛 LedgerError，不写任何东西。
-        """
+        """执行一个业务操作：签名器出记录，验证器复核，通过才落盘。"""
         records = self.load()
+        plains = self.plains() if records else []
         if records and not self._verified:
             if not self.verify():
                 raise LedgerError("chain invalid: " + (self._verify_error or "UNKNOWN"))
@@ -310,6 +383,15 @@ class Ledger:
             raise LedgerError(str(data.get("error", "APPLY_FAILED")))
 
         record = base64.b64decode(data["record"])
+        plain = base64.b64decode(data.get("plain", ""))
+
+        # 关键：新记录必须被【验证器】接受才写盘。
+        # 换掉签名器时，它签出的记录在这里被拒。
+        trial_records = records + [record]
+        trial_plains = plains + [plain]
+        if not self._verify_with(trial_records, trial_plains):
+            raise LedgerError("verifier rejected the new record: " + self._verify_error)
+
         line = base64.b64encode(record).decode("ascii")
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         try:
@@ -322,20 +404,13 @@ class Ledger:
             raise LedgerError(str(exc)) from exc
 
         self._records.append(record)
-        self._head = base64.b64decode(data["head"])
-        self._state = {
-            "count": int(data.get("count", 0)),
-            "names": list(data.get("names", [])),
-            "scores": [int(x) for x in data.get("scores", [])],
-            "seq": int(data.get("seq", len(self._records))),
-            "ts": int(data.get("ts", 0) or 0),
-        }
-        self._verified = True
+        self._plains = trial_plains
+        state = self._state or {}
         self.write_anchor(len(self._records), self._head,
-                          ts=self._state["ts"],
-                          digest=self.state_digest(self._state),
+                          ts=int(state.get("ts", 0)),
+                          digest=self.state_digest(state),
                           pubkey=self._pubkey_b64)
-        return self._state
+        return state
 
     def migrate_from(self, group_count: int, names: list[str], scores: list[int]) -> bool:
         """把现有配置写成一条 init 事件（仅当链为空时）。"""
@@ -344,4 +419,5 @@ class Ledger:
         self.apply("init", count=int(group_count),
                    names=",".join(str(x) for x in names),
                    scores=",".join(str(int(x)) for x in scores))
+        self._write_format_marker()
         return True

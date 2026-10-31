@@ -262,6 +262,9 @@ native/*.h
 native/*.o
 # 构建脚本与构建定义也不公开（闭源的一部分）
 native/CMakeLists.txt
+# 旧版单二进制（已被 cmd_sign / cmd_verify 取代）
+native/cmd_native
+native/cmd_native.exe
 native/build_*.sh
 # 注意：发布用的二进制（cmd_native / cmd_native.exe）与 native/LICENSE 要提交，供 CI 打包
 

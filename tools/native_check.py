@@ -43,13 +43,16 @@ def check(label, ok, detail=""):
 
 def main() -> int:
     try:
-        exe = nb.native_path()
+        exe = nb.native_path("sign")
+        vexe = nb.native_path("verify")
     except nb.NativeMissing as exc:
         print(f"[SKIP] native module not found: {exc}")
         return 77
 
-    print(f"native: {exe}")
-    check("native binary exists", os.path.isfile(exe))
+    print(f"sign:   {exe}")
+    print(f"verify: {vexe}")
+    check("sign binary exists", os.path.isfile(exe))
+    check("verify binary exists", os.path.isfile(vexe))
     check("selftest passes", nb.selftest())
 
     fp = nb.fingerprint()
@@ -61,19 +64,22 @@ def main() -> int:
     r = nb.apply([], "init", count=3, names="甲,乙,丙", scores="0,0,0")
     check("init returns a record", bool(r.get("record")))
     rec1 = base64.b64decode(r["record"])
+    plain1 = base64.b64decode(r["plain"])
     check("init state", r["count"] == 3 and r["names"] == ["甲", "乙", "丙"]
           and r["scores"] == [0, 0, 0], str(r["scores"]))
 
     r = nb.apply([rec1], "score", group=2, delta=5)
     rec2 = base64.b64decode(r["record"])
+    plain2 = base64.b64decode(r["plain"])
     check("score applied by C++", r["scores"] == [0, 5, 0], str(r["scores"]))
     check("score returns new seq", r["seq"] == 2, str(r["seq"]))
 
     r = nb.apply([rec1, rec2], "rename", group=1, name="雄鹰组")
     rec3 = base64.b64decode(r["record"])
+    plain3 = base64.b64decode(r["plain"])
     check("rename applied by C++", r["names"][0] == "雄鹰组", r["names"][0])
 
-    st = nb.state([rec1, rec2, rec3])
+    st = nb.state([rec1, rec2, rec3], [plain1, plain2, plain3])
     check("state replays to the same result",
           st["names"][0] == "雄鹰组" and st["scores"] == [0, 5, 0], str(st["scores"]))
     check("state reports the head", len(base64.b64decode(st["head"])) == 32)
@@ -83,12 +89,14 @@ def main() -> int:
     # 这里用中文 + emoji 覆盖 UTF-16 -> UTF-8 的转换路径。
     r = nb.apply([], "init", count=3, names="甲组,乙组,丙组", scores="0,0,0")
     ascii_rec = base64.b64decode(r["record"])
+    ascii_plain = base64.b64decode(r["plain"])
     check("non-ASCII names survive init", r["names"] == ["甲组", "乙组", "丙组"],
           str(r["names"]))
     r = nb.apply([ascii_rec], "rename", group=1, name="🚀火箭组")
     emoji_rec = base64.b64decode(r["record"])
+    emoji_plain = base64.b64decode(r["plain"])
     check("emoji name survives rename", r["names"][0] == "🚀火箭组", r["names"][0])
-    st = nb.state([ascii_rec, emoji_rec])
+    st = nb.state([ascii_rec, emoji_rec], [ascii_plain, emoji_plain])
     check("non-ASCII names replay correctly",
           st["names"] == ["🚀火箭组", "乙组", "丙组"], str(st["names"]))
 
@@ -111,24 +119,26 @@ def main() -> int:
 
     # ---- 链完整性 -------------------------------------------------
     records = [rec1, rec2, rec3]
-    ok, head, error = nb.verify(records)
+    plains = [plain1, plain2, plain3]
+    ok, head, error = nb.verify(records, plains)
     check("chain verifies", ok, error)
 
     broken = [bytearray(r) for r in records]
     broken[1][20] ^= 0x01
-    ok, _, error = nb.verify([bytes(r) for r in broken])
+    ok, _, error = nb.verify([bytes(r) for r in broken], list(plains))
     check("single-byte tamper is rejected", not ok, error)
 
-    ok, _, error = nb.verify([records[1], records[0], records[2]])
+    ok, _, error = nb.verify([records[1], records[0], records[2]],
+                             [plains[1], plains[0], plains[2]])
     check("reordered records are rejected", not ok, error)
 
-    ok, _, error = nb.verify([records[0], records[2]])
+    ok, _, error = nb.verify([records[0], records[2]], [plains[0], plains[2]])
     check("dropped record is rejected", not ok, error)
 
     saved = nb._fp_cache
     try:
         nb._fp_cache = "00" * 32
-        ok, _, error = nb.verify(records)
+        ok, _, error = nb.verify(records, plains)
         check("another machine's fingerprint cannot verify", not ok, error)
     finally:
         nb._fp_cache = saved

@@ -45,15 +45,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
 
-      - name: Verify native module is present
+      - name: Verify native modules are present
         shell: pwsh
         run: |
-          $p = "native/cmd_native.exe"
-          if (-not (Test-Path $p)) {
-            throw "native/cmd_native.exe 缺失：安装包必须包含原生模块"
+          foreach ($name in @("cmd_sign.exe", "cmd_verify.exe")) {
+            $p = "native\$name"
+            if (-not (Test-Path $p)) { throw "$name 缺失：安装包必须包含两个原生模块" }
+            "{0}: {1:N0} bytes" -f $name, (Get-Item $p).Length
+            & $p selftest
+            if ($LASTEXITCODE -ne 0) { throw "$name selftest failed" }
           }
-          "native module: {0:N0} bytes" -f (Get-Item $p).Length
-          & $p selftest
 
       - name: Platform self-check
         run: python tools/windows_check.py
@@ -83,8 +84,10 @@ jobs:
           }
           $exe = Join-Path $dir "ClassManageSystem.exe"
           if (-not (Test-Path $exe)) { throw "ClassManageSystem.exe missing in $dir" }
-          $native = Join-Path $dir "_internal\native\cmd_native.exe"
-          if (-not (Test-Path $native)) { throw "native module missing in the package: $native" }
+          foreach ($name in @("cmd_sign.exe", "cmd_verify.exe")) {
+            $native = Join-Path $dir "_internal\native\$name"
+            if (-not (Test-Path $native)) { throw "native module missing in the package: $native" }
+          }
           "directory package OK: $dir"
           "  size: {0:N1} MB" -f ((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 

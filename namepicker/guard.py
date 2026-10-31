@@ -23,16 +23,36 @@ NTP_OFFSET_TOLERANCE_S = 300.0
 NTP_STALE_TOLERANCE_S = 7 * 24 * 3600.0
 
 
-def check_native(path: str) -> dict:
-    """检查并（按需）还原原生模块。返回 {"ok", "restored", "reason"}。"""
-    result = integrity.check_native(path)
+def check_native(path: str, role: str = "sign") -> dict:
+    """检查并（按需）还原一个原生模块。返回 {"ok", "restored", "reason"}。"""
+    result = integrity.check_native(path, role)
     if result["ok"]:
         return {"ok": True, "restored": False, "reason": "OK"}
     if not result["restorable"]:
         return {"ok": False, "restored": False, "reason": result["reason"]}
-    fixed = integrity.restore_native(path)
+    fixed = integrity.restore_native(path, role)
     return {"ok": bool(fixed["ok"]), "restored": bool(fixed["ok"]),
             "reason": fixed["reason"]}
+
+
+def check_both() -> dict:
+    """两个二进制都检查；任一损坏都尝试还原。"""
+    from . import native_bridge
+    out = {"ok": True, "restored": False, "reason": "OK", "roles": {}}
+    for role in ("sign", "verify"):
+        try:
+            path = native_bridge.native_path(role)
+        except Exception as exc:                       # noqa: BLE001
+            out.update(ok=False, reason=f"{role}: {exc}")
+            out["roles"][role] = out["reason"]
+            continue
+        result = check_native(path, role)
+        out["roles"][role] = result["reason"]
+        if result["restored"]:
+            out["restored"] = True
+        if not result["ok"]:
+            out.update(ok=False, reason=f"{role}: {result['reason']}")
+    return out
 
 
 def pubkey_b64() -> str:

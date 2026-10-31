@@ -69,8 +69,8 @@ def main() -> int:
 
     # ---- specs ------------------------------------------------------
     for label, spec, exe in (
-        ("windows", win_spec, "cmd_native.exe"),
-        ("macos", mac_spec, "cmd_native"),
+        ("windows", win_spec, "cmd_sign.exe"),
+        ("macos", mac_spec, "cmd_sign"),
     ):
         check(f"{label} spec exists", bool(spec))
         check(f"{label} spec references {exe}", exe in spec)
@@ -87,7 +87,8 @@ def main() -> int:
     manifest = read("namepicker/native_manifest.py")
     check("native manifest exists", bool(manifest))
     import hashlib as _hashlib
-    for platform, rel in (("darwin", "native/cmd_native"), ("win32", "native/cmd_native.exe")):
+    for rel in ("native/cmd_sign", "native/cmd_verify",
+                "native/cmd_sign.exe", "native/cmd_verify.exe"):
         path = os.path.join(_ROOT, rel)
         if not os.path.isfile(path):
             continue
@@ -98,16 +99,20 @@ def main() -> int:
                                           os.path.basename(path) + ".gz")))
 
     # ---- native binaries -------------------------------------------
-    check("macOS native binary exists", os.path.isfile(os.path.join(_ROOT, "native", "cmd_native")))
-    check("Windows native binary exists", os.path.isfile(os.path.join(_ROOT, "native", "cmd_native.exe")))
+    for rel in ("native/cmd_sign", "native/cmd_verify",
+                "native/cmd_sign.exe", "native/cmd_verify.exe"):
+        check(f"{rel} exists", os.path.isfile(os.path.join(_ROOT, rel)))
     # 闭源要求：仓库里只能有二进制与 native/LICENSE，不能有构建脚本或源码
     tracked = _tracked_native_files()
     check("native/ only ships binaries and the license",
-          tracked == {"LICENSE", "cmd_native", "cmd_native.exe"}, str(sorted(tracked)))
+          tracked <= {"LICENSE", "cmd_sign", "cmd_verify",
+                      "cmd_sign.exe", "cmd_verify.exe"} and "LICENSE" in tracked,
+          str(sorted(tracked)))
     check("native build scripts are not tracked",
           not any(t.endswith(".sh") or t.endswith(".txt") for t in tracked), str(sorted(tracked)))
-    check("native binaries are committed (not ignored)",
-          "native/cmd_native" not in read(".gitignore").replace("# 注意：发布用的二进制", ""))
+    gi = read(".gitignore")
+    check("new native binaries are not ignored",
+          "native/cmd_sign" not in gi and "native/cmd_verify" not in gi)
 
     # ---- Windows installer -----------------------------------------
     check("installer script exists", bool(iss))
@@ -145,7 +150,7 @@ def main() -> int:
           "ONEFILE = False" in win_spec, "installer requires the onedir layout")
     check("workflow verifies the onedir package before running ISCC",
           "Verify PyInstaller produced a directory package" in workflow
-          and "_internal\\native\\cmd_native.exe" in workflow)
+          and "cmd_sign.exe" in workflow and "_internal\\native" in workflow)
     check("workflow builds the Inno Setup installer",
           "innosetup" in workflow and "ISCC" in workflow)
     # ISCC 的 /D 定义必须在脚本路径之前，否则会被当成第二个脚本文件
@@ -174,8 +179,9 @@ def main() -> int:
     check("workflow uploads the installer",
           "Setup.exe" in workflow and "upload-artifact" in workflow)
     check("workflow builds a portable zip", "portable.zip" in workflow)
-    check("workflow verifies the native module before packaging",
-          "cmd_native.exe" in workflow and "selftest" in workflow)
+    check("workflow verifies both native modules before packaging",
+          "cmd_sign.exe" in workflow and "cmd_verify.exe" in workflow
+          and "selftest" in workflow)
     check("workflow runs tests headless", "QT_QPA_PLATFORM: offscreen" in workflow)
 
     # ---- macOS build script ----------------------------------------

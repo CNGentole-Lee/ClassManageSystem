@@ -74,8 +74,8 @@ def main() -> int:
         return 77
 
     # ---- 1-3. native binary integrity ---------------------------------
-    info = integrity.expected()
-    real = nb.native_path()
+    info = integrity.expected("sign")
+    real = nb.native_path("sign")
     check("manifest knows this platform", info is not None)
     check("installed native module matches the pinned hash",
           integrity.check_native(real)["ok"], integrity.check_native(real)["reason"])
@@ -107,18 +107,20 @@ def main() -> int:
     # ---- 4-6. chain integrity ----------------------------------------
     chain = fresh_chain()
     records = chain.load()
-    ok, _head, _err = nb.verify(records)
+    plains = chain.plains()
+    ok, _head, _err = nb.verify(records, plains)
     check("baseline chain verifies", ok)
 
     bad = [bytearray(r) for r in records]
     bad[1][20] ^= 0x01
-    ok, _h, err = nb.verify([bytes(r) for r in bad])
+    ok, _h, err = nb.verify([bytes(r) for r in bad], plains)
     check("edited record is rejected", not ok, err)
 
-    ok, _h, err = nb.verify([records[0], records[2]])
+    ok, _h, err = nb.verify([records[0], records[2]], [plains[0], plains[2]])
     check("deleted record is rejected", not ok, err)
 
-    ok, _h, err = nb.verify([records[1], records[0], records[2]])
+    ok, _h, err = nb.verify([records[1], records[0], records[2]],
+                            [plains[1], plains[0], plains[2]])
     check("reordered records are rejected", not ok, err)
 
     # ---- 7. rollback via anchor --------------------------------------

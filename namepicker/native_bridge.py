@@ -37,9 +37,16 @@ def _root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def native_path() -> str:
-    """按优先级定位原生模块；找不到抛 NativeMissing。"""
-    name = "cmd_native.exe" if sys.platform == "win32" else "cmd_native"
+def _exe_name(role: str) -> str:
+    """role: "sign" | "verify"。"""
+    if sys.platform == "win32":
+        return f"cmd_{role}.exe"
+    return f"cmd_{role}"
+
+
+def native_path(role: str = "sign") -> str:
+    """定位某个原生模块（sign/verify）；找不到抛 NativeMissing。"""
+    name = _exe_name(role)
     candidates = []
     meipass = getattr(sys, "_MEIPASS", "")
     if meipass:
@@ -52,20 +59,22 @@ def native_path() -> str:
             if sys.platform != "win32" and not os.access(path, os.X_OK):
                 raise NativeMissing(f"not executable: {path}")
             return path
-    raise NativeMissing("cmd_native not found; looked in: " + ", ".join(candidates))
+    raise NativeMissing(f"{name} not found; looked in: " + ", ".join(candidates))
 
 
 def available() -> bool:
-    """原生模块是否可用（不抛异常）。"""
+    """两个原生模块是否都可用（不抛异常）。"""
     try:
-        native_path()
+        native_path("sign")
+        native_path("verify")
         return True
     except NativeMissing:
         return False
 
 
-def _run(args: list[str], stdin_text: str | None = None, timeout: float = 20.0) -> dict:
-    exe = native_path()
+def _run(args: list[str], stdin_text: str | None = None, timeout: float = 20.0,
+         role: str = "sign") -> dict:
+    exe = native_path(role)
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = _CREATE_NO_WINDOW
@@ -132,49 +141,66 @@ def identity() -> bytes:
     return pub
 
 
-def state(records: list[bytes]) -> dict:
-    """重放整条链，返回业务状态（C++ 计算，Python 不解析事件）。"""
-    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    return _run(["state", "--fp", fingerprint()], stdin_text=lines, timeout=30)
+def state(records: list[bytes], plains: list[bytes]) -> dict:
+    """让【验证器】用公钥验签并重放（不解密）。"""
+    pairs = "\n".join(
+        base64.b64encode(r).decode("ascii") + "," + base64.b64encode(p).decode("ascii")
+        for r, p in zip(records, plains))
+    pub = base64.b64encode(identity()).decode("ascii")
+    return _run(["state", "--pubkey", pub], stdin_text=pairs, timeout=30, role="verify")
 
 
 def apply(records: list[bytes], op: str, **kwargs) -> dict:
-    """执行一个业务操作；规则校验与事件生成都在 C++ 里。
+    """让【签名器】执行操作；返回 record/plain/state。
 
-    kwargs 会按 --key value 的形式传下去（下划线会转成短横线）。
-    业务规则拒绝时抛 NativeError。
+    签名器只负责产生签名数据；是否采纳由验证器复核（见 ledger）。
     """
     args = ["apply", "--fp", fingerprint(), "--op", op]
     for key, value in kwargs.items():
         args += ["--" + key.replace("_", "-"), str(value)]
     lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    data = _run(args, stdin_text=lines, timeout=30)
+    data = _run(args, stdin_text=lines, timeout=30, role="sign")
     if data.get("ok") is not True:
         raise NativeError(str(data.get("error", "APPLY_FAILED")))
     return data
 
 
-def verify(records: list[bytes], expect_seq: int | None = None,
-           expect_head: bytes | None = None) -> tuple[bool, bytes, str]:
-    """校验整条链，返回 (ok, head, error_code)。
+def dump(records: list[bytes]) -> dict:
+    """让签名器解密整条链，返回 plains/state/ts/head（供验证器使用）。"""
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    data = _run(["dump", "--fp", fingerprint()], stdin_text=lines, timeout=30, role="sign")
+    if data.get("ok") is not True:
+        raise NativeError(str(data.get("error", "DUMP_FAILED")))
+    return data
 
-    records 为按顺序排列的完整记录字节；空链返回 (False, b"", "EMPTY")。
-    """
+
+def migrate(records: list[bytes]) -> dict:
+    """把 v1 链重签成 v2（迁移方案 A）。"""
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    data = _run(["migrate", "--fp", fingerprint()], stdin_text=lines, timeout=60, role="sign")
+    if data.get("ok") is not True:
+        raise NativeError(str(data.get("error", "MIGRATE_FAILED")))
+    return data
+
+
+def verify(records: list[bytes], plains: list[bytes],
+           expect_seq: int | None = None) -> tuple[bool, bytes, str]:
+    """只验签不重放；用于测试与快速检查。"""
     if not records:
         return False, b"", "EMPTY"
-    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
-    args = ["verify", "--fp", fingerprint()]
-    if expect_seq is not None:
-        args += ["--expect-seq", str(int(expect_seq))]
-    if expect_head is not None:
-        args += ["--expect-head", base64.b64encode(expect_head).decode("ascii")]
-    data = _run(args, stdin_text=lines, timeout=30)
+    pairs = "\n".join(
+        base64.b64encode(r).decode("ascii") + "," + base64.b64encode(p).decode("ascii")
+        for r, p in zip(records, plains))
+    pub = base64.b64encode(identity()).decode("ascii")
+    data = _run(["verify", "--pubkey", pub], stdin_text=pairs, timeout=30, role="verify")
     if data.get("ok") is True:
         return True, base64.b64decode(data.get("head", "")), ""
     return False, b"", str(data.get("error", "UNKNOWN"))
 
 
 def selftest() -> bool:
-    """原生模块内置自检（同进程内 append→verify）。"""
-    data = _run(["selftest"], timeout=10)
-    return data.get("ok") is True
+    for role in ("sign", "verify"):
+        data = _run(["selftest"], timeout=10, role=role)
+        if data.get("ok") is not True:
+            return False
+    return True

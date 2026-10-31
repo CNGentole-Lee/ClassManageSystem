@@ -132,9 +132,7 @@ def main():
     native_state = {"ok": True, "restored": False, "reason": "OK"}
     try:
         from namepicker import guard as _guard
-        from namepicker import native_bridge as _nb
-        exe_path = _nb.native_path()
-        native_state = _guard.check_native(exe_path)
+        native_state = _guard.check_both()
         if native_state["restored"]:
             startup_log.record([f"native module restored from backup: {native_state['reason']}"])
         elif not native_state["ok"]:

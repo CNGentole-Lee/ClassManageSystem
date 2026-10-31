@@ -324,6 +324,16 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 数据分两套机制，**分数的权威来源是事件链，配置文件只是缓存**。
 
+**原生部分是两套闭源程序**：
+
+| 程序 | 持有 | 职责 |
+|---|---|---|
+| `cmd_sign` | 密钥（加密钥 + 签名私钥） | 签名、加密、解密、v1→v2 迁移 |
+| `cmd_verify` | **只有公钥** | 验签、重放、规则判定 |
+
+换掉签名器 → 它签不出验证器认的记录；换掉验证器 → 被哈希清单拦住。
+验证器里不含盐、不含私钥，**逆向它拿不到能伪造的东西**。
+
 ### 一、事件链（分数）
 
 每次改分、改组名、改组数，都会先经原生模块 `cmd_native`：
@@ -631,8 +641,8 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 ├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium 等第三方声明
 ├── native/                          # 原生模块（只发布二进制；源码不进仓库）
 │   ├── LICENSE                      # 专有许可：随程序使用，禁止单独分发/逆向
-│   ├── cmd_native.exe               # Windows 构建产物
-│   └── cmd_native                   # macOS 构建产物
+│   ├── cmd_sign.exe / cmd_sign      # 签名器（含密钥）
+│   └── cmd_verify.exe / cmd_verify  # 验证器（只有公钥）
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
 │
 ├── namepicker/                      # 主程序包
@@ -1324,6 +1334,17 @@ or CI logs.
 
 There are two mechanisms, and **the authoritative source for scores is the event chain**;
 the config file only caches them.
+
+**The native part is two closed programs:**
+
+| Program | Holds | Does |
+|---|---|---|
+| `cmd_sign` | keys (encryption + signing) | sign, encrypt, decrypt, v1→v2 migration |
+| `cmd_verify` | **public key only** | verify, replay, rules |
+
+Replacing the signer cannot produce records the verifier accepts; replacing the verifier
+is caught by the hash manifest. The verifier contains **no salt and no private key**, so
+reverse-engineering it yields nothing forgeable.
 
 ### 1. Event chain (scores)
 
