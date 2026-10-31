@@ -95,6 +95,10 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
+# PyInstaller 会重新签名它收集的二进制，字节因此改变，导致启动时
+# 哈希对不上、白白触发一次“还原”。用随包的原始副本覆盖回去。
+"$PY" tools/normalize_bundle.py "$APP"
+
 # 去掉隔离属性，避免本机首次运行被 Gatekeeper 拦
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 

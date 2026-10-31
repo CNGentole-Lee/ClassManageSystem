@@ -2,19 +2,15 @@ name: release
 
 # 把 Windows 与 macOS 的构建产物发到 GitHub Release（默认标签 V3.0）
 #
-# 设计原则：
-#   * build 负责“能出包”，release 只负责“把已验证的产物发出去”；
+# 原则：
 #   * 两个平台按**同一个提交**取产物，避免 Win 和 Mac 来自不同代码；
-#   * 任一平台缺失就报错，不静默发半套（可手动重跑）。
+#   * **一个平台失败不拖住另一个**：谁成功就先发谁，Release 说明里写清缺哪个；
+#   * 两个都失败才整体失败。
 #
 # 触发：
 #   1) build-windows-installer / build-macos-app 成功后自动触发
 #      （只接受 push 触发的构建，PR 不会发版）
 #   2) 手动：Actions → release → Run workflow（可指定 tag / 提交）
-#
-# 产物：
-#   Windows: ClassManageSystem-<版本>-Setup.exe / -portable.zip
-#   macOS:   ClassManageSystem-<版本>.dmg（或 -macos.zip）
 
 on:
   workflow_run:
@@ -42,7 +38,7 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -70,7 +66,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "publishing commit $SHA to $TAG"
 
-      - name: Wait for both platform builds of that commit
+      - name: Wait for both platform builds
         id: runs
         shell: bash
         env:
@@ -79,9 +75,9 @@ jobs:
           set -euo pipefail
           SHA="${{ steps.meta.outputs.sha }}"
 
-          # 两个工作流是独立完成的：先完成的那个触发 release 时，
-          # 另一个可能还在排队/构建。这里轮询等待，最多 30 分钟。
-          # 任何一方失败就立即退出，不发布半套产物。
+          # 两个工作流独立完成：先完成的会先触发 release。
+          # 这里最多等 20 分钟；等不到的那一方就按“缺失”处理，
+          # 绝不让一个平台的失败拖住另一个平台的发布。
           latest() {
             gh run list --repo "${{ github.repository }}" --workflow "$1" \
               --commit "$SHA" --limit 1 \
@@ -89,54 +85,75 @@ jobs:
               --jq '.[0] // {} | "\(.databaseId // "")\t\(.status // "")\t\(.conclusion // "")"'
           }
 
-          win_id="" ; mac_id=""
-          for attempt in $(seq 1 60); do
-            IFS=$'\t' read -r w_id w_status w_concl < <(latest build-windows.yml)
-            IFS=$'\t' read -r m_id m_status m_concl < <(latest build-macos.yml)
+          win_id=""; win_ok=false
+          mac_id=""; mac_ok=false
+          for attempt in $(seq 1 40); do
+            IFS=$'\t' read -r w_id w_status w_concl < <(latest build-windows.yml) || true
+            IFS=$'\t' read -r m_id m_status m_concl < <(latest build-macos.yml) || true
 
-            fail=0
-            for pair in "Windows:$w_id:$w_status:$w_concl" "macOS:$m_id:$m_status:$m_concl"; do
-              IFS=: read -r name rid status concl <<< "$pair"
-              if [ "$status" = "completed" ] && [ "$concl" != "success" ]; then
-                echo "::error::$name build for $SHA finished with '$concl'"
-                fail=1
-              fi
-            done
-            [ "$fail" -eq 0 ] || exit 1
+            if [ -n "$w_id" ] && [ "$w_concl" = "success" ]; then win_ok=true; fi
+            if [ -n "$m_id" ] && [ "$m_concl" = "success" ]; then mac_ok=true; fi
 
-            if [ -n "$w_id" ] && [ -n "$m_id" ] \
-               && [ "$w_concl" = "success" ] && [ "$m_concl" = "success" ]; then
-              win_id="$w_id"; mac_id="$m_id"
+            win_done=false; mac_done=false
+            [ "$w_status" = "completed" ] && win_done=true
+            [ "$m_status" = "completed" ] && mac_done=true
+
+            if $win_done && $mac_done; then
+              echo "both builds finished on attempt $attempt"
               break
             fi
-
-            echo "attempt $attempt/60: windows='$w_status/$w_concl' macos='$m_status/$m_concl'; waiting 30s"
+            echo "attempt $attempt/40: windows='${w_status:-none}/${w_concl:-none}' macos='${m_status:-none}/${m_concl:-none}'"
             sleep 30
           done
 
-          [ -n "$win_id" ] && [ -n "$mac_id" ] || {
-            echo "::error::timed out waiting for both builds of $SHA"; exit 1; }
-          echo "windows_run=$win_id" >> "$GITHUB_OUTPUT"
-          echo "macos_run=$mac_id" >> "$GITHUB_OUTPUT"
-          echo "windows run: $win_id"
-          echo "macos run:   $mac_id"
+          echo "windows_ok=$win_ok" >> "$GITHUB_OUTPUT"
+          echo "macos_ok=$mac_ok"   >> "$GITHUB_OUTPUT"
+          [ -n "$win_id" ] && echo "windows_run=$win_id" >> "$GITHUB_OUTPUT"
+          [ -n "$mac_id" ] && echo "macos_run=$mac_id"   >> "$GITHUB_OUTPUT"
+          echo "windows_ok=$win_ok macos_ok=$mac_ok"
 
-      - name: Download artifacts
+          if [ "$win_ok" != "true" ] && [ "$mac_ok" != "true" ]; then
+            echo "::error::no successful build for $SHA on either platform"
+            exit 1
+          fi
+          if [ "$win_ok" != "true" ]; then
+            echo "::warning::Windows build is missing; publishing macOS only"
+          fi
+          if [ "$mac_ok" != "true" ]; then
+            echo "::warning::macOS build is missing; publishing Windows only"
+          fi
+
+      - name: Download available artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/windows artifacts/macos
-          gh run download "${{ steps.runs.outputs.windows_run }}" \
-            --repo "${{ github.repository }}" \
-            --name ClassManageSystem-windows-x64 --dir artifacts/windows
-          gh run download "${{ steps.runs.outputs.macos_run }}" \
-            --repo "${{ github.repository }}" \
-            --name ClassManageSystem-macos-arm64 --dir artifacts/macos
-          echo "downloaded:"
-          find artifacts -maxdepth 3 -type f -printf '  %p (%s bytes)\n' | sort
+
+          if [ "${{ steps.runs.outputs.windows_ok }}" = "true" ]; then
+            if gh run download "${{ steps.runs.outputs.windows_run }}" \
+                 --repo "${{ github.repository }}" \
+                 --name ClassManageSystem-windows-x64 --dir artifacts/windows; then
+              echo "windows artifact downloaded"
+            else
+              echo "::warning::windows artifact download failed (expired?)"
+            fi
+          fi
+
+          if [ "${{ steps.runs.outputs.macos_ok }}" = "true" ]; then
+            if gh run download "${{ steps.runs.outputs.macos_run }}" \
+                 --repo "${{ github.repository }}" \
+                 --name ClassManageSystem-macos-arm64 --dir artifacts/macos; then
+              echo "macos artifact downloaded"
+            else
+              echo "::warning::macos artifact download failed (expired?)"
+            fi
+          fi
+
+          find artifacts -maxdepth 3 -type f -printf '  %p (%s bytes)\n' | sort || true
 
       - name: Verify Windows artifacts
+        if: ${{ steps.runs.outputs.windows_ok == 'true' }}
         run: |
           set -euo pipefail
           setup=$(find artifacts/windows -maxdepth 2 -name '*Setup.exe' | head -n1)
@@ -153,8 +170,6 @@ jobs:
           [ -n "$sign" ] || { echo "::error::cmd_sign.exe missing in portable.zip"; exit 1; }
           [ -n "$verify" ] || { echo "::error::cmd_verify.exe missing in portable.zip"; exit 1; }
 
-          # 只“存在”不够：还要与清单里的钉死哈希一致，
-          # 否则构建错误或 artifact 被替换都发现不了。
           python - "$sign" "$verify" <<'PY'
           import hashlib, pathlib, re, sys
 
@@ -174,10 +189,10 @@ jobs:
           echo "Windows portable OK: main exe + both native modules (hash verified)"
 
       - name: Verify macOS artifacts
+        if: ${{ steps.runs.outputs.macos_ok == 'true' }}
         run: |
           set -euo pipefail
-          # 注意：release 跑在 ubuntu 上，**不能执行** macOS 二进制。
-          # 这里只做文件与哈希校验；真正的 selftest 在 build-macos.yml 里跑过。
+          # release 跑在 ubuntu 上，**不能执行** macOS 二进制。
           app=$(find artifacts/macos -maxdepth 2 -name 'ClassManageSystem.app' -type d | head -n1)
           [ -n "$app" ] || { echo "::error::ClassManageSystem.app not found"; exit 1; }
 
@@ -203,7 +218,6 @@ jobs:
           print("macOS native binaries match the pinned manifest")
           PY
 
-          # 一键还原的原始副本必须随包
           ls "$app/Contents/Resources/native/"*.gz >/dev/null 2>&1 || {
             echo "::error::native backups missing from .app"; exit 1; }
 
@@ -221,10 +235,17 @@ jobs:
             echo "### SHA-256"
             echo '```'
             find artifacts -maxdepth 2 -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' \) \
-              -print0 | sort -z | xargs -0 sha256sum
+              -print0 | sort -z | xargs -0 sha256sum || true
             echo '```'
             echo
             echo "提交：\`${{ steps.meta.outputs.sha }}\`"
+            echo
+            if [ "${{ steps.runs.outputs.windows_ok }}" != "true" ]; then
+              echo "> ⚠️ Windows 构建本次未成功，未包含 Windows 安装包。"
+            fi
+            if [ "${{ steps.runs.outputs.macos_ok }}" != "true" ]; then
+              echo "> ⚠️ macOS 构建本次未成功，未包含 macOS 安装包。"
+            fi
           } > checksums.md
           cat checksums.md
 
@@ -244,10 +265,12 @@ jobs:
               --target "${{ github.event.repository.default_branch }}"
           fi
 
-          # 只上传最终产物：安装包 / 便携包 / DMG。.app 目录不作为资产。
           mapfile -t files < <(find artifacts -maxdepth 2 -type f \
             \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' \) | sort)
-          [ "${#files[@]}" -gt 0 ] || { echo "::error::no files to upload"; exit 1; }
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no files to upload"
+            exit 1
+          fi
           gh release upload "$TAG" "${files[@]}" --clobber
 
           echo "release $TAG assets:"
