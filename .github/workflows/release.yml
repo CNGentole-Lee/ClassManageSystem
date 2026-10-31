@@ -152,7 +152,26 @@ jobs:
           [ -n "$exe" ] || { echo "::error::ClassManageSystem.exe missing in portable.zip"; exit 1; }
           [ -n "$sign" ] || { echo "::error::cmd_sign.exe missing in portable.zip"; exit 1; }
           [ -n "$verify" ] || { echo "::error::cmd_verify.exe missing in portable.zip"; exit 1; }
-          echo "Windows portable OK: main exe + both native modules"
+
+          # 只“存在”不够：还要与清单里的钉死哈希一致，
+          # 否则构建错误或 artifact 被替换都发现不了。
+          python - "$sign" "$verify" <<'PY'
+          import hashlib, pathlib, re, sys
+
+          pinned = set(re.findall(r"[0-9a-f]{64}",
+                                  pathlib.Path("namepicker/native_manifest.py")
+                                  .read_text(encoding="utf-8")))
+          bad = []
+          for path in sys.argv[1:]:
+              digest = hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              if digest not in pinned:
+                  bad.append(f"{pathlib.Path(path).name}: hash not in the pinned manifest")
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print("Windows native binaries match the pinned manifest")
+          PY
+          echo "Windows portable OK: main exe + both native modules (hash verified)"
 
       - name: Verify macOS artifacts
         run: |

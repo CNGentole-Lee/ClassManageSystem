@@ -91,6 +91,30 @@ jobs:
           "directory package OK: $dir"
           "  size: {0:N1} MB" -f ((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
+      - name: Verify bundled native hashes
+        run: |
+          python - <<'PY'
+          import hashlib, pathlib, re, sys
+
+          manifest = pathlib.Path("namepicker/native_manifest.py").read_text(encoding="utf-8")
+          pinned = set(re.findall(r"[0-9a-f]{64}", manifest))
+          native_dir = pathlib.Path("dist/ClassManageSystem/_internal/native")
+
+          bad = []
+          for name in ("cmd_sign.exe", "cmd_verify.exe"):
+              path = native_dir / name
+              if not path.is_file():
+                  bad.append(f"{name}: missing in the package")
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              if digest not in pinned:
+                  bad.append(f"{name}: bundled hash is not in the pinned manifest")
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print("bundled native binaries match the pinned manifest")
+          PY
+
       - name: Determine version
         id: version
         shell: pwsh
