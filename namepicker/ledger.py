@@ -56,6 +56,7 @@ class Ledger:
         self._verify_error = ""
         self._verified = False
         self._state: dict | None = None
+        self._pubkey_b64 = ""
 
     # --- 读取 ---
 
@@ -102,7 +103,7 @@ class Ledger:
             self._verified = True
             self._verify_error = ""
             self._head = GENESIS
-            self._state = {"count": 0, "names": [], "scores": [], "seq": 0}
+            self._state = {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
             return True
         data = self._call_state(records)
         self._verified = data is not None
@@ -123,6 +124,7 @@ class Ledger:
             "names": list(data.get("names", [])),
             "scores": [int(x) for x in data.get("scores", [])],
             "seq": int(data.get("seq", 0)),
+            "ts": int(data.get("ts", 0) or 0),
         }
         self._verify_error = ""
         return self._state
@@ -131,11 +133,11 @@ class Ledger:
         """返回当前业务状态；必要时先校验。"""
         records = self.load()
         if not records:
-            return {"count": 0, "names": [], "scores": [], "seq": 0}
+            return {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
         if self._state is None:
             if self._call_state(records) is None:
                 raise LedgerError(self._verify_error or "CHAIN_BROKEN")
-        return self._state or {"count": 0, "names": [], "scores": [], "seq": 0}
+        return self._state or {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
 
     # --- 基准（seq/head） ---
 
@@ -143,7 +145,12 @@ class Ledger:
         return [os.path.join(d, "anchor.json") for d in _anchor_dirs(self.config_path)]
 
     def read_anchor(self) -> tuple[int, bytes]:
-        best: tuple[int, bytes] = (0, b"")
+        full = self.read_anchor_full()
+        return int(full.get("seq", 0)), full.get("head_bytes", b"")
+
+    def read_anchor_full(self) -> dict:
+        """取所有锚点里 seq 最大的一份（含 ts/digest/pubkey）。"""
+        best: dict = {"seq": 0, "head_bytes": b"", "ts": 0, "digest": "", "pubkey": ""}
         for path in self.anchor_paths():
             try:
                 with open(path, "r", encoding="utf-8") as fh:
@@ -152,14 +159,24 @@ class Ledger:
                 head = base64.b64decode(data.get("head", ""))
             except (OSError, ValueError, TypeError):
                 continue
-            if seq > best[0]:
-                best = (seq, head)
+            if seq > int(best["seq"]):
+                best = {
+                    "seq": seq,
+                    "head_bytes": head,
+                    "ts": int(data.get("ts", 0) or 0),
+                    "digest": str(data.get("digest", "") or ""),
+                    "pubkey": str(data.get("pubkey", "") or ""),
+                }
         return best
 
-    def write_anchor(self, seq: int, head: bytes) -> None:
+    def write_anchor(self, seq: int, head: bytes, ts: int = 0,
+                     digest: str = "", pubkey: str = "") -> None:
         body = json.dumps({
             "seq": int(seq),
             "head": base64.b64encode(head).decode("ascii"),
+            "ts": int(ts),
+            "digest": digest,
+            "pubkey": pubkey,
         }, separators=(",", ":")).encode("utf-8")
         for path in self.anchor_paths():
             try:
@@ -221,6 +238,45 @@ class Ledger:
         self.write_anchor(len(records), self._head)
         return True
 
+    @staticmethod
+    def state_digest(state: dict) -> str:
+        """状态的规范化摘要（Python 直方，不需要密钥）。"""
+        canonical = json.dumps({
+            "count": int(state.get("count", 0)),
+            "names": list(state.get("names", [])),
+            "scores": [int(x) for x in state.get("scores", [])],
+        }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.blake2b(canonical.encode("utf-8"), digest_size=32).hexdigest()
+
+    def last_ts(self) -> int:
+        """最后一条事件的单调时间戳（秒）。"""
+        return int((self._state or {}).get("ts", 0) or 0)
+
+    def anchor_problems(self, state: dict | None = None,
+                        pubkey_b64: str = "") -> list[str]:
+        """把本地链与锚点逐项对比，返回问题列表（空表示一致）。"""
+        anchor = self.read_anchor_full()
+        problems: list[str] = []
+        if int(anchor["seq"]) == 0:
+            return problems                        # 从未写过锚点：首次运行
+        count = self.count()
+        if count == 0:
+            return ["DELETED"]
+        if count < int(anchor["seq"]):
+            problems.append(f"SHORTER {count}<{anchor['seq']}")
+        if anchor["head_bytes"] and self._head and count == int(anchor["seq"]):
+            if self._head != anchor["head_bytes"]:
+                problems.append("HEAD_MISMATCH")
+        ts = self.last_ts()
+        if anchor["ts"] and ts and ts < int(anchor["ts"]):
+            problems.append(f"TIME_ROLLBACK {ts}<{anchor['ts']}")
+        if state is not None and anchor["digest"]:
+            if self.state_digest(state) != anchor["digest"]:
+                problems.append("STATE_MISMATCH")
+        if pubkey_b64 and anchor["pubkey"] and pubkey_b64 != anchor["pubkey"]:
+            problems.append("PUBKEY_MISMATCH")
+        return problems
+
     def rollback_reason(self) -> str:
         seq, head = self.read_anchor()
         count = self.count()
@@ -272,9 +328,13 @@ class Ledger:
             "names": list(data.get("names", [])),
             "scores": [int(x) for x in data.get("scores", [])],
             "seq": int(data.get("seq", len(self._records))),
+            "ts": int(data.get("ts", 0) or 0),
         }
         self._verified = True
-        self.write_anchor(len(self._records), self._head)
+        self.write_anchor(len(self._records), self._head,
+                          ts=self._state["ts"],
+                          digest=self.state_digest(self._state),
+                          pubkey=self._pubkey_b64)
         return self._state
 
     def migrate_from(self, group_count: int, names: list[str], scores: list[int]) -> bool:

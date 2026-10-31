@@ -123,6 +123,15 @@ def reset_cache() -> None:
     _fp_cache = None
 
 
+def identity() -> bytes:
+    """原生模块的 Ed25519 公钥（32 字节）。首启时钉进锚点。"""
+    data = _run(["identity", "--fp", fingerprint()], timeout=5)
+    pub = base64.b64decode(data.get("pubkey", ""))
+    if len(pub) != 32:
+        raise NativeError("bad pubkey length")
+    return pub
+
+
 def state(records: list[bytes]) -> dict:
     """重放整条链，返回业务状态（C++ 计算，Python 不解析事件）。"""
     lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)

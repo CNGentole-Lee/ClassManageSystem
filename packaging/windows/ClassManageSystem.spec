@@ -102,6 +102,8 @@ a = Analysis(
         (os.path.join(ROOT, "THIRD-PARTY-NOTICES.md"), "."),
         # 原生模块的专有许可：关于窗口的「原生模块」分页会读取它
         (os.path.join(ROOT, "native", "LICENSE"), "native"),
+        # 一键还原用的原始副本（经 gzip 压缩）
+        (os.path.join(ROOT, "namepicker", "native_backup"), "namepicker/native_backup"),
     ],
     hiddenimports=[],
     hookspath=[],

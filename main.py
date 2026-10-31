@@ -128,12 +128,36 @@ def main():
     # 落盘，之后就再也不读明文 config.ini 了（它只是给人看的副本）。
     migrate_legacy_plaintext()
 
+    # --- 层 2：原生模块完整性（被换/损坏 → 尝试一键还原） -----------
+    native_state = {"ok": True, "restored": False, "reason": "OK"}
+    try:
+        from namepicker import guard as _guard
+        from namepicker import native_bridge as _nb
+        exe_path = _nb.native_path()
+        native_state = _guard.check_native(exe_path)
+        if native_state["restored"]:
+            startup_log.record([f"native module restored from backup: {native_state['reason']}"])
+        elif not native_state["ok"]:
+            startup_log.record([f"native module rejected: {native_state['reason']}"])
+    except Exception as exc:                      # noqa: BLE001
+        native_state = {"ok": False, "restored": False, "reason": str(exc)}
+        startup_log.record([f"native module unavailable: {exc}"])
+
     store = ConfigStore()
 
     # --- 事件链：校验 / 迁移 / 重放 --------------------------------
     # 分数以事件链为准：启动时先验签，通过则重放出组名与分数；
     # 失败说明文件被替换或损坏，此时**不采用**链上数据，并记录告警。
     ledger_state = {"ok": True, "error": ""}
+    security = {"level": "info", "problems": [], "ntp": {}}
+    from namepicker import guard as _guard
+
+    def _guard_pubkey() -> str:
+        try:
+            return _guard.pubkey_b64()
+        except Exception:                         # noqa: BLE001
+            return ""
+
     try:
         from namepicker import ledger as _ledger
         chain = _ledger.Ledger(store.path)
@@ -152,15 +176,34 @@ def main():
 
         if problem and chain.restore_from_shadow():
             # 主链被删/被换，但安全副本完好：直接恢复，并告诉老师发生过什么
-            store.apply_ledger_state(chain.state())
+            state = chain.state()
+            store.apply_ledger_state(state)
+            pubkey = _guard_pubkey()
+            chain._pubkey_b64 = pubkey
+            chain.write_anchor(chain.count(), chain.head(), ts=int(state.get("ts", 0)),
+                               digest=chain.state_digest(state), pubkey=pubkey)
+            security = _guard.evaluate(chain, state, pubkey, _guard.network_time())
             ledger_state = {"ok": True, "error": problem, "recovered": True}
+            # 回滚事件本身必须留档：恢复成功不代表没发生过
+            try:
+                from namepicker import integrity as _integrity_rec
+                _integrity_rec.append_tamper_log(
+                    os.path.dirname(store.path), "warn", "SHADOW_RESTORED",
+                    f"detected={problem}")
+            except Exception:                      # noqa: BLE001
+                pass
             startup_log.record([f"ledger restored from shadow: {problem}"])
         elif problem:
             ledger_state = {"ok": False, "error": problem}
             startup_log.record([f"ledger rejected: {problem}"])
         elif chain.count():
-            store.apply_ledger_state(chain.state())
-            chain.write_anchor(chain.count(), chain.head())
+            state = chain.state()
+            store.apply_ledger_state(state)
+            pubkey = _guard_pubkey()
+            chain._pubkey_b64 = pubkey
+            chain.write_anchor(chain.count(), chain.head(), ts=int(state.get("ts", 0)),
+                               digest=chain.state_digest(state), pubkey=pubkey)
+            security = _guard.evaluate(chain, state, pubkey, _guard.network_time())
 
         # 只有链可信时才挂上：链不可信还继续追加，会把坏链写得更长
         if ledger_state["ok"]:
@@ -266,6 +309,37 @@ def main():
                e=ledger_state["error"]),
             0,
         )
+
+    # --- 层 2/3/5/6 的结果：分级提示 + 归档 -------------------------
+    # 原则：上课时尽量不打断（warn 只放状态栏），critical 才弹一次窗。
+    from namepicker import integrity as _integrity
+
+    log_dir = os.path.dirname(store.path)
+    if not native_state["ok"]:
+        _integrity.append_tamper_log(log_dir, "critical", "NATIVE_REJECTED",
+                                     native_state["reason"])
+        main_win.statusBar().showMessage(
+            tr("⚠ 原生模块不可用（{e}），本次以只读模式运行。",
+               "⚠ Native module unavailable ({e}); running read-only.",
+               e=native_state["reason"]),
+            0,
+        )
+
+    if security["problems"]:
+        detail = "；".join(_guard.describe(p) for p in security["problems"])
+        _integrity.append_tamper_log(log_dir, security["level"], "SECURITY", detail)
+        main_win.statusBar().showMessage(
+            tr("⚠ 数据完整性提示：{d}", "⚠ Integrity notice: {d}", d=detail), 0)
+        if security["level"] == "critical" and os.environ.get("QT_QPA_PLATFORM") != "offscreen":
+            QMessageBox.warning(
+                main_win,
+                tr("数据可能被还原过", "Data may have been rolled back"),
+                tr("检测到以下情况：\n\n{d}\n\n"
+                   "程序会继续以只读方式使用当前数据，并已记录到 tamper.log。",
+                   "Detected:\n\n{d}\n\n"
+                   "The app keeps running read-only and logged this to tamper.log.",
+                   d=detail),
+            )
 
     def restart_app() -> None:
         """切换语言后立即重启：先释放单实例锁，再拉起新进程，最后退出自己。"""

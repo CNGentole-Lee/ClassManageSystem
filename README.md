@@ -345,7 +345,19 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | `~/.cache/classmanage/<哈希>/ledger.esc` | 安全副本，用于自动恢复 |
 | `native/cmd_native`（Windows 为 `.exe`） | 原生模块：密钥、规则、加解密、签名 |
 
-**能挡住什么**（均为实测）：
+**完整性检查分七层**（前五层离线可用，第六层需要网络）：
+
+| 层 | 手段 | 挡住什么 | 离线 |
+|---|---|---|---|
+| 1 | Ed25519 签名（闭源模块） | 改记录、伪造记录 | ✅ |
+| 2 | 原生模块 SHA-256 清单 + 随包副本 | 替换/损坏 `cmd_native`；可一键还原 | ✅ |
+| 3 | 锚点 `seq/head/ts/digest/pubkey` | 链变短、链头不符、状态不符、公钥被换 | ✅ |
+| 4 | **单调时间戳**（每条记录，签名保护） | 时间回退、事件乱序 | ✅ |
+| 5 | **ctime 见证** | 文件被整体替换（拷回旧目录） | ✅ |
+| 6 | **NTP 校时** | 整盘镜像、改系统时间、断网期间的还原 | ❌ |
+| 7 | 分级归档 `tamper.log` | 不打断上课，但留下证据 | ✅ |
+
+**能挡住什么**（均为实测，见 `tools/tamper_check.py`）：
 
 | 攻击 | 结果 |
 |---|---|
@@ -626,6 +638,13 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 ├── namepicker/                      # 主程序包
 │   ├── _init_.md                    # 包内文件职责说明
 │   ├── config_store.py              # 配置持久化（四级容灾）+ 分数缓存
+│   ├── ledger.py                    # 事件链：落盘、锚点、安全副本、调用原生模块
+│   ├── native_bridge.py             # 调用 cmd_native（fingerprint/identity/state/apply）
+│   ├── integrity.py                 # 原生模块哈希/还原、ctime 见证、tamper.log
+│   ├── guard.py                     # 启动判定（层 2/3/5/6/7）与分级
+│   ├── sntp.py                      # 极简 NTP 客户端（可信时间）
+│   ├── native_manifest.py           # 钉死的二进制哈希（工具生成）
+│   └── native_backup/               # 原始二进制副本（一键还原来源）
 │   ├── crypto_utils.py              # AES-256-GCM 与 ~/.classmanage_key 密钥管理
 │   ├── log_store.py                 # points_log.dat：加密操作日志 + 防回滚
 │   ├── backup_store.py              # QSettings 系统级隐蔽备份（跨平台）
@@ -713,6 +732,8 @@ python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空
 python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志(需要GUI)
 python tools/native_check.py           # 原生模块：状态机、规则拒绝、篡改/重排/换机器
 python tools/ledger_check.py           # 事件链：迁移、C++ 改分、回档检测、安全副本恢复
+python tools/tamper_check.py           # 篡改专项：换二进制/改记录/删记录/回滚/ctime/NTP/单调时间
+python tools/lint_check.py             # pyflakes：未定义名字（曾导致关于窗口崩溃）
 ```
 
 - `wipe_check` 现在覆盖：写盘失败必须被报告（只读目录）、失败后界面回退到磁盘真实数据、
@@ -1326,7 +1347,19 @@ At startup the whole chain is verified and replayed; the result overwrites the c
 | `~/.cache/classmanage/<hash>/ledger.esc` | shadow copy used for automatic restore |
 | `native/cmd_native` (`.exe` on Windows) | native module: keys, rules, crypto, chain |
 
-**What it stops** (all measured):
+**Integrity checks, seven layers** (the first five work offline; the sixth needs network):
+
+| Layer | Mechanism | Stops | Offline |
+|---|---|---|---|
+| 1 | Ed25519 signature (closed module) | edited/forged records | ✅ |
+| 2 | native SHA-256 manifest + bundled copy | replaced/corrupt `cmd_native`; one-click restore | ✅ |
+| 3 | anchor `seq/head/ts/digest/pubkey` | shorter chain, wrong head/state, swapped key | ✅ |
+| 4 | **monotonic timestamps** (signed) | time rollback, reordering | ✅ |
+| 5 | **ctime witness** | whole-file replacement (old copy restored) | ✅ |
+| 6 | **NTP** | full disk image, clock tampering, offline rollback | ❌ |
+| 7 | graded `tamper.log` | never interrupts class, but leaves evidence | ✅ |
+
+**What it stops** (all measured, see `tools/tamper_check.py`):
 
 | Attack | Result |
 |---|---|
@@ -1648,6 +1681,11 @@ checksums into the release notes. Manual runs may pick another tag or a specific
 │   ├── __init__.py
 │   ├── _init_.md                    # package file responsibilities
 │   ├── config_store.py              # config persistence (4-level recovery) + score cache
+│   ├── integrity.py                 # native hash/restore, ctime witness, tamper.log
+│   ├── guard.py                     # startup verdict (layers 2/3/5/6/7)
+│   ├── sntp.py                      # minimal NTP client (trusted time)
+│   ├── native_manifest.py           # pinned binary hashes (generated)
+│   └── native_backup/               # pristine binaries for one-click restore
 │   ├── ledger.py                    # event chain: append, anchor, shadow copy, native calls
 │   ├── native_bridge.py             # calls cmd_native (fingerprint/state/apply/verify)
 │   ├── crypto_utils.py              # AES-256-GCM and ~/.classmanage_key handling
@@ -1740,6 +1778,8 @@ python tools/wipe_check.py             # full reset: selection and per-part clea
 python tools/i18n_check.py             # bilingual: default group names, restart args, long-name elision, bilingual log (GUI required)
 python tools/native_check.py           # native module: state machine, rule rejections, tamper/reorder/other-machine
 python tools/ledger_check.py           # event chain: migration, C++ scoring, rollback detection, shadow restore
+python tools/tamper_check.py           # tamper suite: swapped binary / edited record / rollback / ctime / NTP / monotonic time
+python tools/lint_check.py             # pyflakes: undefined names (once crashed the About dialog)
 ```
 
 - `wipe_check` now also covers: a failed write must be reported (read-only directory),

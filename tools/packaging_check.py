@@ -83,6 +83,20 @@ def main() -> int:
         check(f"{label} spec bundles the native module license",
               '"native"' in spec and "LICENSE" in spec)
 
+    # ---- native integrity manifest ---------------------------------
+    manifest = read("namepicker/native_manifest.py")
+    check("native manifest exists", bool(manifest))
+    import hashlib as _hashlib
+    for platform, rel in (("darwin", "native/cmd_native"), ("win32", "native/cmd_native.exe")):
+        path = os.path.join(_ROOT, rel)
+        if not os.path.isfile(path):
+            continue
+        digest = _hashlib.sha256(open(path, "rb").read()).hexdigest()
+        check(f"manifest hash matches {rel}", digest in manifest, digest[:16])
+        check(f"restore backup exists for {os.path.basename(path)}",
+              os.path.isfile(os.path.join(_ROOT, "namepicker", "native_backup",
+                                          os.path.basename(path) + ".gz")))
+
     # ---- native binaries -------------------------------------------
     check("macOS native binary exists", os.path.isfile(os.path.join(_ROOT, "native", "cmd_native")))
     check("Windows native binary exists", os.path.isfile(os.path.join(_ROOT, "native", "cmd_native.exe")))

@@ -227,6 +227,23 @@ DEPENDENCY_NOTES = {
 }
 
 
+def dependencies_text() -> str:
+    """依赖清单的纯文本版（THIRD-PARTY-NOTICES.md 缺失时作为回退）。"""
+    zh = _is_zh()
+    title = "本项目使用的第三方组件" if zh else "Third-party components used"
+    lines = [title, "=" * 56, ""]
+    for name, version, license_, note in DEPENDENCIES:
+        note_zh, note_en = DEPENDENCY_NOTES.get(note, ("", ""))
+        note_text = note_zh if zh else note_en
+        row = f"{name:<14}{version:<11}{license_}"
+        if note_text:
+            row += f"   {note_text}"
+        lines.append(row)
+    lines += ["", ("完整声明见随包的 THIRD-PARTY-NOTICES.md。"
+                   if zh else "Full notices: the bundled THIRD-PARTY-NOTICES.md.")]
+    return "\n".join(lines)
+
+
 def dependencies_html() -> str:
     """把依赖表渲染成 HTML 表格（比纯文本对齐好看得多）。"""
     zh = _is_zh()
@@ -504,8 +521,9 @@ class AboutDialog(QDialog):
         self._tabs.addTab(self._native_view, tr("原生模块", "Native module"))
 
         notices = doc_text("THIRD-PARTY-NOTICES.md") or tr(
-            "未找到 THIRD-PARTY-NOTICES.md。\n\n" + DEPENDENCIES_ZH,
-            "THIRD-PARTY-NOTICES.md was not found.\n\n" + DEPENDENCIES_EN)
+            "未找到 THIRD-PARTY-NOTICES.md，以下是内置摘要：\n\n" + dependencies_text(),
+            "THIRD-PARTY-NOTICES.md was not found; embedded summary:\n\n"
+            + dependencies_text())
         self._notices_view = self._make_text_view(notices)
         self._tabs.addTab(self._notices_view, tr("第三方组件", "Third-party"))
 

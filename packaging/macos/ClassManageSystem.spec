@@ -123,6 +123,10 @@ LICENSE_LIST = [
 _NATIVE_LICENSE = os.path.join(ROOT, "native", "LICENSE")
 if os.path.isfile(_NATIVE_LICENSE):
     LICENSE_LIST.append(("Resources/native/LICENSE", _NATIVE_LICENSE, "DATA"))
+# 一键还原用的原始副本
+_BACKUP_DIR = os.path.join(ROOT, "namepicker", "native_backup")
+if os.path.isdir(_BACKUP_DIR):
+    LICENSE_LIST.append(("namepicker/native_backup", _BACKUP_DIR, "DATA"))
 
 app = BUNDLE(
     coll,

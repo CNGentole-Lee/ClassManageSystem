@@ -48,6 +48,8 @@ TESTS = [
     ("native_check", 120),        # 原生模块；缺失时返回 77 -> SKIP
     ("ledger_check", 180),        # 事件链：迁移/重放/篡改/回滚
     ("packaging_check", 60),      # 打包配置：spec / 安装包 / CI 一致性
+    ("tamper_check", 180),        # 篡改专项：哈希/链/锚点/ctime/NTP/单调时间
+    ("lint_check", 120),          # pyflakes：未定义名字（曾导致关于窗口崩溃）
     ("windows_check", 60),      # 非 Windows 上会自动跳过 Win32 分支
     ("macos_check", 120),       # 非 macOS / offscreen 下会自动跳过
 ]
