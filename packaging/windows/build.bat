@@ -100,31 +100,33 @@ set "PIP_OPTS=--timeout 60 --retries 5"
 set "PY=python"
 py -3.12 --version >nul 2>nul && set "PY=py -3.12"
 
-echo [1/6] Python:
+echo [1/7] Python:
 %PY% --version || goto :error
 
-echo [2/6] Build venv .venv-build:
+echo [2/7] Build venv .venv-build:
 if not exist ".venv-build" (
   %PY% -m venv .venv-build || goto :error
 )
 set "VPY=.venv-build\Scripts\python.exe"
 
-echo [3/6] Installing dependencies:
+echo [3/7] Installing dependencies:
 set "INSTALLED=0"
 for /L %%k in (!PICK!,1,!LIST_N!) do (
   if "!INSTALLED!"=="0" call :try_install %%k
 )
 if "!INSTALLED!"=="0" goto :error
 
-echo [4/6] Platform self-check: registry backup / SetWindowPos / encoding / file locking
+echo [4/7] Platform self-check: registry backup / SetWindowPos / encoding / file locking
 "%VPY%" tools\windows_check.py || goto :error
 
-echo [5/6] Storage and operation-log checks:
+echo [5/7] Storage, log and chain checks:
 "%VPY%" tools\config_check.py || goto :error
 "%VPY%" tools\config_crypto_check.py || goto :error
 "%VPY%" tools\log_crypto_check.py || goto :error
+"%VPY%" tools\native_check.py || goto :error
+"%VPY%" tools\ledger_check.py || goto :error
 
-echo [6/6] Building EXE:
+echo [6/7] Building directory package:
 REM Keep PyInstaller cache inside the project, not in %LOCALAPPDATA%.
 set "PYINSTALLER_CONFIG_DIR=%CD%\.pyinstaller-cache"
 "%VPY%" -m PyInstaller packaging\windows\ClassManageSystem.spec --noconfirm --clean || goto :error
@@ -132,29 +134,43 @@ set "PYINSTALLER_CONFIG_DIR=%CD%\.pyinstaller-cache"
 echo.
 echo ============================================================
 echo  DONE
-REM ---- 7] GPL-3.0: the licence must be INSIDE the single EXE ----
-REM We ship one EXE; the user gets no other files, so LICENSE has to be
-REM bundled (spec datas -> unpacked to _MEIPASS at runtime, read by the
-REM About dialog). The spec already aborts the build if it is missing;
-REM this is a second, visible check on the produced artifact.
+REM Copyright check: LICENSE / NOTICE / THIRD-PARTY-NOTICES are bundled by the
+REM spec (datas -> _internal at runtime, read by the About dialog). The spec
+REM already aborts when they are missing; this is a visible second check.
 if not exist "LICENSE" (
   echo [x] LICENSE missing in project root - refusing to ship a build
   goto :error
 )
-if not exist "dist\ClassManageSystem.exe" (
-  echo [x] dist\ClassManageSystem.exe was not produced
+
+REM Directory layout (ONEFILE = False): dist\ClassManageSystem\ClassManageSystem.exe
+if not exist "dist\ClassManageSystem\ClassManageSystem.exe" (
+  echo [x] dist\ClassManageSystem\ClassManageSystem.exe was not produced
   goto :error
 )
-echo [i] LICENSE is bundled inside the EXE [the About dialog reads it]
+REM The native module must be inside the package, otherwise the app runs read-only.
+if not exist "dist\ClassManageSystem\_internal\native\cmd_native.exe" (
+  echo [x] native module missing from the package - the app would run read-only
+  goto :error
+)
+echo [i] directory package OK, native module bundled
+
+REM ---- 7/7] Build the installer (Inno Setup) ----
+echo.
+echo [7/7] Building installer: dist\ClassManageSystem-*-Setup.exe
+call "%~dp0make_installer.bat"
+if errorlevel 1 (
+  echo [!] Installer not built. The directory package in dist\ClassManageSystem\ still works.
+  echo     Install Inno Setup 6 to produce a Setup.exe.
+)
 
 echo.
 echo ============================================================
 echo  DONE
-echo  Output: %CD%\dist\ClassManageSystem.exe
-echo  Distribute: dist\ClassManageSystem.exe  [single file, LICENSE inside]
+echo  Directory package: %CD%\dist\ClassManageSystem\
+echo  Installer        : %CD%\dist\ClassManageSystem-*-Setup.exe
+echo  Distribute: the Setup.exe (per-user install, no admin needed)
 echo ============================================================
 exit /b 0
-
 REM ============================================================
 REM  :probe_one %1 = index number
 REM  Sets BEST_MS / PICK when this index is reachable and faster.

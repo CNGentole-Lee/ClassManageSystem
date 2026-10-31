@@ -539,7 +539,16 @@ python tools/fairness_burnin.py
 packaging\windows\build.bat
 ```
 
-脚本会自动建 `.venv-build` 虚拟环境、装依赖、跑自检、打包，产物是目录 `dist\ClassManageSystem\`（含 `ClassManageSystem.exe` 与 `_internal\`），再由安装程序打成安装包。
+脚本会自动建 `.venv-build` 虚拟环境、装依赖、跑自检、打包，然后**接着生成安装包**：
+
+| 步骤 | 产物 |
+|---|---|
+| PyInstaller | `dist\ClassManageSystem\`（目录包，含 `ClassManageSystem.exe` 与 `_internal\`） |
+| Inno Setup | `dist\ClassManageSystem-<版本>-Setup.exe`（**安装程序**） |
+
+> 需要先装 [Inno Setup 6](https://jrsoftware.org/isdl.php)。没有装时脚本仍会产出目录包，
+> 并提示安装包未生成。
+> 只想单独出安装包：`packaging\windows\make_installer.bat`（需要先有目录包）。
 
 **pip 源自动选择**（不用手动判断自己在国内还是国外）：
 
@@ -1531,8 +1540,17 @@ On any Windows machine, build with:
 packaging\windows\build.bat
 ```
 
-The script creates a `.venv-build` virtualenv, installs dependencies, runs the self-check
-and packages `dist\ClassManageSystem.exe`.
+The script creates a `.venv-build` virtualenv, installs dependencies, runs the self-check,
+packages `dist\ClassManageSystem\`, and then **builds the installer**:
+
+| Step | Output |
+|---|---|
+| PyInstaller | `dist\ClassManageSystem\` (directory package) |
+| Inno Setup | `dist\ClassManageSystem-<version>-Setup.exe` (the **installer**) |
+
+> Install [Inno Setup 6](https://jrsoftware.org/isdl.php) first. Without it the script still
+> produces the directory package and reports that the installer was skipped.
+> Installer only: `packaging\windows\make_installer.bat`.
 
 **The pip index is auto-selected** — you do not have to figure out which country you are in:
 
