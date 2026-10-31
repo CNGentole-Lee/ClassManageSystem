@@ -139,7 +139,8 @@ def main() -> int:
     check("release downloads the build artifact by name",
           "ClassManageSystem-windows-x64" in release)
     check("release extracts the portable zip and checks contents",
-          "unzip" in release and "cmd_native.exe" in release)
+          "unzip" in release and "cmd_sign.exe" in release
+          and "cmd_verify.exe" in release)
     check("release has permission to write releases",
           "contents: write" in release)
     check("release uploads installer and portable zip",
@@ -171,8 +172,9 @@ def main() -> int:
     build_bat = read("packaging/windows/build.bat")
     check("build.bat checks the directory package (not the old single exe)",
           "dist\\ClassManageSystem\\ClassManageSystem.exe" in build_bat)
-    check("build.bat refuses to ship without the native module",
-          "_internal\\native\\cmd_native.exe" in build_bat)
+    check("build.bat refuses to ship without both native modules",
+          "_internal\\native\\cmd_sign.exe" in build_bat
+          and "_internal\\native\\cmd_verify.exe" in build_bat)
     check("build.bat runs the chain tests", "ledger_check" in build_bat)
     check("build.bat builds the installer as the last step",
           "make_installer.bat" in build_bat)

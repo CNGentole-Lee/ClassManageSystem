@@ -1,23 +1,24 @@
 name: release
 
-# 把 build-windows-installer 的产物发到 GitHub Release（默认标签 V3.0）
+# 把 Windows 与 macOS 的构建产物发到 GitHub Release（默认标签 V3.0）
 #
-# 为什么不复用 build 工作流：
-#   * build 只负责「能跑、能出包」，失败就停；
-#   * release 只负责「把已验证的产物发出去」，可以重跑、可以补发，
-#     不会因为发布失败而重跑一遍 15 分钟的打包。
+# 设计原则：
+#   * build 负责“能出包”，release 只负责“把已验证的产物发出去”；
+#   * 两个平台按**同一个提交**取产物，避免 Win 和 Mac 来自不同代码；
+#   * 任一平台缺失就报错，不静默发半套（可手动重跑）。
 #
-# 触发方式：
-#   1) build-windows-installer 成功后自动触发（workflow_run）
-#   2) 手动：Actions → release → Run workflow（可指定 tag / 运行 ID）
+# 触发：
+#   1) build-windows-installer / build-macos-app 成功后自动触发
+#      （只接受 push 触发的构建，PR 不会发版）
+#   2) 手动：Actions → release → Run workflow（可指定 tag / 提交）
 #
-# 产物（Actions 里的 artifact 是 zip，这里会先下载并解压）：
-#   ClassManageSystem-<版本>-Setup.exe      安装程序
-#   ClassManageSystem-<版本>-portable.zip   便携版
+# 产物：
+#   Windows: ClassManageSystem-<版本>-Setup.exe / -portable.zip
+#   macOS:   ClassManageSystem-<版本>.dmg（或 -macos.zip）
 
 on:
   workflow_run:
-    workflows: ["build-windows-installer"]
+    workflows: ["build-windows-installer", "build-macos-app"]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -25,8 +26,8 @@ on:
         description: "Release tag"
         required: true
         default: "V3.0"
-      run_id:
-        description: "build-windows-installer 的运行 ID（留空则用最近一次成功运行）"
+      sha:
+        description: "要发布的提交 SHA（留空则用默认分支最新提交）"
         required: false
         default: ""
 
@@ -36,18 +37,18 @@ permissions:
 
 jobs:
   publish:
-    # 只有构建成功才发布；手动触发时不看结论
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve run id and tag
+      - name: Resolve tag and the commit to publish
         id: meta
         shell: bash
         env:
@@ -56,62 +57,136 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ inputs.tag }}"
-            RUN_ID="${{ inputs.run_id }}"
+            SHA="${{ inputs.sha }}"
+            if [ -z "$SHA" ]; then
+              SHA=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.repository.default_branch }}" --jq .sha)
+            fi
           else
             TAG="V3.0"
-            RUN_ID="${{ github.event.workflow_run.id }}"
+            SHA="${{ github.event.workflow_run.head_sha }}"
           fi
-
-          if [ -z "$RUN_ID" ]; then
-            echo "no run id given; looking for the latest successful build"
-            RUN_ID=$(gh run list \
-              --repo "${{ github.repository }}" \
-              --workflow build-windows.yml \
-              --status success --limit 1 \
-              --json databaseId --jq '.[0].databaseId')
-          fi
-          [ -n "$RUN_ID" ] || { echo "::error::no successful build run found"; exit 1; }
-
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          [ -n "$SHA" ] || { echo "::error::cannot resolve commit"; exit 1; }
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "using run $RUN_ID, tag $TAG"
+          echo "publishing commit $SHA to $TAG"
 
-      - name: Download build artifacts (and extract)
+      - name: Wait for both platform builds of that commit
+        id: runs
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          mkdir -p artifacts
-          # gh run download 会把 artifact 的 zip 解压到目标目录
-          gh run download "${{ steps.meta.outputs.run_id }}" \
-            --repo "${{ github.repository }}" \
-            --name ClassManageSystem-windows-x64 \
-            --dir artifacts
-          echo "downloaded:"
-          find artifacts -maxdepth 2 -type f -printf '  %p (%s bytes)\n' | sort
+          SHA="${{ steps.meta.outputs.sha }}"
 
-      - name: Verify artifacts
+          # 两个工作流是独立完成的：先完成的那个触发 release 时，
+          # 另一个可能还在排队/构建。这里轮询等待，最多 30 分钟。
+          # 任何一方失败就立即退出，不发布半套产物。
+          latest() {
+            gh run list --repo "${{ github.repository }}" --workflow "$1" \
+              --commit "$SHA" --limit 1 \
+              --json databaseId,status,conclusion \
+              --jq '.[0] // {} | "\(.databaseId // "")\t\(.status // "")\t\(.conclusion // "")"'
+          }
+
+          win_id="" ; mac_id=""
+          for attempt in $(seq 1 60); do
+            IFS=$'\t' read -r w_id w_status w_concl < <(latest build-windows.yml)
+            IFS=$'\t' read -r m_id m_status m_concl < <(latest build-macos.yml)
+
+            fail=0
+            for pair in "Windows:$w_id:$w_status:$w_concl" "macOS:$m_id:$m_status:$m_concl"; do
+              IFS=: read -r name rid status concl <<< "$pair"
+              if [ "$status" = "completed" ] && [ "$concl" != "success" ]; then
+                echo "::error::$name build for $SHA finished with '$concl'"
+                fail=1
+              fi
+            done
+            [ "$fail" -eq 0 ] || exit 1
+
+            if [ -n "$w_id" ] && [ -n "$m_id" ] \
+               && [ "$w_concl" = "success" ] && [ "$m_concl" = "success" ]; then
+              win_id="$w_id"; mac_id="$m_id"
+              break
+            fi
+
+            echo "attempt $attempt/60: windows='$w_status/$w_concl' macos='$m_status/$m_concl'; waiting 30s"
+            sleep 30
+          done
+
+          [ -n "$win_id" ] && [ -n "$mac_id" ] || {
+            echo "::error::timed out waiting for both builds of $SHA"; exit 1; }
+          echo "windows_run=$win_id" >> "$GITHUB_OUTPUT"
+          echo "macos_run=$mac_id" >> "$GITHUB_OUTPUT"
+          echo "windows run: $win_id"
+          echo "macos run:   $mac_id"
+
+      - name: Download artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          setup=$(find artifacts -maxdepth 2 -name '*Setup.exe' | head -n1)
-          portable=$(find artifacts -maxdepth 2 -name '*portable.zip' | head -n1)
-          [ -n "$setup" ] || { echo "::error::Setup.exe not found in artifacts"; exit 1; }
-          [ -n "$portable" ] || { echo "::error::portable.zip not found in artifacts"; exit 1; }
+          mkdir -p artifacts/windows artifacts/macos
+          gh run download "${{ steps.runs.outputs.windows_run }}" \
+            --repo "${{ github.repository }}" \
+            --name ClassManageSystem-windows-x64 --dir artifacts/windows
+          gh run download "${{ steps.runs.outputs.macos_run }}" \
+            --repo "${{ github.repository }}" \
+            --name ClassManageSystem-macos-arm64 --dir artifacts/macos
+          echo "downloaded:"
+          find artifacts -maxdepth 3 -type f -printf '  %p (%s bytes)\n' | sort
 
-          # 便携版必须能解开，且里面要有主程序和原生模块
-          mkdir -p portable-check
-          unzip -q "$portable" -d portable-check
-          exe=$(find portable-check -name ClassManageSystem.exe | head -n1)
-          native=$(find portable-check -name cmd_native.exe | head -n1)
+      - name: Verify Windows artifacts
+        run: |
+          set -euo pipefail
+          setup=$(find artifacts/windows -maxdepth 2 -name '*Setup.exe' | head -n1)
+          portable=$(find artifacts/windows -maxdepth 2 -name '*portable.zip' | head -n1)
+          [ -n "$setup" ] || { echo "::error::Setup.exe not found"; exit 1; }
+          [ -n "$portable" ] || { echo "::error::portable.zip not found"; exit 1; }
+
+          mkdir -p check-win
+          unzip -q "$portable" -d check-win
+          exe=$(find check-win -name ClassManageSystem.exe | head -n1)
+          sign=$(find check-win -name cmd_sign.exe | head -n1)
+          verify=$(find check-win -name cmd_verify.exe | head -n1)
           [ -n "$exe" ] || { echo "::error::ClassManageSystem.exe missing in portable.zip"; exit 1; }
-          [ -n "$native" ] || { echo "::error::cmd_native.exe missing in portable.zip"; exit 1; }
-          echo "portable.zip OK: main exe + native module present"
+          [ -n "$sign" ] || { echo "::error::cmd_sign.exe missing in portable.zip"; exit 1; }
+          [ -n "$verify" ] || { echo "::error::cmd_verify.exe missing in portable.zip"; exit 1; }
+          echo "Windows portable OK: main exe + both native modules"
 
+      - name: Verify macOS artifacts
+        run: |
+          set -euo pipefail
+          app=$(find artifacts/macos -maxdepth 2 -name 'ClassManageSystem.app' -type d | head -n1)
+          [ -n "$app" ] || { echo "::error::ClassManageSystem.app not found"; exit 1; }
+
+          for bin in cmd_sign cmd_verify; do
+            path="$app/Contents/Frameworks/native/$bin"
+            [ -f "$path" ] || { echo "::error::$bin missing in .app"; exit 1; }
+            chmod +x "$path" || true
+            "$path" selftest || { echo "::error::$bin selftest failed"; exit 1; }
+          done
+          ls "$app/Contents/Resources/native/"*.gz >/dev/null 2>&1 || {
+            echo "::error::native backups missing from .app"; exit 1; }
+
+          installer=$(find artifacts/macos -maxdepth 1 -name '*.dmg' | head -n1)
+          if [ -z "$installer" ]; then
+            installer=$(find artifacts/macos -maxdepth 1 -name '*macos*.zip' | head -n1)
+          fi
+          [ -n "$installer" ] || { echo "::error::no .dmg or macOS .zip produced"; exit 1; }
+          echo "macOS OK: .app with both binaries + backups; installer: $(basename "$installer")"
+
+      - name: Build checksum notes
+        run: |
+          set -euo pipefail
           {
             echo "### SHA-256"
             echo '```'
-            sha256sum "$setup" "$portable"
+            find artifacts -maxdepth 2 -type f \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' \) \
+              -print0 | sort -z | xargs -0 sha256sum
             echo '```'
+            echo
+            echo "提交：\`${{ steps.meta.outputs.sha }}\`"
           } > checksums.md
           cat checksums.md
 
@@ -121,22 +196,21 @@ jobs:
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -euo pipefail
-          # 版本号从源码读取，写进 release 标题
           VER=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' namepicker/about_dialog.py | head -n1)
           TITLE="ClassManageSystem ${VER}"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG exists; updating notes"
             gh release edit "$TAG" --title "$TITLE" --notes-file checksums.md
           else
-            echo "creating release $TAG"
-            gh release create "$TAG" \
-              --title "$TITLE" \
-              --notes-file checksums.md \
+            gh release create "$TAG" --title "$TITLE" --notes-file checksums.md \
               --target "${{ github.event.repository.default_branch }}"
           fi
 
-          # 只上传最终产物；artifact 目录里的中间文件不发布
-          gh release upload "$TAG" artifacts/*.exe artifacts/*.zip --clobber
-          echo "uploaded:"
+          # 只上传最终产物：安装包 / 便携包 / DMG。.app 目录不作为资产。
+          mapfile -t files < <(find artifacts -maxdepth 2 -type f \
+            \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' \) | sort)
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::no files to upload"; exit 1; }
+          gh release upload "$TAG" "${files[@]}" --clobber
+
+          echo "release $TAG assets:"
           gh release view "$TAG" --json assets --jq '.assets[].name'

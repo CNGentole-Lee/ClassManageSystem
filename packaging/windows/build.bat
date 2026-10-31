@@ -148,8 +148,12 @@ if not exist "dist\ClassManageSystem\ClassManageSystem.exe" (
   goto :error
 )
 REM The native module must be inside the package, otherwise the app runs read-only.
-if not exist "dist\ClassManageSystem\_internal\native\cmd_native.exe" (
+if not exist "dist\ClassManageSystem\_internal\native\cmd_sign.exe" (
   echo [x] native module missing from the package - the app would run read-only
+  goto :error
+)
+if not exist "dist\ClassManageSystem\_internal\native\cmd_verify.exe" (
+  echo [x] verify module missing from the package - the app would run read-only
   goto :error
 )
 echo [i] directory package OK, native module bundled
