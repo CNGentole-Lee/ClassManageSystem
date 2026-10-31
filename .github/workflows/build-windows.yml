@@ -92,6 +92,7 @@ jobs:
           "  size: {0:N1} MB" -f ((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Verify bundled native hashes
+        shell: bash
         run: |
           python - <<'PY'
           import hashlib, pathlib, re, sys

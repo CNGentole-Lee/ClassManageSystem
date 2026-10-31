@@ -188,6 +188,9 @@ def main() -> int:
     print("\n" + "=" * 66)
     print(f"总计 {time.time() - total:.1f}s")
     if failed:
+        if os.environ.get("GITHUB_ACTIONS"):
+            for name in failed:
+                print(f"::error::{name} failed")
         print(f"失败 {len(failed)} 项: {', '.join(failed)}")
         print("=" * 66)
         return 1

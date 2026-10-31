@@ -65,7 +65,11 @@ def main() -> int:
     style = [m for m in collector.messages if m not in fatal]
 
     for filename, lineno, _kind, msg in fatal:
-        print(f"[FAIL] {os.path.relpath(filename, _ROOT)}:{lineno}: {msg}")
+        rel = os.path.relpath(filename, _ROOT)
+        print(f"[FAIL] {rel}:{lineno}: {msg}")
+        # GitHub Actions 注解：直接显示在 PR/运行摘要里，不用翻日志
+        if os.environ.get("GITHUB_ACTIONS"):
+            print(f"::error file={rel},line={max(lineno, 1)}::{msg}")
     for filename, lineno, _kind, msg in style:
         print(f"[warn] {os.path.relpath(filename, _ROOT)}:{lineno}: {msg}")
 
