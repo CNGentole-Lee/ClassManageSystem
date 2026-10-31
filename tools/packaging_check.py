@@ -110,6 +110,11 @@ def main() -> int:
           "#ifndef MyAppVersion" in iss and "MyAppVersion" in iss)
 
     # ---- CI ---------------------------------------------------------
+    check("windows spec builds a directory (ONEFILE = False)",
+          "ONEFILE = False" in win_spec, "installer requires the onedir layout")
+    check("workflow verifies the onedir package before running ISCC",
+          "Verify PyInstaller produced a directory package" in workflow
+          and "_internal\\native\\cmd_native.exe" in workflow)
     check("workflow builds the Inno Setup installer",
           "innosetup" in workflow and "ISCC" in workflow)
     # ISCC 的 /D 定义必须在脚本路径之前，否则会被当成第二个脚本文件

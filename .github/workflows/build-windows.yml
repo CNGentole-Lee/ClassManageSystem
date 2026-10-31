@@ -72,6 +72,22 @@ jobs:
       - name: PyInstaller (onedir)
         run: pyinstaller packaging/windows/ClassManageSystem.spec --noconfirm --clean
 
+      - name: Verify PyInstaller produced a directory package
+        shell: pwsh
+        run: |
+          $dir = "dist\ClassManageSystem"
+          if (-not (Test-Path $dir -PathType Container)) {
+            "dist contents:"
+            if (Test-Path dist) { Get-ChildItem dist | ForEach-Object { "  " + $_.Name } }
+            throw "dist/ClassManageSystem was not produced. If dist/ClassManageSystem.exe exists as a FILE, the spec still has ONEFILE = True; the installer needs ONEFILE = False (directory layout)."
+          }
+          $exe = Join-Path $dir "ClassManageSystem.exe"
+          if (-not (Test-Path $exe)) { throw "ClassManageSystem.exe missing in $dir" }
+          $native = Join-Path $dir "_internal\native\cmd_native.exe"
+          if (-not (Test-Path $native)) { throw "native module missing in the package: $native" }
+          "directory package OK: $dir"
+          "  size: {0:N1} MB" -f ((Get-ChildItem $dir -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+
       - name: Determine version
         id: version
         shell: pwsh
