@@ -35,12 +35,14 @@ from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from namepicker import i18n, theme  # noqa: E402
+from namepicker.about_dialog import AboutDialog  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 from namepicker.draw_popup import DrawResultPopup  # noqa: E402
 from namepicker.floating_ball import FloatingBall  # noqa: E402
 from namepicker.main_window import MainWindow  # noqa: E402
 from namepicker.name_engine import NameEngine  # noqa: E402
 from namepicker.points_window import PointsWindow, _LogViewerDialog  # noqa: E402
+from namepicker.wipe_dialog import WipeDialog  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "docs", "images")
@@ -132,15 +134,48 @@ def scrub_paths(widget) -> None:
     """把控件里显示的临时绝对路径换成文件名。
 
     README 截图里出现 /var/folders/xxx/cm_shots_yyy/ 这种测试路径没有意义，
-    所以只把「路径」这一部分换成文件名，其余文字保持原样（不改运行逻辑）。
+    所以把任何 ".../xxx.dat|ini|log" 归一成文件名；仓库绝对路径也一并去掉。
+    只改显示文字，不影响任何运行逻辑。
     """
+    import re
+
     from PySide6.QtWidgets import QLabel
+
     for label in widget.findChildren(QLabel):
         text = label.text()
-        if "加密保存于" in text or "配置" in text or "Encrypted at" in text or "Config" in text:
-            import re
-            text = re.sub(r"(/[^\s（(]+/)([^/\s（(]+\.(?:dat|ini))", r"\2", text)
-            label.setText(text)
+        text = text.replace(ROOT + os.sep, "").replace(ROOT, ".")
+        # 任意绝对/相对路径 -> 只留文件名
+        text = re.sub(r"[^\s:：()（）]*[/\\]([^/\\\s:：()（）]+\.(?:dat|ini|log|png))",
+                      r"\1", text)
+        label.setText(text)
+
+
+LONG_GROUP_NAMES = ["Bartholomew Montgomery-Fitzgerald",
+                    "Wolfeschlegelsteinhausenbergerdorff",
+                    "Li"]
+
+
+def shot_long_names(app, tmp: str) -> None:
+    """超长组名：卡片按宽度省略，tooltip 保留全名（README 只引用英文版）。"""
+    if not LANG.startswith("en"):
+        return
+    store = ConfigStore(os.path.join(tmp, "long", "config.ini"))
+    for i, name in enumerate(LONG_GROUP_NAMES, 1):
+        store.set_group_name(i, name)
+    for group, score in ((1, 14), (2, 5), (3, 4), (4, -2)):
+        store.set_score(group, score)
+    store.save()
+
+    panel = PointsWindow(store)
+    panel.move(OFFSCREEN, OFFSCREEN)
+    panel.resize(940, 680)
+    panel.show()
+    process(app, 500)
+    scrub_paths(panel)
+    process(app, 100)
+    save(panel, "long-names.png")
+    panel.close()
+    panel.deleteLater()
 
 
 def main() -> int:
@@ -223,6 +258,31 @@ def main() -> int:
     process(app, 2600)                      # > ROLL_DURATION_MS(1800) + 揭晓延时
     save(popup, "draw-popup.png", scale=1)
     popup._on_close()
+
+    # --- 关于窗口（以前没进脚本，README 里一直是旧图）---
+    about = AboutDialog()
+    about.move(OFFSCREEN, OFFSCREEN)
+    about.resize(1040, 760)
+    about.show()
+    process(app, 600)
+    scrub_paths(about)
+    process(app, 150)
+    save(about, "about-dialog.png")
+    about.close()
+
+    # --- 彻底重置（同上）---
+    wipe = WipeDialog()
+    wipe.move(OFFSCREEN, OFFSCREEN)
+    wipe.resize(560, 380)
+    wipe.show()
+    process(app, 400)
+    scrub_paths(wipe)
+    process(app, 100)
+    save(wipe, "wipe-dialog.png")
+    wipe.close()
+
+    # --- 超长名字 + 英文默认组名（README 的 long-names 图）---
+    shot_long_names(app, tmp)
 
     print(f"\nDone, output directory: {OUT_DIR}")
     return 0

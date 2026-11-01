@@ -368,6 +368,7 @@ def markdown_to_html(text: str) -> str:
     in_code = False
     list_open = None
     paragraph: list[str] = []
+    previous_was_blank = True      # setext 标题要求上一行是普通段落的结尾
 
     def flush_paragraph() -> None:
         nonlocal paragraph
@@ -397,11 +398,25 @@ def markdown_to_html(text: str) -> str:
         if not stripped:
             flush_paragraph()
             close_list()
+            previous_was_blank = True
+            continue
+
+        # setext 标题：上一行是普通文字，本行全是 = 或 -（且不是分隔线）
+        if (not previous_was_blank and paragraph and len(stripped) >= 3
+                and set(stripped) <= {"=", "-", " "} and stripped.strip("= ") == ""
+                and stripped.startswith("=")):
+            text_line = paragraph.pop()
+            flush_paragraph()
+            close_list()
+            out.append('<p style="font-size:15px; font-weight:bold; margin:12px 0 6px 0;">'
+                       + inline(text_line) + '</p>')
+            previous_was_blank = False
             continue
         if set(stripped) <= {"-"} and len(stripped) >= 3:
             flush_paragraph()
             close_list()
             out.append('<hr style="border:none; border-top:1px solid #88888855; margin:10px 0;">')
+            previous_was_blank = False
             continue
         heading = re.match(r"^(#{1,4})\s+(.*)$", stripped)
         if heading:
@@ -411,6 +426,7 @@ def markdown_to_html(text: str) -> str:
             size = {1: "15px", 2: "14px", 3: "13px", 4: "12px"}.get(level, "12px")
             out.append('<p style="font-size:' + size + '; font-weight:bold; margin:10px 0 4px 0;">'
                        + inline(heading.group(2)) + '</p>')
+            previous_was_blank = False
             continue
         bullet = re.match(r"^[-*]\s+(.*)$", stripped)
         ordered = re.match(r"^(\d+)\.\s+(.*)$", stripped)
@@ -424,9 +440,11 @@ def markdown_to_html(text: str) -> str:
                 list_open = want
             body = bullet.group(1) if bullet else ordered.group(2)
             out.append("<li>" + inline(body) + "</li>")
+            previous_was_blank = False
             continue
         close_list()
         paragraph.append(stripped)
+        previous_was_blank = False
 
     flush_paragraph()
     close_list()
