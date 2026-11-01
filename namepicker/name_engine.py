@@ -319,7 +319,7 @@ class NameEngine(QObject):
             return True  # 空名单视为数字模式
         return all(s.lstrip('-').isdigit() for s in self._names)
 
-    # --- 统计（持久化到 stats.ini，让公平性跨重启保留）---
+    # --- 统计（持久化到事件链，让公平性跨重启保留）---
 
     def get_draw_counts(self) -> dict[str, int]:
         """当前名单每人的长期抽取次数 {name: lifetime draws}。"""

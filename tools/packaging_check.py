@@ -104,6 +104,23 @@ def main() -> int:
         check(f"{rel} exists", os.path.isfile(os.path.join(_ROOT, rel)))
     # 闭源要求：仓库里只能有二进制与 native/LICENSE，不能有构建脚本或源码
     tracked = _tracked_native_files()
+    # 法务：native/LICENSE 必须带 libsodium 的 ISC 声明与全文
+    native_license = read("native/LICENSE")
+    check("native license carries the libsodium attribution",
+          "libsodium" in native_license and "ISC" in native_license)
+    check("native license includes the ISC text",
+          "Permission to use, copy, modify" in native_license)
+    check("native license names the current binaries",
+          "cmd_sign" in native_license and "cmd_verify" in native_license
+          and "cmd_native" not in native_license.replace("cmd_native、cmd_native.exe", ""))
+    # 主 LICENSE 的 SCOPE 段必须在 Apache 全文之前
+    main_license = read("LICENSE")
+    check("main license states the scope before the Apache text",
+          main_license.find("SCOPE OF THIS LICENSE") != -1
+          and main_license.find("SCOPE OF THIS LICENSE") < main_license.find("Apache License"))
+    _scope = main_license.split("TERMS AND CONDITIONS")[0]
+    check("scope excludes native/", "native/" in _scope)
+
     check("native/ only ships binaries and the license",
           tracked <= {"LICENSE", "cmd_sign", "cmd_verify",
                       "cmd_sign.exe", "cmd_verify.exe"} and "LICENSE" in tracked,

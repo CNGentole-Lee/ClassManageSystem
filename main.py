@@ -155,6 +155,7 @@ def main():
     # 失败说明文件被替换或损坏，此时**不采用**链上数据，并记录告警。
     ledger_state = {"ok": True, "error": ""}
     security = {"level": "info", "problems": [], "ntp": {}}
+    chain = None                                  # 链不可用时保持 None
     from namepicker import guard as _guard
 
     def _guard_pubkey() -> str:
@@ -227,7 +228,8 @@ def main():
         ledger_state = {"ok": False, "internal": True, "error": str(exc)}
         startup_log.record([f"ledger unavailable: {type(exc).__name__}: {exc}"])
 
-    stats = StatsStore()
+    # 长期抽取次数现在是事件链的一部分（op=draw），不再有明文文件
+    stats = StatsStore(chain=chain if ledger_state["ok"] else None)
     engine = NameEngine()
 
 # --- 公平性统计：stats.ini <-> 引擎 ------------------------

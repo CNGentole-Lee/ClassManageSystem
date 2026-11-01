@@ -51,8 +51,13 @@ def main() -> int:
     app = QApplication(sys.argv)
     tmp = tempfile.mkdtemp(prefix="cm_wipe_check_")
 
+    from namepicker.ledger import Ledger
     store = ConfigStore(os.path.join(tmp, "config.ini"))
-    stats = StatsStore(os.path.join(tmp, "stats.ini"))
+    _chain = Ledger(store.path)
+    if _chain.count() == 0:
+        _chain.migrate_from(5, ["甲组", "乙组", "丙组", "丁组", "戊组"], [0] * 5)
+    store.attach_ledger(_chain)
+    stats = StatsStore(os.path.join(tmp, "stats.ini"), chain=_chain)
     engine = NameEngine()
     engine.generate_number_list(1, 5)
 
@@ -163,7 +168,7 @@ def main() -> int:
                               {"names": False, "scores": False,
                                "fairness": True, "history": False})
     after = state()
-    check("stats.ini cleared", after["stats"] == {}, f"actual {after['stats']}")
+    check("long-term counts cleared", after["stats"] == {}, f"actual {after['stats']}")
     check("in-memory counts cleared", not any(after["counts"].values()),
           f"actual {after['counts']}")
     check("history untouched", after["history"] == before["history"])
@@ -210,7 +215,11 @@ def main() -> int:
     ro_store = ConfigStore(os.path.join(ro_dir, "config.ini"))
     ro_store.set_score(1, 5)
     ro_store.save()
-    ro_stats = StatsStore(os.path.join(ro_dir, "stats.ini"))
+    from namepicker.ledger import Ledger as _Ledger
+    _ro_chain = _Ledger(ro_store.path)
+    if _ro_chain.count() == 0:
+        _ro_chain.migrate_from(3, ["甲组", "乙组", "丙组"], [0, 0, 0])
+    ro_stats = StatsStore(os.path.join(ro_dir, "stats.ini"), chain=_ro_chain)
     ro_engine = NameEngine()
     ro_engine.generate_number_list(1, 3)
     mode = _os.stat(ro_dir).st_mode

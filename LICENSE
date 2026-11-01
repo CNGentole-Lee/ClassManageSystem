@@ -1,3 +1,23 @@
+SCOPE OF THIS LICENSE
+=====================
+
+Copyright 2026 Gentole Lee
+
+The "Work" licensed under the Apache License, Version 2.0 below consists of the
+source code and documentation in this repository, with one exclusion:
+
+    native/  —  the prebuilt native binaries (cmd_sign, cmd_verify and their
+                .exe builds) are NOT part of the Work. They are proprietary
+                software distributed under native/LICENSE, and they statically
+                link libsodium (ISC License, attribution inside native/LICENSE).
+
+Everything outside native/ is licensed under Apache-2.0. The exclusion is also
+stated at the end of this file; the version above is the authoritative scope.
+
+Third-party components used by the Python side (PySide6, Qt, cryptography) are
+listed in THIRD-PARTY-NOTICES.md and are not relicensed by this project.
+
+-----------------------------------------------------------------------------
 
                                  Apache License
                            Version 2.0, January 2004

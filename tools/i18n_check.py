@@ -405,7 +405,10 @@ def main() -> int:
     check("license tab is the first", tabs[0] in ("许可证", "License"), tabs[0])
     native_text = dlg._native_view.toPlainText()
     check("native tab shows the proprietary license",
-          "cmd_native" in native_text and ("专有" in native_text or "proprietary" in native_text))
+          "cmd_sign" in native_text and "cmd_verify" in native_text
+          and ("专有" in native_text or "proprietary" in native_text))
+    check("native tab carries the libsodium attribution",
+          "libsodium" in native_text and "ISC" in native_text)
     notices_text = dlg._notices_view.toPlainText()
     check("third-party tab lists PySide6 and Qt",
           "PySide6" in notices_text and "Qt" in notices_text)

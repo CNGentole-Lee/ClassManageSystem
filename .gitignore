@@ -266,7 +266,7 @@ native/CMakeLists.txt
 native/cmd_native
 native/cmd_native.exe
 native/build_*.sh
-# 注意：发布用的二进制（cmd_native / cmd_native.exe）与 native/LICENSE 要提交，供 CI 打包
+# 注意：发布用的二进制（cmd_sign / cmd_verify 及其 .exe）与 native/LICENSE 要提交，供 CI 打包
 
 # 运行时数据（事件链、备份、日志）：不进仓库
 Data/

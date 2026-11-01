@@ -38,33 +38,38 @@ assert not s3._cp.has_section("stats"), "stale [stats] section was not cleared"
 print("CONFIG RESET_OK")
 print("-" * 50)
 
-# --- StatsStore: survives a config reset ---
+# --- StatsStore: 长期次数现在存在事件链里（没有明文 stats.ini）---
+from namepicker.ledger import Ledger  # noqa: E402
+
 stats_path = os.path.join(tmp_dir, "stats.ini")
-st = StatsStore(stats_path)
-print("stats path:", st.path, "| exists:", os.path.isfile(st.path))
+chain = Ledger(os.path.join(tmp_dir, "config.ini"))
+chain.migrate_from(3, ["甲组", "乙组", "丙组"], [0, 0, 0])
+
+st = StatsStore(stats_path, chain=chain)
+print("stats backend:", "event chain" if st.usable else "NONE")
 assert st.load() == {}, st.load()
 assert st.save({"张三": 3, "李四": 1}), "stats save failed"
 
-st2 = StatsStore(stats_path)
+st2 = StatsStore(stats_path, chain=Ledger(os.path.join(tmp_dir, "config.ini")))
 print("reload stats:", st2.load())
 assert st2.load() == {"张三": 3, "李四": 1}
 
-# merge, not replace: a new class list must not wipe the previous one
+# 合并而非覆盖：换一个班的花名册不能清掉上一个班
 assert st2.save({"王五": 2}), "merge save failed"
 assert st2.load() == {"张三": 3, "李四": 1, "王五": 2}, st2.load()
-print("merge keeps other names:", StatsStore(stats_path).load())
+print("merge keeps other names:", st2.load())
 
-# count 0 removes the entry instead of writing `name = 0`
-assert st2.save({"张三": 0}), "zero save failed"
-loaded = StatsStore(stats_path).load()
-assert "张三" not in loaded and loaded.get("王五") == 2, loaded
-print("zero removes the line:", loaded)
+# 明文文件不应生成，学生姓名不应以可读形式落盘
+assert not os.path.isfile(stats_path), "plaintext stats.ini must not be created"
+raw = open(os.path.join(tmp_dir, "Data", "ledger.esc"), "rb").read()
+assert "张三".encode("utf-8") not in raw
+print("no plaintext on disk: OK")
 
-# clear() drops everything
+# clear() 清空全部（追加 wipe 事件）
 assert st2.clear(), "clear failed"
-assert StatsStore(stats_path).load() == {}
-print("cleared:", StatsStore(stats_path).load())
+assert StatsStore(stats_path, chain=Ledger(os.path.join(tmp_dir, "config.ini"))).load() == {}
+print("cleared:", {})
 print("STATS ROUND-TRIP OK")
 print("-" * 50)
-print(open(stats_path, encoding="utf-8").read())
+
 print("ALL OK")

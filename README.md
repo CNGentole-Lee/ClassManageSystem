@@ -85,6 +85,18 @@
 
 ![结果弹窗](docs/images/draw-popup.png)
 
+### 隐私与合规
+
+**本程序不联网、不上传任何数据。** 所有名单、分数、抽取次数只写入程序所在目录
+（或只读时回退到 `~/ClassTerminal2411`），没有任何网络请求、没有遥测、没有账号。
+
+- **学生姓名**：只用于课堂抽取与公平加权，加密后存于事件链（`Data/ledger.esc`），
+  磁盘上没有明文名单文件。长期抽取次数同样在链里，不再有明文 `stats.ini`。
+- **商用密码**：本程序使用签名与加密算法（Ed25519 / XChaCha20-Poly1305），
+  按《中华人民共和国密码法》属于商用密码。**境内分发、境内使用无需许可**。
+- **个人信息**：程序是工具，老师是数据的处理者。数据不出本机，风险很低；
+  若学校有具体要求，以学校的办法为准。
+
 ### 关于：版本与许可证
 
 版本号、版权、不担保声明，以及可直接滚动的 Apache-2.0 许可证全文。
@@ -173,7 +185,7 @@
 
 - 「加权少抽优先」：历史累计被抽次数越少，权重越高。
 - 最近被抽中的人临时降权，避免连庄。
-- 长期次数存在 `stats.ini`，重启仍生效。
+- 长期次数存在事件链里（`op=draw` 事件），重启仍生效，磁盘上没有明文名单。
 - 课前「清空历史」只清历史与冷却，保留长期次数；只有「彻底重置」才清零长期次数。
 
 ### 管理面板：名单与冷却
@@ -386,7 +398,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 | 文件 / 位置 | 角色 |
 |---|---|
-| `Data/ledger.esc` | 事件链，base64 行，只追加不覆盖 |
+| `Data/ledger.esc` | 事件链，base64 行，只追加不覆盖（分数、组名、长期抽取次数） |
 | `Data/anchor.json` | 基准：链曾经到过第几条、链头是什么 |
 | `~/.cache/classmanage/<哈希>/anchor.json` | 同一基准的隐藏副本 |
 | `~/.cache/classmanage/<哈希>/ledger.esc` | 安全副本，用于自动恢复 |
@@ -492,15 +504,19 @@ Linux   : ~/.config/YourOrg/ClassManageSystem.conf
 - 每条记录存 `(时间, 中文, English)` 三元组，旧版纯文本记录也能继续读取
   （英文侧留空，只显示原文）。
 
-### `stats.ini`
+### 长期抽取次数（原 `stats.ini`）
 
-长期抽取次数，与配置同目录，明文存储（不含积分）。
+老版本把长期抽取次数明文存在 `stats.ini` 里，学生姓名可以直接读出来。
+现在它被事件链取代：
 
-```ini
-[counts]
-张三 = 5
-李四 = 3
+```text
+op=draw    name="张三" total=5      ← 每抽一次追加一条，带签名与单调时间戳
+op=wipe    parts=draws              ← 「彻底重置」时清零
 ```
+
+- 磁盘上看不到明文姓名与次数；
+- 老版本的 `stats.ini` 会在首次启动时被导入一次，然后删除；
+- 之后再手写 `stats.ini` 不会影响程序（不再读取）。
 
 独立成文件的原因：若与积分放在一起，课前「清空历史」会连带清掉长期次数，加权就退化成"每节课各自独立随机"。
 
@@ -691,7 +707,7 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 │   ├── crypto_utils.py              # AES-256-GCM 与 ~/.classmanage_key 密钥管理
 │   ├── log_store.py                 # points_log.dat：加密操作日志 + 防回滚
 │   ├── backup_store.py              # QSettings 系统级隐蔽备份（跨平台）
-│   ├── stats_store.py               # stats.ini：长期抽取次数
+│   ├── stats_store.py               # 长期抽取次数（存事件链，无明文文件）
 │   ├── name_engine.py               # 抽取逻辑：公平加权、冷却、历史
 │   ├── floating_ball.py             # 悬浮球（含跨平台强制置顶）
 │   ├── draw_popup.py                # 结果弹窗与滚动动画
@@ -917,7 +933,7 @@ QSettings 隐蔽备份恢复。
 
 ### 「清空历史」后公平性会失效吗？
 
-不会。它只清历史与冷却，长期次数保留在 `stats.ini`；只有「彻底重置」才清零长期次数。
+不会。它只清历史与冷却；长期次数在事件链里单独记录，只有「彻底重置」才追加一条 `wipe(draws)` 把长期次数清零。
 
 ### 为什么连抽人数不足？
 
@@ -1098,6 +1114,21 @@ close it with `✕` or let it disappear after 5 seconds.
 
 ![Result popup](docs/images/draw-popup-en.png)
 
+### Privacy and compliance
+
+**The program never goes online and uploads nothing.** Names, scores and draw counts are
+written only next to the program (or to `~/ClassTerminal2411` when that directory is
+read-only). No network requests, no telemetry, no accounts.
+
+- **Student names**: used only for drawing and fair weighting, then encrypted into the
+  event chain (`Data/ledger.esc`). There is no plaintext name file on disk; lifetime draw
+  counts live in the chain too, so no plaintext `stats.ini` is produced any more.
+- **Commercial cryptography**: the program uses Ed25519 / XChaCha20-Poly1305, which fall
+  under China's Cryptography Law as commercial cryptography. Distribution and use inside
+  mainland China require no licence. This note is informational, not legal advice.
+- **Personal data**: the program is a tool; the teacher is the data controller. Data never
+  leaves the machine, so the risk is low. Follow your school's policy where it is stricter.
+
 ### About: version and license
 
 Version, copyright, the no-warranty notice and the scrollable Apache-2.0 text.
@@ -1206,7 +1237,7 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 - "Weighted least-drawn first": the fewer times a student has been drawn overall, the
   higher their weight.
 - Students drawn recently get a temporary penalty to avoid streaks.
-- Lifetime counts live in `stats.ini` and survive restarts.
+- Lifetime counts live in the event chain (`op=draw` events) and survive restarts; no plaintext name list is written to disk.
 - "Clear history" before a lesson only clears history and cooldowns; only a full reset
   zeroes lifetime counts.
 
@@ -1446,7 +1477,7 @@ At startup the whole chain is verified and replayed; the result overwrites the c
 
 | File / location | Role |
 |---|---|
-| `Data/ledger.esc` | event chain, base64 lines, append-only |
+| `Data/ledger.esc` | event chain, base64 lines, append-only (scores, names, draw counts) |
 | `Data/anchor.json` | anchor: how long the chain ever got, and its head |
 | `~/.cache/classmanage/<hash>/anchor.json` | hidden copy of the same anchor |
 | `~/.cache/classmanage/<hash>/ledger.esc` | shadow copy used for automatic restore |
@@ -1556,16 +1587,19 @@ affect the main flow.
 - Each entry stores a `(timestamp, Chinese, English)` triple; legacy plain-text entries
   remain readable (the English side is empty and the original text is shown).
 
-### `stats.ini`
+### Lifetime draw counts (formerly `stats.ini`)
 
-Lifetime draw counts, in the same directory as the config, stored as plain text (no
-scores).
+Older builds stored lifetime draw counts as plain text in `stats.ini`, which exposed
+student names. That file has been replaced by the event chain:
 
-```ini
-[counts]
-张三 = 5
-李四 = 3
+```text
+op=draw    name="张三" total=5     ← one event per draw, signed and timestamped
+op=wipe    parts=draws             ← clears the counts on a full reset
 ```
+
+- No plaintext names or counts on disk;
+- An old `stats.ini` is imported once on first launch and then deleted;
+- Writing `stats.ini` by hand afterwards has no effect (it is no longer read).
 
 It is a separate file because if it lived with the scores, the pre-lesson "Clear history"
 would also wipe lifetime counts and the weighting would degrade into "independent
@@ -1793,7 +1827,7 @@ tag or commit.
 │   ├── crypto_utils.py              # AES-256-GCM and ~/.classmanage_key handling
 │   ├── log_store.py                 # points_log.dat: encrypted log + anti-rollback
 │   ├── backup_store.py              # QSettings system-level hidden backup
-│   ├── stats_store.py               # stats.ini: lifetime draw counts
+│   ├── stats_store.py               # lifetime draw counts (in the chain, no plaintext)
 │   ├── name_engine.py               # drawing: fair weighting, cooldowns, history
 │   ├── floating_ball.py             # floating ball (cross-platform topmost)
 │   ├── draw_popup.py                # result popup and rolling animation
@@ -2044,7 +2078,8 @@ screenshot it or copy the text from the viewer.
 
 ### Does "Clear history" break fairness?
 
-No. It only clears history and cooldowns; lifetime counts stay in `stats.ini`. Only a
+No. It only clears history and cooldowns; lifetime counts are recorded separately in the
+event chain. Only a
 full reset zeroes lifetime counts.
 
 ### Why does a multi-draw return fewer names than requested?

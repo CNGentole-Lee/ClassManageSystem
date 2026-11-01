@@ -31,7 +31,7 @@ config.ini 只是给人看的：老师/学生改它都不会影响程序（程�
     score_1 = 12              ; 可为负数；仅是缓存，实际以事件链重放为准
     ...
 
-长期抽取次数刻意放在 stats.ini（见 stats_store.py），
+长期抽取次数刻意与配置分开，改存事件链（见 stats_store.py），
 这样「清空历史」不会把公平性记忆一起丢掉。
 """
 
@@ -801,7 +801,7 @@ class ConfigStore:
     def reset_all(self) -> bool:
         """回到出厂状态：组名、分数、组数全部重置（彻底重置用）。
 
-        长期抽取次数不在这里，它存在 stats.ini（见 stats_store.py）。
+        长期抽取次数不在这里，它存在事件链（op=draw，见 stats_store.py）。
         操作日志**不清空**：只追加一条标记，审计记录不能靠一个按钮抹掉。
         """
         names = ",".join(default_group_name(i) for i in range(1, DEFAULT_GROUP_COUNT + 1))

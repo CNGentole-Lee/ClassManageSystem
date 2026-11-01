@@ -179,9 +179,19 @@ def app_process():
     QApplication.processEvents()
 
 
+def _tmp_chain(stats_path):
+    """长期次数现在存在事件链里，冒烟测试给它一条临时链。"""
+    from namepicker.ledger import Ledger
+    base = os.path.dirname(stats_path)
+    chain = Ledger(os.path.join(base, "config.ini"))
+    if chain.count() == 0:
+        chain.migrate_from(3, ["甲组", "乙组", "丙组"], [0, 0, 0])
+    return chain
+
+
 def test_engine_single(stats_path):
     print("\n--- Single draw + long-term counts persisted ---")
-    stats = StatsStore(stats_path)
+    stats = StatsStore(stats_path, chain=_tmp_chain(stats_path))
     engine = NameEngine()
     engine.generate_number_list(1, 10)
     drawn = [engine.draw_name() for _ in range(10)]
@@ -191,8 +201,8 @@ def test_engine_single(stats_path):
           len(set(drawn)) == 10, f"duplicates: {len(drawn) - len(set(drawn))}")
 
     stats.save(engine.get_draw_counts())
-    loaded = StatsStore(stats_path).load()
-    check("long-term counts written to stats.ini", loaded.get("1") == 1 and len(loaded) == 10,
+    loaded = StatsStore(stats_path, chain=_tmp_chain(stats_path)).load()
+    check("long-term counts recorded in the event chain", loaded.get("1") == 1 and len(loaded) == 10,
           f"{len(loaded)} entries")
 
     engine2 = NameEngine()
@@ -297,14 +307,14 @@ def test_wipe(store, config_path, stats_path):
     store.set_score(2, 7)
     store.set_group_name(1, "雄鹰组")
     store.save()
-    StatsStore(stats_path).save({"张三": 5})
+    StatsStore(stats_path, chain=_tmp_chain(stats_path)).save({"张三": 5})
     engine = NameEngine()
     engine.generate_number_list(1, 3)
     engine.set_draw_counts({"1": 3, "2": 2, "3": 1})
 
     # 复刻 main.py 的 wipe 流程
     store.reset_all()
-    StatsStore(stats_path).clear()
+    StatsStore(stats_path, chain=_tmp_chain(stats_path)).clear()
     engine.reset_fairness()
 
     fresh_cfg = ConfigStore(config_path)
@@ -313,8 +323,8 @@ def test_wipe(store, config_path, stats_path):
     check("group names back to defaults after reset",
           fresh_cfg.get_group_name(1) == "第一组"
           and fresh_cfg.get_group_name(2) == "第二组")
-    check("stats.ini cleared after reset", StatsStore(stats_path).load() == {},
-          f"actual {StatsStore(stats_path).load()}")
+    _cleared = StatsStore(stats_path, chain=_tmp_chain(stats_path)).load()
+    check("long-term counts cleared after reset", _cleared == {}, f"actual {_cleared}")
     check("in-memory counts zeroed after reset", engine.get_total_draws() == 0)
 
 

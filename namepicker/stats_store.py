@@ -1,25 +1,22 @@
-"""StatsStore —— 长期抽取次数，单独存在 stats.ini 里。
+"""StatsStore —— 长期抽取次数（公平加权的依据）。
 
-为什么不用 config.ini 里的一个 [stats] 段：
-    「清空历史」是老师每节课前的习惯动作。长期次数若和配置放在同一个文件里，
-    任何一次重置都会一并把它抹掉，加权就退化成"每节课各自独立随机"—— 一学期
-    下来同几个人反复被抽，加权失去作用。
+它存在哪里
+    在事件链里（op=draw 的事件），与分数同一套签名、加密、单调时间戳。
+    这里不再有任何明文文件：学生姓名 + 被抽中次数不再以可读形式躺在磁盘上。
 
-    stats.ini 只被抽取本身写入，清空历史不碰它。要真正从零开始（新学期、
-    换班级），走托盘菜单的「彻底重置」。
+为什么单独读
+    抽取计数必须在重启后保留，「清空历史」也不能碰它——否则加权退化成
+    每节课独立随机，一学期下来同几个人反复被抽。
 
-格式（键就是名字，所以关掉插值、保留大小写）:
-    [counts]
-    张三 = 5
-    李四 = 3
+    事件链天然满足这一点：清空历史只是追加一条 wipe 事件，
+    不会动已有的 draw 事件。
+
+兼容旧数据
+    老版本把计数写在 stats.ini 明文里。这里只在「链里一条 draw 都没有」
+    时读一次 stats.ini 作为种子，然后立刻把它删掉。之后再也不会读它，
+    老师手写改它也不会影响程序。
 """
 
-import configparser
-
-try:
-    from .atomic import replace_with_retry
-except ImportError:  # 顶层导入（tools）
-    from atomic import replace_with_retry  # type: ignore
 import os
 
 from .config_store import resolve_config_path
@@ -28,92 +25,152 @@ STATS_FILENAME = "stats.ini"
 
 
 def resolve_stats_path() -> str:
-    """stats.ini 与 config.ini 同目录（同样的只读目录回退规则）。"""
+    """旧版 stats.ini 的位置（与 config.ini 同目录）。"""
     return os.path.join(os.path.dirname(resolve_config_path()), STATS_FILENAME)
 
 
 class StatsStore:
-    """长期抽取次数。save 是合并而非覆盖，中途换花名册不会清掉上一个班的记录。"""
+    """长期抽取次数：从事件链读，新记录追加为 draw 事件。
 
-    def __init__(self, path: str = ""):
-        self.path = path or resolve_stats_path()
-        self._cp = configparser.ConfigParser(interpolation=None)
-        self._cp.optionxform = str  # 保留键名大小写（人名）
+    chain 为 None 时退化为“无持久化”（链不可用时的只读场景），
+    此时 load() 返回空、save() 静默失败，绝不抛异常。
+    """
+
+    def __init__(self, path: str = "", chain=None):
+        self.legacy_path = path or resolve_stats_path()
+        self.chain = chain
+        self._counts: dict[str, int] = {}
         self._last_error = ""
         self.reload()
 
     # --- 加载 ---
 
     def reload(self) -> None:
-        self._cp.clear()
-        if os.path.isfile(self.path):
+        """从链上重放当前计数；链为空时才用旧 stats.ini 做一次性种子。"""
+        self._counts = {}
+        if self.chain is not None:
             try:
-                self._cp.read(self.path, encoding="utf-8")
-            except (OSError, configparser.Error) as e:
-                self._last_error = str(e)
-        if not self._cp.has_section("counts"):
-            self._cp.add_section("counts")
+                state = self.chain.state()
+                self._counts = {str(k): int(v) for k, v in state.get("draws", {}).items()}
+            except Exception as exc:                       # noqa: BLE001
+                self._last_error = str(exc)
+                return
+        if not self._counts:
+            self._migrate_legacy_once()
 
-    def load(self) -> dict[str, int]:
-        """{name: lifetime draws}，无法解析的条目跳过。"""
-        counts: dict[str, int] = {}
-        if not self._cp.has_section("counts"):
-            return counts
-        for key, raw in self._cp.items("counts"):
+    def _migrate_legacy_once(self) -> None:
+        """把旧 stats.ini 里的计数一次性写进链，然后删除该文件。"""
+        legacy = self._read_legacy()
+        if not legacy:
+            return
+        seeded = False
+        for name, count in legacy.items():
+            if count <= 0:
+                continue
+            if self._append_draw(name, count):
+                seeded = True
+        if not seeded:
+            return
+        try:
+            self.reload_from_chain()
+        except Exception:                                  # noqa: BLE001
+            pass
+        try:
+            os.remove(self.legacy_path)
+        except OSError:
+            pass
+
+    def _read_legacy(self) -> dict[str, int]:
+        import configparser
+
+        if not os.path.isfile(self.legacy_path):
+            return {}
+        cp = configparser.ConfigParser(interpolation=None)
+        cp.optionxform = str
+        try:
+            cp.read(self.legacy_path, encoding="utf-8")
+        except (OSError, configparser.Error):
+            return {}
+        if not cp.has_section("counts"):
+            return {}
+        out: dict[str, int] = {}
+        for key, raw in cp.items("counts"):
             try:
-                counts[key] = int(raw)
+                out[key] = int(raw)
             except (TypeError, ValueError):
                 continue
-        return counts
+        return out
 
-    # --- 保存 ---
+    def reload_from_chain(self) -> None:
+        if self.chain is None:
+            return
+        state = self.chain.state()
+        self._counts = {str(k): int(v) for k, v in state.get("draws", {}).items()}
+
+    # --- 查询 ---
+
+    def load(self) -> dict[str, int]:
+        """{name: 累计被抽中次数}。"""
+        return dict(self._counts)
+
+    def last_error(self) -> str:
+        return self._last_error
+
+    @property
+    def usable(self) -> bool:
+        """是否真的会持久化（链可用时为 True）。"""
+        return self.chain is not None
+
+    # --- 写入 ---
+
+    def _append_draw(self, name: str, total: int) -> bool:
+        if self.chain is None:
+            self._last_error = "no chain: draw counts are not persisted"
+            return False
+        try:
+            self.chain.apply("draw", name=name, total=int(total))
+        except Exception as exc:                           # noqa: BLE001
+            self._last_error = str(exc)
+            return False
+        self._counts[name] = int(total)
+        self._last_error = ""
+        return True
 
     def save(self, counts: dict[str, int]) -> bool:
-        """把 {name: count} 合并进去。
+        """把 {name: count} 的**变化**追加为 draw 事件。
 
-        次数为 0 时删掉该行而不是写 `name = 0`，避免 99 人的名单多出 99 行
-        无用条目。未提及的名字保持原样，所以换一个班的花名册不会清掉上一个班
-        的记录。
+        只写真正变大的项：次数没变、变小或为 0 都不产生事件，
+        因此反复保存不会把链撑大。
         """
-        if not self._cp.has_section("counts"):
-            self._cp.add_section("counts")
+        changed = False
         for name, count in counts.items():
             try:
                 count = int(count)
             except (TypeError, ValueError):
                 continue
-            if count > 0:
-                self._cp.set("counts", name, str(count))
-            elif self._cp.has_option("counts", name):
-                self._cp.remove_option("counts", name)
-        return self._write()
+            current = self._counts.get(name, 0)
+            if count > current:
+                if not self._append_draw(name, count):
+                    return False
+                changed = True
+            # 归零不进链：C++ 侧拒绝次数倒退，且“把某个名字清零”由
+            # 「彻底重置」统一处理，避免产生互相矛盾的记录。
+        return True if changed else True
+
+    def record_draw(self, name: str, total: int) -> bool:
+        """一次抽取：写入该名字的新累计次数。"""
+        return self._append_draw(name, int(total))
 
     def clear(self) -> bool:
-        """清空所有已记录的抽取次数（彻底重置 / 新学期）。"""
-        if self._cp.has_section("counts"):
-            self._cp.remove_section("counts")
-        self._cp.add_section("counts")
-        return self._write()
-
-    def _write(self) -> bool:
-        """原子写入（tmp + os.replace），与 config.ini 一致。"""
-        tmp_path = self.path + ".tmp"
-        try:
-            directory = os.path.dirname(self.path)
-            if directory:
-                os.makedirs(directory, exist_ok=True)
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                self._cp.write(f)
-            replace_with_retry(tmp_path, self.path)
-            self._last_error = ""
-            return True
-        except OSError as e:
-            self._last_error = str(e)
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+        """彻底重置：追加一条 wipe(draws) 事件。"""
+        if self.chain is None:
+            self._last_error = "no chain: cannot clear draw counts"
             return False
-
-    def last_error(self) -> str:
-        return self._last_error
+        try:
+            self.chain.apply("wipe", parts="draws")
+        except Exception as exc:                           # noqa: BLE001
+            self._last_error = str(exc)
+            return False
+        self._counts = {}
+        self._last_error = ""
+        return True

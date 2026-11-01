@@ -4,8 +4,16 @@ Class Management Terminal — Native Module License
 Copyright (C) 2026 Gentole Lee. All rights reserved.
 
 本文件适用于随“班级多用教学辅助终端”分发的原生模块（以下称“模块”），
-包括但不限于 cmd_native、cmd_native.exe 及其在 macOS / Windows 上的等价产物。
+包括 cmd_sign、cmd_verify 及其在 macOS / Windows 上的等价产物
+（例如 cmd_sign.exe、cmd_verify.exe，以及被它们取代的早期产物）。
 模块的源代码不公开。
+
+【第三方组件】
+本模块**静态链接**了 libsodium（ISC 许可证，
+Copyright (c) 2013–2025 Frank Denis and contributors）。
+ISC 许可证的全文见本文件末尾，它是本文件不可分割的一部分。
+
+本程序其它第三方组件见随包的 THIRD-PARTY-NOTICES.md。
 
 1. 许可授予
    在遵守本协议的前提下，你可以在**配合本程序使用**的范围内运行模块，
@@ -17,7 +25,8 @@ Copyright (C) 2026 Gentole Lee. All rights reserved.
    b) 对模块进行反向工程、反编译、反汇编，或试图提取其中的算法与密钥，
       除非适用法律明确允许且不可通过约定排除；
    c) 修改、翻译、拆分或以模块为基础创作衍生作品；
-   d) 移除或更改模块中的任何版权、许可或其他权利声明；
+   d) 移除或更改模块中的任何版权、许可或其他权利声明——
+      其中**包括**本文件对 libsodium 的署名与许可全文；
    e) 将模块用于违法用途，或用于规避本程序的安全机制。
 
 3. 无担保
@@ -34,10 +43,45 @@ Copyright (C) 2026 Gentole Lee. All rights reserved.
 
 ----------------------------------------------------------------------------
 
+第三方组件 / Third-party components
+
+  本模块静态链接了 / This module statically links:
+
+    libsodium — https://libsodium.org/
+    Copyright (c) 2013–2025 Frank Denis and contributors
+    Licensed under the ISC License (full text below).
+
+  与主程序一同分发时，本文件应随模块一起保留。此要求即 ISC 许可证
+  中 "the above copyright notice and this permission notice appear in all
+  copies" 的履行。
+
+----------------------------------------------------------------------------
+
+ISC License (libsodium)
+
+Copyright (c) 2013-2025
+Frank Denis <j at pureftpd dot org>
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+----------------------------------------------------------------------------
+
 English summary (the Chinese text above prevails):
 
-The native module (cmd_native / cmd_native.exe) is proprietary software.
-You may run it and redistribute it unmodified **only as part of this
-application**. You may not distribute it standalone, reverse engineer,
-decompile, modify, extract its algorithms or keys, or remove notices.
-Provided “AS IS”, without warranty of any kind. Rights terminate on breach.
+The native module (cmd_sign / cmd_verify, including their .exe builds) is
+proprietary software. You may run it and redistribute it unmodified **only as
+part of this application**; the libsodium notice and ISC text above must travel
+with it. You may not distribute it standalone, reverse engineer, decompile,
+modify, extract its algorithms or keys, or remove any copyright, licence or
+attribution notice. Provided "AS IS", without warranty of any kind. Rights
+terminate on breach.

@@ -91,6 +91,8 @@ class Ledger:
             try:
                 native_bridge.dump(records)
             except native_bridge.NativeError:
+                # 也可能是「本机指纹变了，解不开」——迁移同样会失败，
+                # 此时不要静默吞掉，直接报错，否则后面所有操作都会莫名其妙地失败。
                 self._migrate_v1()
             else:
                 self._write_format_marker()
@@ -197,6 +199,7 @@ class Ledger:
             "scores": [int(x) for x in data.get("scores", [])],
             "seq": int(data.get("seq", 0)),
             "ts": int(data.get("ts", 0) or 0),
+            "draws": {str(k): int(v) for k, v in data.get("draws", [])},
         }
         self._verify_error = ""
         self._verified = True
@@ -416,8 +419,14 @@ class Ledger:
         """把现有配置写成一条 init 事件（仅当链为空时）。"""
         if self.count() > 0:
             return False
+        # 注意：名字按“位置”绑定到第 i 组，所以第 1 个组名必须落在 group_1。
+        # 早期实现直接在 names 为空时插了 "None"，导致整条链的证据（group_1..N）
+        # 与后续重放解释不一致。
+        clean = [str(x) for x in names][: int(group_count)]
+        while len(clean) < int(group_count):
+            clean.append("")
         self.apply("init", count=int(group_count),
-                   names=",".join(str(x) for x in names),
+                   names=",".join(clean),
                    scores=",".join(str(int(x)) for x in scores))
         self._write_format_marker()
         return True

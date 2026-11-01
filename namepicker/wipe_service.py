@@ -64,7 +64,7 @@ def perform_wipe(store, stats, engine, parts: dict) -> WipeReport:
     语义：
       * names   —— 只恢复默认组名，保留分数与组数
       * scores  —— 只把分数归零，保留组名
-      * fairness—— 清长期抽取次数（stats.ini + 内存），保留抽取历史
+      * fairness—— 清长期抽取次数（追加 wipe(draws) 事件），保留抽取历史
       * history —— 清抽取历史与冷却，保留长期次数
     操作日志永不清空，由各步骤自行追加记录。
     """
@@ -73,6 +73,33 @@ def perform_wipe(store, stats, engine, parts: dict) -> WipeReport:
         return _wipe(store, stats, engine, parts)
     except Exception as exc:          # 任何一步炸了都要让上层看见
         return WipeReport(selected_labels(parts), False, False, repr(exc))
+
+
+def _wipe_chain(store, parts: dict) -> bool:
+    """把这次重置写进事件链（目前只用于长期抽取次数）。"""
+    chain = getattr(store, "_ledger", None)
+    if chain is None:
+        return True                      # 没有链（只读模式）：交给 saved 判断
+    flags = []
+    if parts.get("names"):
+        flags.append("names")
+    if parts.get("scores"):
+        flags.append("scores")
+    if parts.get("fairness"):
+        flags.append("draws")
+    bits = 0
+    for flag in flags:
+        bits |= {"names": 1, "scores": 2, "draws": 4}[flag]
+    if not bits:
+        return True
+    parts_name = {1: "names", 2: "scores", 4: "draws", 3: "both", 7: "all"}.get(bits)
+    if parts_name is None:
+        return True                      # 组合由界面控制，出现未知组合就不写
+    try:
+        chain.apply("wipe", parts=parts_name)
+        return True
+    except Exception:                    # noqa: BLE001
+        return False
 
 
 def _wipe(store, stats, engine, parts: dict) -> WipeReport:
@@ -90,7 +117,13 @@ def _wipe(store, stats, engine, parts: dict) -> WipeReport:
         store.log_operation("彻底重置：抽取历史与冷却已清空",
                             "Full reset: draw history and cooldowns cleared")
 
-    saved = bool(store.save())
+    # 长期次数已经整体搬进事件链，必须在链上留一笔（否则重放会复活）。
+    # 组名/分数由 store.wipe_group_names / wipe_scores 自己写链，这里只管 draws。
+    chain_ok = True
+    if parts.get("fairness"):
+        chain_ok = _wipe_chain(store, {"draws": True})
+
+    saved = bool(store.save()) and chain_ok
     error = "" if saved else (store.last_error() or "save failed")
     verified = _verify(store, stats, engine, parts) if saved else False
     return WipeReport(selected_labels(parts), saved, verified, error)
