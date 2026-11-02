@@ -152,7 +152,10 @@ def main() -> int:
           "workflow_run" in release and "build-windows-installer" in release)
     check("release workflow can also be started manually",
           "workflow_dispatch" in release)
-    check("release defaults to tag V3.0", '"V3.0"' in release)
+    check("release derives the tag from the version",
+          'TAG="V${VER}"' in release)
+    check("release retries uploads one by one",
+          "for attempt in 1 2 3" in release and "failed to upload" in release)
     check("release downloads the build artifact by name",
           "ClassManageSystem-windows-x64" in release)
     check("release extracts the portable zip and checks contents",
