@@ -273,6 +273,12 @@ jobs:
           TITLE="ClassManageSystem ${VER}"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
+            # 同一个 tag 只允许“重跑同一次发布”，不允许悄悄覆盖旧版本
+            tag_sha=$(gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" --jq .object.sha)
+            if [ "$tag_sha" != "${{ steps.meta.outputs.sha }}" ]; then
+              echo "::error::tag $TAG already points to $tag_sha; run tools/bump_version.py and push again"
+              exit 1
+            fi
             gh release edit "$TAG" --title "$TITLE" --notes-file checksums.md
           else
             gh release create "$TAG" --title "$TITLE" --notes-file checksums.md \

@@ -100,6 +100,23 @@
 - **个人信息**：程序是工具，老师是数据的处理者。数据不出本机，风险很低；
   若学校有具体要求，以学校的办法为准。
 
+### 发版
+
+版本号是唯一来源，tag 由它推导（`V3.0.1`、`V3.0.2`…）：
+
+```bash
+python tools/bump_version.py        # 3.0.1 -> 3.0.2（小改动）
+python tools/bump_version.py minor  # 3.0.2 -> 3.1.0（新功能）
+python tools/bump_version.py major  # 改大版本
+
+git add -A
+git commit -m "release: 3.0.2"
+git push
+```
+
+push 后 CI 构建 → 成功后发版到 `V{版本号}`。
+**同一个 tag 不会被覆盖**：若本次提交与已有 tag 指向不同提交，发布会失败并提示先递增版本。
+
 ### 检查更新
 
 程序启动后会读取一个公开的 `version.json`（Release 资产，
@@ -1151,6 +1168,24 @@ read-only). No network requests, no telemetry, no accounts.
   mainland China require no licence. This note is informational, not legal advice.
 - **Personal data**: the program is a tool; the teacher is the data controller. Data never
   leaves the machine, so the risk is low. Follow your school's policy where it is stricter.
+
+### Releasing
+
+The version number is the single source of truth; the tag is derived from it
+(`V3.0.1`, `V3.0.2`, …):
+
+```bash
+python tools/bump_version.py        # 3.0.1 -> 3.0.2 (small change)
+python tools/bump_version.py minor  # 3.0.2 -> 3.1.0 (new features)
+python tools/bump_version.py major  # major release
+
+git add -A
+git commit -m "release: 3.0.2"
+git push
+```
+
+CI builds on push and publishes to `V{version}`. **A tag is never overwritten**: if the
+tag already points to a different commit, publishing fails and asks you to bump first.
 
 ### Checking for updates
 
