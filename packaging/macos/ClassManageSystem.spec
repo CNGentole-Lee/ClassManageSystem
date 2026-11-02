@@ -69,6 +69,9 @@ a = Analysis(
     # 随包资源：LICENSE（Apache-2.0 全文）、NOTICE、第三方声明。
     # Apache-2.0 第 4(d) 条要求再分发时附带许可证与 NOTICE。
     datas=[
+        # 构建信息：更新检查用它判断“本机是哪个构建”
+        *([(os.path.join(ROOT, "build-info.txt"), ".")]
+          if os.path.isfile(os.path.join(ROOT, "build-info.txt")) else []),
         (os.path.join(ROOT, "LICENSE"), "."),
         (os.path.join(ROOT, "NOTICE"), "."),
         (os.path.join(ROOT, "THIRD-PARTY-NOTICES.md"), "."),

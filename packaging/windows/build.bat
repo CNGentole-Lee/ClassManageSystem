@@ -129,6 +129,8 @@ echo [5/7] Storage, log and chain checks:
 echo [6/7] Building directory package:
 REM Keep PyInstaller cache inside the project, not in %LOCALAPPDATA%.
 set "PYINSTALLER_CONFIG_DIR=%CD%\.pyinstaller-cache"
+REM 更新检查需要知道“本机是哪个构建”
+"%VPY%" tools\make_build_info.py || goto :error
 "%VPY%" -m PyInstaller packaging\windows\ClassManageSystem.spec --noconfirm --clean || goto :error
 
 echo.

@@ -76,6 +76,9 @@ else
   echo "  已存在 app.icns，跳过"
 fi
 
+# 更新检查需要知道“本机是哪个构建”
+"$PY" tools/make_build_info.py
+
 # --- 5. 打包 ---
 echo "[5/5] PyInstaller 打包（首次约 1~3 分钟）"
 rm -rf build "dist/ClassManageSystem.app" 2>/dev/null || true

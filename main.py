@@ -52,6 +52,87 @@ def _get_bundled_path(relative_path: str) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
 
 
+def _show_update(parent, remote, cfg, local_pair):
+    """有新版本时弹窗：只提示，不执行任何下载来的文件。"""
+    from PySide6.QtCore import Qt, QUrl
+    from PySide6.QtGui import QDesktopServices
+
+    from namepicker import updater
+
+    box = QMessageBox(parent)
+    box.setWindowTitle(tr("发现新版本", "Update available"))
+    box.setIcon(QMessageBox.Information)
+    box.setText(tr("发现新版本 {v}（当前 {c}）",
+                   "New version {v} (current {c})",
+                   v=remote["version"], c=local_pair[0]))
+    if remote.get("notes"):
+        box.setInformativeText(remote["notes"])
+    open_btn = box.addButton(tr("打开下载页", "Open download page"),
+                             QMessageBox.AcceptRole)
+    dl_btn = box.addButton(tr("下载到 Downloads", "Download to Downloads"),
+                           QMessageBox.ActionRole)
+    box.addButton(tr("稍后", "Later"), QMessageBox.RejectRole)
+    box.exec()
+
+    clicked = box.clickedButton()
+    if clicked is open_btn:
+        QDesktopServices.openUrl(QUrl(updater.release_page(cfg)))
+    elif clicked is dl_btn:
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            path = updater.download(cfg, remote)
+        except Exception as exc:                       # noqa: BLE001
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(parent, tr("下载失败", "Download failed"), str(exc))
+            return
+        QApplication.restoreOverrideCursor()
+        QMessageBox.information(
+            parent, tr("下载完成", "Download complete"),
+            tr("已保存到：\n{p}\n\n请手动双击运行安装程序，数据会保留。",
+               "Saved to:\n{p}\n\nRun the installer manually; your data is kept.",
+               p=path))
+
+
+def _start_update_check(window):
+    """启动后台检查新版本；失败静默，绝不阻塞或报错。"""
+    try:
+        from namepicker import updater
+
+        if os.environ.get("CLASSMANAGE_NO_UPDATE_CHECK"):
+            return
+        cfg = updater.load_config()
+        if not cfg.get("enabled", True):
+            return
+        local_pair = updater.local()
+        if not local_pair[0]:
+            return                       # 源码运行 / 旧包：没有 build-info，跳过
+    except Exception:                                  # noqa: BLE001
+        return
+
+    from PySide6.QtCore import QUrl
+    from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
+
+    manager = QNetworkAccessManager(window)
+    request = QNetworkRequest(QUrl(updater.check_url(cfg)))
+    try:
+        request.setTransferTimeout(4000)
+    except AttributeError:
+        pass
+    reply = manager.get(request)
+
+    def finished():
+        try:
+            remote = updater.parse_remote(bytes(reply.readAll().data()))
+            if remote and updater.is_newer(remote, local_pair):
+                _show_update(window, remote, cfg, local_pair)
+        except Exception:                              # noqa: BLE001
+            pass
+        finally:
+            reply.deleteLater()
+
+    reply.finished.connect(finished)
+
+
 def main():
 # 必须在任何 Qt 对象之前存在，这样启动阶段的故障也能被捕获。
     crash_log.install(os.path.dirname(resolve_config_path()))
@@ -457,6 +538,9 @@ def main():
     # --- Show ---
     ball.show()
     main_win.show()
+
+    # 更新检查：窗口出来之后再查，失败静默（学校网络常访问不到 CDN）
+    _start_update_check(main_win)
 
     # --- Auto-load last file (or default to 1-99 on first run) ---
     settings = QSettings("NamePicker", "Config")

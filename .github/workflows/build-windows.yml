@@ -70,6 +70,9 @@ jobs:
       - name: GUI smoke test (headless)
         run: python tools/smoke_test.py
 
+      - name: Write build-info.txt
+        run: python tools/make_build_info.py
+
       - name: PyInstaller (onedir)
         run: pyinstaller packaging/windows/ClassManageSystem.spec --noconfirm --clean
 

@@ -87,7 +87,10 @@
 
 ### 隐私与合规
 
-**本程序不联网、不上传任何数据。** 所有名单、分数、抽取次数只写入程序所在目录
+**本程序不上传任何数据。** 只有两处会发起网络请求，都是只读查询：
+① 启动时向 NTP 服务器对时（判断系统时间是否可信）；
+② 检查更新时读取一个公开的 `version.json`（可在 `update.json` 里关闭）。
+其余所有名单、分数、抽取次数只写入程序所在目录
 （或只读时回退到 `~/ClassTerminal2411`），没有任何网络请求、没有遥测、没有账号。
 
 - **学生姓名**：只用于课堂抽取与公平加权，加密后存于事件链（`Data/ledger.esc`），
@@ -1116,8 +1119,10 @@ close it with `✕` or let it disappear after 5 seconds.
 
 ### Privacy and compliance
 
-**The program never goes online and uploads nothing.** Names, scores and draw counts are
-written only next to the program (or to `~/ClassTerminal2411` when that directory is
+**The program uploads nothing.** Only two read-only requests exist:
+(1) an NTP query at startup (to judge whether the system clock is trustworthy);
+(2) an update check that fetches a public `version.json` (can be disabled in `update.json`).
+Everything else — names, scores, draw counts — is written only next to the program (or to `~/ClassTerminal2411` when that directory is
 read-only). No network requests, no telemetry, no accounts.
 
 - **Student names**: used only for drawing and fair weighting, then encrypted into the

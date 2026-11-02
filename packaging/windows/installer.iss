@@ -54,6 +54,20 @@ LicenseFile={#RepoRoot}\LICENSE
 ; %LOCALAPPDATA% keeps that directory writable for the current user.
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
+; 更新时先请老师关闭正在运行的程序，否则 Windows 锁住 exe/dll，
+; Inno 会跳过这些文件，装完还是旧运行时。
+CloseApplications=yes
+CloseApplicationsFilter=*.exe,*.dll
+RestartApplications=no
+
+; Inno 只会覆盖“新版里有”的文件，**不会删除旧版残留**。
+; 同版本小更新时，旧的 _internal 里可能只有 cmd_native.exe，
+; 新版程序找不到 cmd_sign.exe 就报“原生模块缺失”。
+; 这里先把整个运行时删掉再铺新版 —— 保证全量替换。
+; 只删程序自己的运行时目录；Data/、config.dat 等数据一律不动。
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\native"
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

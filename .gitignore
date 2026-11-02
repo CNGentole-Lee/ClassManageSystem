@@ -288,3 +288,6 @@ sw2_*/
 # 手动上传用的临时副本目录
 native_副本*/
 
+
+# 打包时生成（tools/make_build_info.py）
+build-info.txt

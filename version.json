@@ -1,0 +1,13 @@
+{
+  "version": "3.0.1",
+  "build": "2026-11-02T13:30:00+08:00",
+  "notes": "更新检查 + 安装器全量替换",
+  "assets": {
+    "windows": "ClassManageSystem-3.0.1-Setup.exe",
+    "macos": "ClassManageSystem-3.0.1.dmg"
+  },
+  "sha256": {
+    "windows": "",
+    "macos": ""
+  }
+}

@@ -98,6 +98,9 @@ a = Analysis(
     # 目录模式下 datas 会放进 _internal/，运行时通过 sys._MEIPASS 读取，
     # 「关于」窗口从那里取许可证文本。
     datas=[
+        # 构建信息：更新检查用它判断“本机是哪个构建”
+        *([(os.path.join(ROOT, "build-info.txt"), ".")]
+          if os.path.isfile(os.path.join(ROOT, "build-info.txt")) else []),
         (os.path.join(ROOT, "LICENSE"), "."),
         (os.path.join(ROOT, "NOTICE"), "."),
         (os.path.join(ROOT, "THIRD-PARTY-NOTICES.md"), "."),
