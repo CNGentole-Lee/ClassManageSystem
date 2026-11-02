@@ -80,6 +80,12 @@ def main() -> int:
     finally:
         updater.TIMEOUT = saved
 
+    # ---- 发布工具必须能在没有 PySide6 的 runner 上跑 ----
+    for name in ("make_version_json.py", "make_build_info.py", "_version.py"):
+        content = open(os.path.join(_HERE, name), encoding="utf-8").read()
+        check(f"{name} does not import PySide6",
+              "from PySide6" not in content and "import PySide6" not in content)
+
     # ---- 默认检查地址跟随“最新发布”，同 Tag 覆盖也有效 ----
     check("default check url is the latest release asset",
           "releases/latest/download/version.json" in updater.DEFAULT_CHECK_URL,

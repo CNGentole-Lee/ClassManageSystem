@@ -66,7 +66,9 @@ def main() -> int:
     parser.add_argument("files", nargs="*")
     args = parser.parse_args()
 
-    from namepicker.about_dialog import VERSION
+    from _version import app_version
+
+    VERSION = app_version()
 
     build = args.build or datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     assets: dict[str, str] = {}

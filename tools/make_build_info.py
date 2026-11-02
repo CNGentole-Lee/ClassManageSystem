@@ -27,11 +27,11 @@ def main() -> int:
 
     target = os.path.join(_ROOT, "build-info.txt")
     try:
-        sys.path.insert(0, _ROOT)
-        from namepicker.about_dialog import VERSION
+        from _version import app_version
+
         build = (os.environ.get("CLASSMANAGE_BUILD")
                  or datetime.datetime.now().astimezone().isoformat(timespec="seconds"))
-        info = {"version": VERSION, "build": build}
+        info = {"version": app_version(), "build": build}
     except Exception as exc:                              # noqa: BLE001
         print(f"[FAIL] cannot determine version: {exc}")
         return 1
