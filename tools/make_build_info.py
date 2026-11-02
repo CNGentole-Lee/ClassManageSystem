@@ -18,14 +18,22 @@ utf8_output()
 
 
 def main() -> int:
-    source = os.path.join(_ROOT, "version.json")
+    """版本取自 about_dialog.VERSION，构建时间取自当前时刻或 CI 环境变量。
+
+    不再依赖仓库里的 version.json —— 那个文件现在只作为发布资产生成，
+    避免两处版本号漂移。
+    """
+    import datetime
+
     target = os.path.join(_ROOT, "build-info.txt")
     try:
-        with open(source, encoding="utf-8") as fh:
-            data = json.load(fh)
-        info = {"version": data["version"], "build": data.get("build", "")}
-    except (OSError, ValueError, KeyError) as exc:
-        print(f"[FAIL] cannot read version.json: {exc}")
+        sys.path.insert(0, _ROOT)
+        from namepicker.about_dialog import VERSION
+        build = (os.environ.get("CLASSMANAGE_BUILD")
+                 or datetime.datetime.now().astimezone().isoformat(timespec="seconds"))
+        info = {"version": VERSION, "build": build}
+    except Exception as exc:                              # noqa: BLE001
+        print(f"[FAIL] cannot determine version: {exc}")
         return 1
     with open(target, "w", encoding="utf-8") as fh:
         json.dump(info, fh, ensure_ascii=False)

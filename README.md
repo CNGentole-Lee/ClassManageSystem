@@ -100,6 +100,23 @@
 - **个人信息**：程序是工具，老师是数据的处理者。数据不出本机，风险很低；
   若学校有具体要求，以学校的办法为准。
 
+### 检查更新
+
+程序启动后会读取一个公开的 `version.json`（Release 资产，
+地址是 `releases/latest/download/version.json`），比较版本号：
+
+- **同一个 Tag 覆盖发布也能识别**：`latest` 永远指向最新一次发布
+- 直连失败会**自动改走 `update.json` 里配置的 proxy**（例如 gh-proxy）
+- 发现新版只弹窗，**只下载、不执行**；下载完提示路径，由老师自己安装
+- 下载地址由代码常量拼出，不读取服务器返回的 URL
+- 断网 / 被墙 / 限流 → 静默跳过，不影响上课
+
+关闭方式：在程序目录放 `update.json`
+
+```json
+{ "enabled": false }
+```
+
 ### 关于：版本与许可证
 
 版本号、版权、不担保声明，以及可直接滚动的 Apache-2.0 许可证全文。
@@ -1133,6 +1150,24 @@ read-only). No network requests, no telemetry, no accounts.
   mainland China require no licence. This note is informational, not legal advice.
 - **Personal data**: the program is a tool; the teacher is the data controller. Data never
   leaves the machine, so the risk is low. Follow your school's policy where it is stricter.
+
+### Checking for updates
+
+On startup the app reads a public `version.json` (a release asset at
+`releases/latest/download/version.json`) and compares versions:
+
+- **Works with a reused tag**: `latest` always resolves to the newest release
+- If the direct request fails it **falls back to the proxy configured in
+  `update.json`** (e.g. gh-proxy)
+- A new version only opens a dialog; downloading never executes anything
+- The download URL is built from constants, never read from the response
+- Offline / blocked / rate-limited → silently skipped
+
+Disable by placing `update.json` next to the program:
+
+```json
+{ "enabled": false }
+```
 
 ### About: version and license
 

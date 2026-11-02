@@ -80,14 +80,15 @@ def main() -> int:
     finally:
         updater.TIMEOUT = saved
 
-    # ---- version.json 与程序版本必须一致 ----
-    import json as _json
-    from namepicker.about_dialog import VERSION as APP_VERSION
-    with open(os.path.join(_ROOT, "version.json"), encoding="utf-8") as fh:
-        manifest = _json.load(fh)
-    check("version.json matches the app version",
-          manifest.get("version") == APP_VERSION,
-          f"{manifest.get('version')} vs {APP_VERSION}")
+    # ---- 默认检查地址跟随“最新发布”，同 Tag 覆盖也有效 ----
+    check("default check url is the latest release asset",
+          "releases/latest/download/version.json" in updater.DEFAULT_CHECK_URL,
+          updater.DEFAULT_CHECK_URL)
+    check("proxy is used as a fallback for checks",
+          updater._with_proxy(updater.DEFAULT_CHECK_URL.format(repo="x"), {"proxy": "https://gh-proxy.com/"})[-1]
+          == "https://gh-proxy.com/" + updater.DEFAULT_CHECK_URL.format(repo="x"))
+    check("no proxy means a single attempt",
+          len(updater._with_proxy("https://github.com/x", {"proxy": ""})) == 1)
 
     # ---- 本地 build-info ----
     tmp = tempfile.mkdtemp(prefix="cm_upd_")

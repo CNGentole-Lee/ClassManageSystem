@@ -20,7 +20,8 @@ import urllib.request
 
 #: 仓库与地址都写死；换仓库需要重新发版，这是故意的
 DEFAULT_REPO = "CNGentole-Lee/ClassManageSystem"
-DEFAULT_CHECK_URL = "https://cdn.jsdelivr.net/gh/{repo}@main/version.json"
+#: 跟随最新一次发布：同 Tag 覆盖、换 Tag 都能拿到新文件
+DEFAULT_CHECK_URL = "https://github.com/{repo}/releases/latest/download/version.json"
 RELEASE_PAGE = "https://github.com/{repo}/releases/latest"
 ASSET_URL = "https://github.com/{repo}/releases/latest/download/{asset}"
 
@@ -106,6 +107,15 @@ def check_url(cfg: dict) -> str:
     return str(cfg.get("check_url") or DEFAULT_CHECK_URL).format(repo=cfg["repo"])
 
 
+def _with_proxy(url: str, cfg: dict) -> list[str]:
+    """直连优先，失败再走 proxy（老师用 gh-proxy 的既有习惯）。"""
+    urls = [url]
+    proxy = str(cfg.get("proxy") or "").strip()
+    if proxy and url.startswith("https://github.com/"):
+        urls.append(proxy.rstrip("/") + "/" + url)
+    return urls
+
+
 # ---------------------------------------------------------------- 远端
 
 def parse_remote(payload: bytes | str) -> dict | None:
@@ -133,14 +143,16 @@ def parse_remote(payload: bytes | str) -> dict | None:
 
 
 def fetch(cfg: dict, timeout: float = TIMEOUT) -> dict | None:
-    """请求 version.json；失败返回 None。"""
-    request = urllib.request.Request(
-        check_url(cfg), headers={"User-Agent": "ClassManageSystem-updater"})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return parse_remote(response.read(64 * 1024))
-    except Exception:                                     # noqa: BLE001
-        return None
+    """请求 version.json；直连失败再走 proxy；全失败返回 None。"""
+    for url in _with_proxy(check_url(cfg), cfg):
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "ClassManageSystem-updater"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return parse_remote(response.read(64 * 1024))
+        except Exception:                                 # noqa: BLE001
+            continue
+    return None
 
 
 def version_tuple(text: str) -> tuple[int, int, int] | None:
@@ -208,15 +220,25 @@ def download(cfg: dict, remote: dict, dest_dir: str = "", timeout: float = 120.0
     os.makedirs(target_dir, exist_ok=True)
     target = os.path.join(target_dir, asset_name(remote))
 
-    request = urllib.request.Request(
-        url, headers={"User-Agent": "ClassManageSystem-updater"})
-    with urllib.request.urlopen(request, timeout=timeout) as response, \
-            open(target + ".part", "wb") as fh:
-        while True:
-            chunk = response.read(256 * 1024)
-            if not chunk:
-                break
-            fh.write(chunk)
+    last_error = None
+    for candidate in _with_proxy(url, cfg):
+        request = urllib.request.Request(
+            candidate, headers={"User-Agent": "ClassManageSystem-updater"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response, \
+                    open(target + ".part", "wb") as fh:
+                while True:
+                    chunk = response.read(256 * 1024)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+            last_error = None
+            break
+        except OSError as exc:                            # 网络错误换下一个地址
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
 
     expected = str((remote.get("sha256") or {}).get(platform_key(), "")).lower()
     if SHA_RE.match(expected):

@@ -249,6 +249,15 @@ jobs:
           } > checksums.md
           cat checksums.md
 
+      - name: Build version.json (update-check manifest)
+        run: |
+          set -euo pipefail
+          python tools/make_version_json.py --out artifacts/version.json \
+            --build "$(date -Iseconds)" \
+            $(find artifacts -maxdepth 2 -type f \
+                \( -name "*Setup.exe" -o -name "*.dmg" -o -name "*macos*.zip" \) | sort)
+          cat artifacts/version.json
+
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -266,7 +275,7 @@ jobs:
           fi
 
           mapfile -t files < <(find artifacts -maxdepth 2 -type f \
-            \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' \) | sort)
+            \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' -o -name 'version.json' \) | sort)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "::error::no files to upload"
             exit 1
