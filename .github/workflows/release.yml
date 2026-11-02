@@ -1,6 +1,6 @@
 name: release
 
-# 把 Windows 与 macOS 的构建产物发到 GitHub Release（默认标签 V3.0）
+# 把 Windows 与 macOS 的构建产物发到 GitHub Release（标签默认 V{版本号}）
 #
 # 原则：
 #   * 两个平台按**同一个提交**取产物，避免 Win 和 Mac 来自不同代码；
@@ -19,9 +19,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag"
-        required: true
-        default: "V3.0"
+        description: "Release tag（留空则用 V{版本号}，例如 V3.0.1）"
+        required: false
+        default: ""
       sha:
         description: "要发布的提交 SHA（留空则用默认分支最新提交）"
         required: false
@@ -51,6 +51,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          VER=$(python3 tools/_version.py)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ inputs.tag }}"
             SHA="${{ inputs.sha }}"
@@ -58,9 +61,11 @@ jobs:
               SHA=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.repository.default_branch }}" --jq .sha)
             fi
           else
-            TAG="V3.0"
+            TAG=""
             SHA="${{ github.event.workflow_run.head_sha }}"
           fi
+          # 默认用 V{版本号}：标题与 tag 永远一致，latest 自动指向它
+          [ -n "$TAG" ] || TAG="V${VER}"
           [ -n "$SHA" ] || { echo "::error::cannot resolve commit"; exit 1; }
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -280,7 +285,28 @@ jobs:
             echo "::error::no files to upload"
             exit 1
           fi
-          gh release upload "$TAG" "${files[@]}" --clobber
+
+          # 逐个上传并重试：GitHub 的 uploads 端点偶发 404/5xx，
+          # 一次性传多个时其中一个失败会让其余也白传。
+          failed=""
+          for file in "${files[@]}"; do
+            ok=0
+            for attempt in 1 2 3; do
+              if gh release upload "$TAG" "$file" --clobber; then
+                ok=1
+                break
+              fi
+              echo "upload failed (attempt $attempt/3): $file"
+              sleep 5
+            done
+            if [ "$ok" -ne 1 ]; then
+              failed="$failed $file"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::failed to upload:$failed"
+            exit 1
+          fi
 
           echo "release $TAG assets:"
           gh release view "$TAG" --json assets --jq '.assets[].name'

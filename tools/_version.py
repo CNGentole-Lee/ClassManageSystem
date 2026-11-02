@@ -19,3 +19,7 @@ def app_version() -> str:
     if not match:
         raise RuntimeError("VERSION not found in about_dialog.py")
     return match.group(1)
+
+
+if __name__ == "__main__":
+    print(app_version())

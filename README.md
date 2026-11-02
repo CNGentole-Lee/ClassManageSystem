@@ -686,7 +686,8 @@ Windows 的安装包由 CI 生成，分成两个工作流：
 | `release.yml` → `release` | **同时**下载 Windows 与 macOS 的 artifact（按同一提交），校验后一起发到 Release | 两个构建都成功后自动 / 手动 |
 | `build-macos.yml` → `build-macos-app` | 在 macos-15（arm64）跑测试 → 打包 .app/DMG → 校验包内二进制哈希、备份文件 → 冒烟测试（含“换掉 verify 自动还原”） | push / PR / 手动 |
 
-`release` 默认发布到标签 **`V3.0`**：按同一个提交取两个平台的 artifact，
+`release` 默认发布到标签 **`V{版本号}`**（例如 `V3.0.1`，标题与标签永远一致；
+更新检查用的是 `releases/latest`，因此换标签不影响）：按同一个提交取两个平台的 artifact，
 校验便携版里的主程序与两个原生模块、**.app 里二进制的哈希**，再上传
 `Setup.exe`、`portable.zip` 与 `.dmg`，并把 SHA-256 写进 Release 说明。
 手动触发时可指定其他 tag 或提交。
@@ -1816,7 +1817,9 @@ The Windows installer is produced by two CI workflows:
 | `release.yml` → `release` | downloads **both** the Windows and macOS artifacts for the same commit, verifies them, publishes them together | after both builds succeed / manual |
 | `build-macos.yml` → `build-macos-app` | on macos-15 (arm64): tests → package .app/DMG → verify bundled binary hashes and backups → smoke test (including "replace verify → auto restore") | push / PR / manual |
 
-`release` publishes to tag **`V3.0`** by default: it takes both platforms' artifacts for
+`release` publishes to tag **`V{version}`** by default (e.g. `V3.0.1`; the title and tag always
+match, and the updater uses `releases/latest`, so changing tags does not matter): it takes
+both platforms' artifacts for
 the same commit, verifies the portable zip's main executable and both native binaries,
 verifies the **hashes inside the .app**, then uploads `Setup.exe`, `portable.zip` and the
 `.dmg`, writing the SHA-256 checksums into the release notes. Manual runs may pick another
