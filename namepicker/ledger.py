@@ -482,6 +482,35 @@ class Ledger:
                           pubkey=self._pubkey_b64)
         return state
 
+    def import_snapshot(self, state: dict) -> bool:
+        """用一份外部数据（用户已确认信任）作为本机链的新起点。
+
+        只写一条 init 事件：已有的抽签/分数从这条开始重新累计。
+        调用方必须先让用户明确确认“我信任这份数据”。
+        """
+        names = [str(x) for x in state.get("names", [])]
+        scores = [int(x) for x in state.get("scores", [])]
+        count = int(state.get("count", len(scores)))
+        try:
+            data = native_bridge.apply([], "init", count=count,
+                                       names=",".join(names),
+                                       scores=",".join(map(str, scores)))
+        except native_bridge.NativeError as exc:
+            raise LedgerError(str(exc)) from exc
+        record = base64.b64decode(data["record"])
+        plain = base64.b64decode(data.get("plain", ""))
+        if not self._verify_with([record], [plain]):
+            raise LedgerError("verifier rejected the imported snapshot: "
+                              + self._verify_error)
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path, "a", encoding="ascii") as fh:
+            fh.write(base64.b64encode(record).decode("ascii") + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        self._records.append(record)
+        self._plains = (self._plains or []) + [plain]
+        return True
+
     def migrate_from(self, group_count: int, names: list[str], scores: list[int]) -> bool:
         """把现有配置写成一条 init 事件（仅当链为空时）。"""
         if self.count() > 0:

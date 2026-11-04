@@ -232,6 +232,12 @@ class MainWindow(QMainWindow):
         about_btn.clicked.connect(self._on_about)
         bottom_layout.addWidget(about_btn)
 
+        export_btn = QPushButton(tr("导出", "Export"))
+        export_btn.setToolTip(tr("把当前组名与分数存成 JSON 文件（可手工查看）",
+                                 "Save current group names and scores as a JSON file"))
+        export_btn.clicked.connect(self._on_export)
+        bottom_layout.addWidget(export_btn)
+
         clear_btn = QPushButton(tr("清空历史", "Clear history"))
         clear_btn.clicked.connect(self._on_clear_history)
         bottom_layout.addWidget(clear_btn)
@@ -267,6 +273,13 @@ class MainWindow(QMainWindow):
         wipe_action = QAction(tr("彻底重置...", "Full reset..."), self)
         wipe_action.triggered.connect(self._on_wipe_all)
         menu.addAction(wipe_action)
+        menu.addSeparator()
+        export_action = QAction(tr("导出数据...", "Export data..."), self)
+        export_action.triggered.connect(self._on_export)
+        menu.addAction(export_action)
+        import_action = QAction(tr("导入数据...", "Import data..."), self)
+        import_action.triggered.connect(self._on_import)
+        menu.addAction(import_action)
         menu.addSeparator()
         # Apache-2.0 要求随附许可证与 NOTICE，这里给出入口
         about_action = QAction(tr("关于", "About"), self)
@@ -638,6 +651,82 @@ class MainWindow(QMainWindow):
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.DoubleClick:
             self._show_from_tray()
+
+    def _on_export(self) -> None:
+        """导出当前组名/分数为 JSON。"""
+        from . import export_import
+        from PySide6.QtWidgets import QFileDialog
+
+        directory = os.path.dirname(self._store.path) if self._store else os.getcwd()
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("导出数据", "Export data"),
+            export_import.default_name(directory),
+            tr("JSON 文件 (*.json)", "JSON files (*.json)"))
+        if not path:
+            return
+        try:
+            draws = {}
+            if self._store is not None and getattr(self._store, "_ledger", None):
+                draws = self._store._ledger.state().get("draws", {})
+            payload = export_import.export_payload(self._store, draws=draws)
+            export_import.save(payload, path)
+        except Exception as exc:                     # noqa: BLE001
+            QMessageBox.warning(self, tr("导出失败", "Export failed"), str(exc))
+            return
+        QMessageBox.information(
+            self, tr("已导出", "Exported"),
+            tr("已保存到：\n{p}", "Saved to:\n{p}", p=path))
+
+    def _on_import(self) -> None:
+        """导入前必须由用户明确确认“我信任这份数据”。"""
+        from . import export_import
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("导入数据", "Import data"), "",
+            tr("JSON 文件 (*.json)", "JSON files (*.json)"))
+        if not path:
+            return
+        try:
+            data = export_import.load(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, tr("无法导入", "Cannot import"), str(exc))
+            return
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(tr("确认导入", "Confirm import"))
+        box.setText(tr("即将用这份数据替换当前的组名与分数。",
+                       "This will replace the current group names and scores."))
+        box.setInformativeText(tr(
+            "来源文件：{p}\n导出时间：{t}\n\n"
+            "只有在你确认这个文件来自可信来源时才继续。",
+            "File: {p}\nExported: {t}\n\n"
+            "Continue only if you trust where this file came from.",
+            p=os.path.basename(path), t=data["exported_at"] or tr("未知", "unknown")))
+        ok_btn = box.addButton(tr("我信任这份数据", "I trust this data"),
+                               QMessageBox.AcceptRole)
+        box.addButton(tr("取消", "Cancel"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is not ok_btn:
+            return
+
+        try:
+            if getattr(self._store, "_ledger", None) is not None:
+                self._store._ledger.import_snapshot(data)
+            self._store.set_group_count(data["count"])
+            for i, name in enumerate(data["names"], 1):
+                if name:
+                    self._store.set_group_name(i, name)
+            for i, score in enumerate(data["scores"], 1):
+                self._store.set_score(i, score)
+            self._store.save()
+        except Exception as exc:                     # noqa: BLE001
+            QMessageBox.warning(self, tr("导入失败", "Import failed"), str(exc))
+            return
+        QMessageBox.information(
+            self, tr("已导入", "Imported"),
+            tr("已导入 {n} 个小组的数据。", "Imported {n} groups.", n=data["count"]))
 
     def _on_about(self) -> None:
         """托盘 / 悬浮球菜单 → 关于（许可证、NOTICE 与第三方声明入口）。

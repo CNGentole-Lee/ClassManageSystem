@@ -50,6 +50,7 @@ TESTS = [
     ("ledger_check", 180),        # 事件链：迁移/重放/篡改/回滚
     ("packaging_check", 60),      # 打包配置：spec / 安装包 / CI 一致性
     ("updater_check", 60),        # 更新检查：版本比较 / 非法响应 / URL 只来自常量
+    ("export_check", 60),         # 导出/导入：快照格式、拒绝坏文件、导入后链可验证
     ("stats_check", 120),         # 长期次数进链：无明文文件、可重放、可清空
     ("tamper_check", 180),        # 篡改专项：哈希/链/锚点/ctime/NTP/单调时间
     ("lint_check", 120),          # pyflakes：未定义名字（曾导致关于窗口崩溃）
