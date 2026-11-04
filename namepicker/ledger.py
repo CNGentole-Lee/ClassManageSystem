@@ -86,6 +86,13 @@ class Ledger:
             raise LedgerError(str(exc)) from exc
         self._records = records
         self._loaded = True
+        if records and self._has_format_marker():
+            # 链存在但重放不了：可能是旧版签名密钥问题，尝试原地重签一次
+            # （必须能解密且明文哈希匹配，否则放弃，不掩盖真正的篡改）
+            try:
+                native_bridge.dump(records)
+            except native_bridge.NativeError:
+                self._repair_chain()
         if records and not self._has_format_marker():
             # 先判断是不是已经是 v2（新版本创建的链）：能 dump 就是 v2
             try:
@@ -97,6 +104,30 @@ class Ledger:
             else:
                 self._write_format_marker()
         return self._records
+
+    def _repair_chain(self) -> None:
+        """重新签名整条链；失败则保持原样（让上层报错）。"""
+        try:
+            data = native_bridge.repair(self._records)
+        except native_bridge.NativeError:
+            return
+        new_records = [base64.b64decode(x) for x in data.get("records", [])]
+        if len(new_records) != len(self._records):
+            return
+        try:
+            shutil.copy2(self.path, self.path + ".repair.bak")
+        except OSError:
+            pass
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="ascii") as fh:
+            for rec in new_records:
+                fh.write(base64.b64encode(rec).decode("ascii") + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, self.path)
+        self._records = new_records
+        self._plains = [base64.b64decode(x) for x in data.get("plains", [])]
+        self._resigned = True
 
     def _has_format_marker(self) -> bool:
         return os.path.isfile(os.path.join(os.path.dirname(self.path), FORMAT_FILE))

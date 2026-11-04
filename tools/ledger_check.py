@@ -167,6 +167,39 @@ def main() -> int:
     check("append after reopen keeps the chain valid", reopened.verify(),
           reopened.verify_error())
 
+    # ---- gen 边界：第 501 条曾因签名密钥按代派生而无法验证 ----
+    print("\n--- Records beyond the gen boundary ---")
+    big = L.Ledger(os.path.join(tempfile.mkdtemp(prefix="cm_gen_"), "config.ini"))
+    big.migrate_from(3, ["A", "B", "C"], [0, 0, 0])
+    ok = True
+    for i in range(505):
+        try:
+            big.apply("draw", name="A", total=i + 1)
+        except Exception as exc:                      # noqa: BLE001
+            ok = False
+            print("   append failed at", big.count() + 1, exc)
+            break
+    check("appending past 500 records works", ok and big.count() == 506, str(big.count()))
+    reopened_big = L.Ledger(big.config_path)
+    check("a 506-record chain verifies", reopened_big.verify(), reopened_big.verify_error())
+    check("draw counts survive the boundary",
+          reopened_big.state().get("draws", {}).get("A") == 505,
+          str(reopened_big.state().get("draws")))
+
+    # ---- 重签：内容不变，链仍可验证 ----
+    print("\n--- Re-signing an existing chain ---")
+    import base64 as _b64
+    data = nb.repair(big.load())
+    new_records = [_b64.b64decode(x) for x in data["records"]]
+    check("repair keeps the record count", len(new_records) == big.count(), str(len(new_records)))
+    with open(big.path, "w", encoding="ascii") as fh:
+        for rec in new_records:
+            fh.write(_b64.b64encode(rec).decode("ascii") + "\n")
+    resigned = L.Ledger(big.config_path)
+    check("re-signed chain verifies", resigned.verify(), resigned.verify_error())
+    check("re-signing keeps the draw counts",
+          resigned.state().get("draws") == reopened_big.state().get("draws"))
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")

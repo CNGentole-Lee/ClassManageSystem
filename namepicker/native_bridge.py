@@ -199,6 +199,19 @@ def migrate(records: list[bytes]) -> dict:
     return data
 
 
+def repair(records: list[bytes]) -> dict:
+    """把已有链重新签名（保留 seq/gen/ts）。
+
+    用于修复早期版本对 gen>0 记录用错签名密钥留下的链。
+    """
+    lines = "\n".join(base64.b64encode(r).decode("ascii") for r in records)
+    data = _run(["repair", "--fp", fingerprint()] + _peer_args("sign"),
+                stdin_text=lines, timeout=120, role="sign")
+    if data.get("ok") is not True:
+        raise NativeError(str(data.get("error", "REPAIR_FAILED")))
+    return data
+
+
 def verify(records: list[bytes], plains: list[bytes],
            expect_seq: int | None = None) -> tuple[bool, bytes, str]:
     """只验签不重放；用于测试与快速检查。"""

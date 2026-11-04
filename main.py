@@ -250,6 +250,8 @@ def main():
     try:
         from namepicker import ledger as _ledger
         chain = _ledger.Ledger(store.path)
+        if getattr(chain, "_resigned", False):
+            startup_log.record(["ledger re-signed: legacy gen>0 records repaired"])
         if chain.count() == 0:
             # 首次运行：把现有配置写成期初事件（只做一次）
             chain.migrate_from(
