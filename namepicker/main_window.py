@@ -238,6 +238,13 @@ class MainWindow(QMainWindow):
         export_btn.clicked.connect(self._on_export)
         bottom_layout.addWidget(export_btn)
 
+        import_btn = QPushButton(tr("导入", "Import"))
+        import_btn.setToolTip(tr("从 JSON 快照恢复组名与分数（需要你确认信任）",
+                                 "Restore group names and scores from a JSON snapshot "
+                                 "(you must confirm you trust it)"))
+        import_btn.clicked.connect(self._on_import)
+        bottom_layout.addWidget(import_btn)
+
         clear_btn = QPushButton(tr("清空历史", "Clear history"))
         clear_btn.clicked.connect(self._on_clear_history)
         bottom_layout.addWidget(clear_btn)

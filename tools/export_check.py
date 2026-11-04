@@ -99,6 +99,11 @@ def main() -> int:
         check("MainWindow resolves the store", win._config_store() is store)
         payload2 = ei.export_payload(win._config_store())
         check("export works from the main window", payload2["group_count"] == 3)
+        from PySide6.QtWidgets import QPushButton
+        labels = [b.text() for b in win.findChildren(QPushButton)]
+        check("bottom bar offers export and import",
+              any("导出" in x for x in labels) and any("导入" in x for x in labels),
+              str(labels))
     except ImportError:
         check("MainWindow resolves the store (skipped: no PySide6)", True)
 
