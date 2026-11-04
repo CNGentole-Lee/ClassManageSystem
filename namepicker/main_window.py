@@ -652,12 +652,31 @@ class MainWindow(QMainWindow):
         if reason == QSystemTrayIcon.DoubleClick:
             self._show_from_tray()
 
+    def _config_store(self):
+        """拿到 ConfigStore。
+
+        MainWindow 本身不持有 store（由 main.py 创建后交给 PointsWindow），
+        所以按「自己的 _store → 积分面板的 _store」顺序取，都没有就返回 None。
+        """
+        store = getattr(self, "_store", None)
+        if store is not None:
+            return store
+        panel = getattr(self, "_points_window", None)
+        return getattr(panel, "_store", None) if panel is not None else None
+
     def _on_export(self) -> None:
         """导出当前组名/分数为 JSON。"""
         from . import export_import
         from PySide6.QtWidgets import QFileDialog
 
-        directory = os.path.dirname(self._store.path) if self._store else os.getcwd()
+        store = self._config_store()
+        if store is None:
+            QMessageBox.warning(self, tr("导出失败", "Export failed"),
+                                tr("暂时拿不到配置数据，请先打开积分面板再试。",
+                                   "Configuration is not available yet; open the points "
+                                   "panel first and try again."))
+            return
+        directory = os.path.dirname(store.path) if store.path else os.getcwd()
         path, _ = QFileDialog.getSaveFileName(
             self, tr("导出数据", "Export data"),
             export_import.default_name(directory),
@@ -666,9 +685,9 @@ class MainWindow(QMainWindow):
             return
         try:
             draws = {}
-            if self._store is not None and getattr(self._store, "_ledger", None):
-                draws = self._store._ledger.state().get("draws", {})
-            payload = export_import.export_payload(self._store, draws=draws)
+            if getattr(store, "_ledger", None) is not None:
+                draws = store._ledger.state().get("draws", {})
+            payload = export_import.export_payload(store, draws=draws)
             export_import.save(payload, path)
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, tr("导出失败", "Export failed"), str(exc))
@@ -711,16 +730,23 @@ class MainWindow(QMainWindow):
         if box.clickedButton() is not ok_btn:
             return
 
+        store = self._config_store()
+        if store is None:
+            QMessageBox.warning(self, tr("导入失败", "Import failed"),
+                                tr("暂时拿不到配置数据，请先打开积分面板再试。",
+                                   "Configuration is not available yet; open the points "
+                                   "panel first and try again."))
+            return
         try:
-            if getattr(self._store, "_ledger", None) is not None:
-                self._store._ledger.import_snapshot(data)
-            self._store.set_group_count(data["count"])
+            if getattr(store, "_ledger", None) is not None:
+                store._ledger.import_snapshot(data)
+            store.set_group_count(data["count"])
             for i, name in enumerate(data["names"], 1):
                 if name:
-                    self._store.set_group_name(i, name)
+                    store.set_group_name(i, name)
             for i, score in enumerate(data["scores"], 1):
-                self._store.set_score(i, score)
-            self._store.save()
+                store.set_score(i, score)
+            store.save()
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, tr("导入失败", "Import failed"), str(exc))
             return

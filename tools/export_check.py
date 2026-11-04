@@ -80,6 +80,28 @@ def main() -> int:
     reopened = Ledger(os.path.join(tmp, "import", "config.ini"))
     check("imported chain verifies", reopened.verify(), reopened.verify_error())
 
+    # ---- MainWindow 通过积分面板拿到 store（曾经 AttributeError）----
+    import os as _os
+    _os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    try:
+        from PySide6.QtWidgets import QApplication
+        from namepicker import i18n, theme
+        from namepicker.name_engine import NameEngine
+        from namepicker.main_window import MainWindow
+        from namepicker.points_window import PointsWindow
+
+        app = QApplication.instance() or QApplication([])
+        i18n.set_language("zh")
+        theme.apply(app)
+        panel = PointsWindow(store)
+        win = MainWindow(NameEngine(), app_path="main.py")
+        win.set_points_window(panel)
+        check("MainWindow resolves the store", win._config_store() is store)
+        payload2 = ei.export_payload(win._config_store())
+        check("export works from the main window", payload2["group_count"] == 3)
+    except ImportError:
+        check("MainWindow resolves the store (skipped: no PySide6)", True)
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")
