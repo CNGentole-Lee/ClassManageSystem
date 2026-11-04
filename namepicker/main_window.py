@@ -699,6 +699,13 @@ class MainWindow(QMainWindow):
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, tr("导出失败", "Export failed"), str(exc))
             return
+        try:
+            store.log_operation(
+                f"导出数据：已导出 {payload['group_count']} 个小组到 {os.path.basename(path)}",
+                f"export data: {payload['group_count']} groups to {os.path.basename(path)}")
+        except Exception:                            # noqa: BLE001
+            pass
+
         QMessageBox.information(
             self, tr("已导出", "Exported"),
             tr("已保存到：\n{p}", "Saved to:\n{p}", p=path))
@@ -757,6 +764,16 @@ class MainWindow(QMainWindow):
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, tr("导入失败", "Import failed"), str(exc))
             return
+        # 记进操作日志：导入会改变分数，必须留痕（与「彻底重置」同等对待）
+        try:
+            store.log_operation(
+                f"导入数据：已导入 {data['count']} 个小组"
+                f"（来源 {os.path.basename(path)}，导出时间 {data['exported_at'] or '未知'}）",
+                f"import data: {data['count']} groups from {os.path.basename(path)}"
+                f" (exported {data['exported_at'] or 'unknown'})")
+        except Exception:                            # noqa: BLE001
+            pass
+
         QMessageBox.information(
             self, tr("已导入", "Imported"),
             tr("已导入 {n} 个小组的数据。", "Imported {n} groups.", n=data["count"]))

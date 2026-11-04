@@ -107,6 +107,24 @@ def main() -> int:
     except ImportError:
         check("MainWindow resolves the store (skipped: no PySide6)", True)
 
+    # ---- 导入/导出必须留痕 ----
+    from namepicker import log_store
+    cs = ConfigStore(os.path.join(tmp, "logdir", "config.ini"))
+    cs.set_group_count(2)
+    cs.save()
+    cs.log_operation("导出数据：已导出 2 个小组到 a.json",
+                     "export data: 2 groups to a.json")
+    cs.log_operation("导入数据：已导入 2 个小组（来源 a.json，导出时间 未知）",
+                     "import data: 2 groups from a.json (exported unknown)")
+    entries = list(log_store.load(cs.path).entries)
+    zh = [e[1] for e in entries]
+    en = [e[2] for e in entries]
+    check("export is written to the operation log", any("导出数据" in x for x in zh), str(zh))
+    check("import is written to the operation log", any("导入数据" in x for x in zh), str(zh))
+    check("import/export log entries are bilingual",
+          any(x.startswith("import data") for x in en)
+          and any(x.startswith("export data") for x in en), str(en))
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")
