@@ -200,6 +200,44 @@ def main() -> int:
     check("re-signing keeps the draw counts",
           resigned.state().get("draws") == reopened_big.state().get("draws"))
 
+    # ---- 修复不能成为洗白工具 ----
+    print("\n--- Repair must never launder tampering ---")
+    import base64 as _b64
+
+    def _fresh_chain():
+        t = tempfile.mkdtemp(prefix="cm_tamper_")
+        c = L.Ledger(os.path.join(t, "config.ini"))
+        c.migrate_from(3, ["A", "B", "C"], [0, 0, 0])
+        c.apply("draw", name="B", total=1)
+        return t, c
+
+    # 1) 改签名
+    t, c = _fresh_chain()
+    lines = open(c.path, encoding="ascii").read().splitlines()
+    raw = bytearray(_b64.b64decode(lines[-1]))
+    raw[-1] ^= 0xFF
+    open(c.path, "w", encoding="ascii").write(
+        "\n".join(lines[:-1] + [_b64.b64encode(bytes(raw)).decode()]) + "\n")
+    victim = L.Ledger(os.path.join(t, "config.ini"))
+    check("flipped signature is rejected and not repaired",
+          not victim.verify() and not victim._resigned, victim.verify_error())
+
+    # 2) 改密文
+    t, c = _fresh_chain()
+    lines = open(c.path, encoding="ascii").read().splitlines()
+    raw = bytearray(_b64.b64decode(lines[-1]))
+    raw[len(raw) // 2] ^= 0x01
+    open(c.path, "w", encoding="ascii").write(
+        "\n".join(lines[:-1] + [_b64.b64encode(bytes(raw)).decode()]) + "\n")
+    victim = L.Ledger(os.path.join(t, "config.ini"))
+    check("flipped ciphertext is rejected and not repaired",
+          not victim.verify() and not victim._resigned, victim.verify_error())
+
+    # 3) 正常链仍能重签（修复能力不能被误伤）
+    t, c = _fresh_chain()
+    data = nb.repair(c.load())
+    check("a genuine chain can still be re-signed", data["count"] == c.count())
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")

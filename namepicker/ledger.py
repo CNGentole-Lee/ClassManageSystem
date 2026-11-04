@@ -62,6 +62,8 @@ class Ledger:
         self._verified = False
         self._state: dict | None = None
         self._plains: list[bytes] | None = None
+        self._resigned = False
+        self._last_repair_error = ""
         self._pubkey_b64 = ""
 
     # --- 读取 ---
@@ -114,10 +116,13 @@ class Ledger:
         new_records = [base64.b64decode(x) for x in data.get("records", [])]
         if len(new_records) != len(self._records):
             return
+        # 备份必须成功，否则宁可不重写：这是唯一能回退的副本
+        backup = self.path + ".repair.bak"
         try:
-            shutil.copy2(self.path, self.path + ".repair.bak")
+            shutil.copy2(self.path, backup)
         except OSError:
-            pass
+            self._last_repair_error = "backup failed"
+            return
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="ascii") as fh:
             for rec in new_records:
@@ -125,8 +130,24 @@ class Ledger:
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, self.path)
+
+        # 写完后立即用验证器复核；不通过就回滚到备份，绝不留下坏链
+        plains = [base64.b64decode(x) for x in data.get("plains", [])]
+        try:
+            check = native_bridge.state(new_records, plains)
+            verified = check.get("ok") is True
+        except native_bridge.NativeError:
+            verified = False
+        if not verified:
+            try:
+                shutil.copy2(backup, self.path)
+            except OSError:
+                pass
+            self._last_repair_error = "repair did not verify; rolled back"
+            return
+
         self._records = new_records
-        self._plains = [base64.b64decode(x) for x in data.get("plains", [])]
+        self._plains = plains
         self._resigned = True
 
     def _has_format_marker(self) -> bool:
