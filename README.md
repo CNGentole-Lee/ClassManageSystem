@@ -85,6 +85,23 @@
 
 ![结果弹窗](docs/images/draw-popup.png)
 
+### 换电脑 / 重装系统
+
+分数绑在**机器 + 用户目录**上（密钥由机器 UUID 与 `HOME` 派生），
+换机器或换 Windows 用户后，旧链在本机解不开。这时用导出/导入：
+
+```text
+旧机器：管理面板底栏「导出」→ 得到一个 JSON（组名、分数、抽取次数）
+新机器：底栏「导入」→ 选择文件 → 确认「我信任这份数据」
+```
+
+- 导出的 JSON 是**明文**，可以直接打开核对，也可以手工改；
+- 导入会先弹确认框，只有点「我信任这份数据」才生效，并写进操作日志；
+- 导入后的数据同样在签名链里，之后的记录从这条 event 开始累计。
+
+> **Inno 安装包升级不需要导出导入**：安装程序只替换 `_internal/` 与 `native/`，
+> `Data/`、`config.dat`、`points_log.dat` 原地保留，密钥不变，链照常验证通过。
+
 ### 隐私与合规
 
 **本程序不上传任何数据。** 只有两处会发起网络请求，都是只读查询：
@@ -191,7 +208,7 @@ push 后 CI 构建 → 成功后发版到 `V{版本号}`。
 | **无需退出课件** | 悬浮球强制置顶（Windows 用 `SetWindowPos(HWND_TOPMOST)`；macOS 设置 NSWindow 层级与 Space 行为），可覆盖在 PPT 之上 |
 | **不抢焦点** | 悬浮球与弹窗使用 `Qt.WindowDoesNotAcceptFocus`，不打断键盘输入与 PPT 操作 |
 | **公平抽选** | 不是 `random.choice`，而是「加权少抽优先 + 每人冷却」，长期看每人被抽次数更均衡 |
-| **积分防篡改** | AES-256-GCM 加密 + 三级自动回档，学生改文件改不动分数 |
+| **积分防篡改** | 签名事件链（Ed25519 + XChaCha20）+ 七层完整性检查，改文件/换程序/回滚都会被拦下；见「安全设计」 |
 | **常驻托盘** | 关闭主窗口/积分面板都不退出，只有托盘菜单「退出」才结束进程 |
 
 ---
@@ -212,7 +229,9 @@ push 后 CI 构建 → 成功后发版到 `V{版本号}`。
 - 支持 `Ctrl+Z` 撤销；快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
 - 分数以加密签名的事件链（`Data/ledger.esc`）为准，重启不丢；
   被改坏、被删掉或被换回旧文件都会自动检测并恢复。
-- 每次积分变动自动写入加密操作日志，底栏「操作日志」按钮只读查看；
+- 底栏「导出 / 导入」：把组名与分数存成可读的 JSON，换电脑后导入恢复
+  （导入需确认“我信任这份数据”）；
+- 每次积分变动、导出、导入都会写入加密操作日志，底栏「操作日志」按钮只读查看；
   日志每条同时保存中英两版，切换语言后历史记录依然可读。
 - 「彻底重置」会先弹出**选择清空范围**的对话框：组名 / 积分 / 长期公平记录 /
   抽取历史可分别勾选，确认后再二次确认，避免误伤不需要清的数据。
@@ -1151,6 +1170,26 @@ A multi-draw opens a single window where all names roll and are revealed togethe
 close it with `✕` or let it disappear after 5 seconds.
 
 ![Result popup](docs/images/draw-popup-en.png)
+
+### Moving to another machine / reinstalling
+
+Scores are bound to the **machine + user directory** (the key is derived from the machine
+UUID and `HOME`). After switching machines or Windows users, the old chain cannot be
+decrypted here. Use export / import:
+
+```text
+Old machine: "Export" in the bottom bar -> a JSON file (names, scores, draw counts)
+New machine: "Import" in the bottom bar -> pick the file -> confirm "I trust this data"
+```
+
+- The exported JSON is **plain text**: you can inspect it, and even edit it by hand.
+- Import always asks for confirmation; nothing is applied until you trust the file,
+  and the import is written to the operation log.
+- Imported data also lives in the signed chain; later records continue from that event.
+
+> **Inno installer upgrades need no export/import**: the installer only replaces
+> `_internal/` and `native/`; `Data/`, `config.dat` and `points_log.dat` stay in place,
+> the key is unchanged, and the chain verifies as usual.
 
 ### Privacy and compliance
 
