@@ -38,8 +38,9 @@ def main() -> int:
     check("higher minor is newer", updater.is_newer({"version": "3.1.0"}, local))
     check("same version is not newer",
           not updater.is_newer({"version": "3.0.0", "build": local[1]}, local))
-    check("same version, different build is newer",
-          updater.is_newer({"version": "3.0.0", "build": "2026-11-02T10:00:00+08:00"}, local))
+    check("same version is never newer, even if the build time differs",
+          not updater.is_newer({"version": "3.0.0", "build": "2099-01-01T00:00:00+08:00"},
+                               local))
     check("older is not newer", not updater.is_newer({"version": "2.9.9"}, local))
     check("garbage version is rejected", not updater.is_newer({"version": "v3.0.1"}, local))
 
@@ -93,6 +94,9 @@ def main() -> int:
     check("proxy is used as a fallback for checks",
           updater._with_proxy(updater.DEFAULT_CHECK_URL.format(repo="x"), {"proxy": "https://gh-proxy.com/"})[-1]
           == "https://gh-proxy.com/" + updater.DEFAULT_CHECK_URL.format(repo="x"))
+    check("proxy page uses the default gh-proxy when unset",
+          updater.release_page_via_proxy({"repo": "r", "proxy": ""})
+          == "https://gh-proxy.com/https://github.com/r/releases/latest")
     check("no proxy means a single attempt",
           len(updater._with_proxy("https://github.com/x", {"proxy": ""})) == 1)
 

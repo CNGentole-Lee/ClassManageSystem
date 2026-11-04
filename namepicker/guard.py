@@ -16,11 +16,14 @@ import base64
 
 from . import integrity, sntp
 
-#: 网络时间与本机时间相差多少秒算异常
-NTP_OFFSET_TOLERANCE_S = 300.0
+#: 网络时间与本机时间相差多少秒算异常。
+#: 教室电脑的系统时钟经常偏几分钟（主板电池、长期不联网），
+#: 300 秒会天天误报；真正用来掩盖回滚的改时间至少是几小时/几天。
+NTP_OFFSET_TOLERANCE_S = 1800.0
 
-#: 链最后事件与本机时间的差超过多少秒算“数据陈旧”
-NTP_STALE_TOLERANCE_S = 7 * 24 * 3600.0
+#: 链最后事件与本机时间的差超过多少秒算“数据陈旧”。
+#: 每周重置一次，但假期可能两三周不用，7 天太容易误报。
+NTP_STALE_TOLERANCE_S = 30 * 24 * 3600.0
 
 
 def check_native(path: str, role: str = "sign") -> dict:

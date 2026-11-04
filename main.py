@@ -53,8 +53,12 @@ def _get_bundled_path(relative_path: str) -> str:
 
 
 def _show_update(parent, remote, cfg, local_pair):
-    """有新版本时弹窗：只提示，不执行任何下载来的文件。"""
-    from PySide6.QtCore import Qt, QUrl
+    """有新版本时弹窗：**只跳转浏览器**，不在程序里下载。
+
+    早期实现把「下载到 Downloads」做成阻塞调用，ui 线程被占住，
+    点一下整个窗口卡死。现在只给两个链接：直连和 gh-proxy。
+    """
+    from PySide6.QtCore import QUrl
     from PySide6.QtGui import QDesktopServices
 
     from namepicker import updater
@@ -69,28 +73,16 @@ def _show_update(parent, remote, cfg, local_pair):
         box.setInformativeText(remote["notes"])
     open_btn = box.addButton(tr("打开下载页", "Open download page"),
                              QMessageBox.AcceptRole)
-    dl_btn = box.addButton(tr("下载到 Downloads", "Download to Downloads"),
-                           QMessageBox.ActionRole)
+    proxy_btn = box.addButton(tr("用 gh-proxy 打开", "Open via gh-proxy"),
+                              QMessageBox.ActionRole)
     box.addButton(tr("稍后", "Later"), QMessageBox.RejectRole)
     box.exec()
 
     clicked = box.clickedButton()
     if clicked is open_btn:
         QDesktopServices.openUrl(QUrl(updater.release_page(cfg)))
-    elif clicked is dl_btn:
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            path = updater.download(cfg, remote)
-        except Exception as exc:                       # noqa: BLE001
-            QApplication.restoreOverrideCursor()
-            QMessageBox.warning(parent, tr("下载失败", "Download failed"), str(exc))
-            return
-        QApplication.restoreOverrideCursor()
-        QMessageBox.information(
-            parent, tr("下载完成", "Download complete"),
-            tr("已保存到：\n{p}\n\n请手动双击运行安装程序，数据会保留。",
-               "Saved to:\n{p}\n\nRun the installer manually; your data is kept.",
-               p=path))
+    elif clicked is proxy_btn:
+        QDesktopServices.openUrl(QUrl(updater.release_page_via_proxy(cfg)))
 
 
 def _start_update_check(window):
@@ -113,24 +105,34 @@ def _start_update_check(window):
     from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
     manager = QNetworkAccessManager(window)
-    request = QNetworkRequest(QUrl(updater.check_url(cfg)))
-    try:
-        request.setTransferTimeout(4000)
-    except AttributeError:
-        pass
-    reply = manager.get(request)
+    urls = updater.check_urls(cfg)
 
-    def finished():
+    def attempt(index: int) -> None:
+        """直连失败再试 proxy；都失败就静默放弃。"""
+        if index >= len(urls):
+            return
+        request = QNetworkRequest(QUrl(urls[index]))
         try:
-            remote = updater.parse_remote(bytes(reply.readAll().data()))
-            if remote and updater.is_newer(remote, local_pair):
-                _show_update(window, remote, cfg, local_pair)
-        except Exception:                              # noqa: BLE001
+            request.setTransferTimeout(4000)
+        except AttributeError:
             pass
-        finally:
-            reply.deleteLater()
+        reply = manager.get(request)
 
-    reply.finished.connect(finished)
+        def finished():
+            try:
+                remote = updater.parse_remote(bytes(reply.readAll().data()))
+            except Exception:                          # noqa: BLE001
+                remote = None
+            reply.deleteLater()
+            if remote is None:
+                attempt(index + 1)
+                return
+            if updater.is_newer(remote, local_pair):
+                _show_update(window, remote, cfg, local_pair)
+
+        reply.finished.connect(finished)
+
+    attempt(0)
 
 
 def main():

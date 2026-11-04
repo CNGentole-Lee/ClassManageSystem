@@ -17,6 +17,7 @@
 """
 
 import os
+import sys
 import time
 
 from PySide6.QtCore import QObject, QSharedMemory, Signal
@@ -25,6 +26,8 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 #: 套接字名按用户区分：多用户/多会话登录同一台机器时互不干扰
 SERVER_NAME = "RandomNamePicker_LocalServer"
 SHARED_MEM_KEY = "RandomNamePicker_SingleInstance"
+#: Windows 命名互斥体：进程结束由内核自动释放，不受“套接字残留”影响
+MUTEX_NAME = "Local\\RandomNamePicker_SingleInstance"
 
 
 class SingleInstance(QObject):
@@ -46,6 +49,7 @@ class SingleInstance(QObject):
         self._shared_mem: QSharedMemory | None = None
         self._server: QLocalServer | None = None
         self._stale_removed = False
+        self._mutex = None          # Windows：命名互斥体的句柄
 
     # --- 对外 ---
 
@@ -57,6 +61,20 @@ class SingleInstance(QObject):
         判定「已有实例」就会自杀，用户看到的是程序关掉后什么都没起来。
         """
         deadline = time.monotonic() + max(0.0, float(retry_seconds))
+
+        # 0) Windows：先抢命名互斥体。
+        #    QLocalServer 在某些 Windows 环境下会 listen 失败（命名管道被占用、
+        #    杀毒软件拦截等），随后代码会退到“宁可多开一个”，单实例就失效了。
+        #    互斥体由内核管理，进程一死立刻释放，是最可靠的判据。
+        if sys.platform == "win32":
+            while True:
+                acquired = self._acquire_windows_mutex()
+                if acquired is not False:
+                    break
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(0.15)
+
         while True:
             # 1) 探活：能连上说明真的有人在跑
             if not self._probe_existing():
@@ -96,6 +114,27 @@ class SingleInstance(QObject):
             return True
         return True             # 两套机制都不可用：宁可多开一个，也不要静默不启动
 
+    def _acquire_windows_mutex(self):
+        """返回 True=拿到；False=已有实例；None=Windows API 不可用。"""
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CreateMutexW.restype = wintypes.HANDLE
+            kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL,
+                                              wintypes.LPCWSTR)
+            handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+            if not handle:
+                return None
+            if ctypes.get_last_error() == 183:      # ERROR_ALREADY_EXISTS
+                kernel32.CloseHandle(handle)
+                return False
+            self._mutex = (kernel32, handle)
+            return True
+        except Exception:                           # noqa: BLE001
+            return None
+
     def notify_existing(self) -> bool:
         """给已有实例发唤醒消息。True = 已送达。"""
         socket = QLocalSocket()
@@ -118,6 +157,10 @@ class SingleInstance(QObject):
             if self._shared_mem is not None:
                 self._shared_mem.detach()
                 self._shared_mem = None
+            if self._mutex is not None:
+                kernel32, handle = self._mutex
+                kernel32.CloseHandle(handle)
+                self._mutex = None
         except Exception:
             pass
 

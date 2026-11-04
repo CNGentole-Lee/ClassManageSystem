@@ -163,13 +163,21 @@ def ctime_gap(path: str, last_event_ts: float) -> float | None:
     return float(ctime) - float(last_event_ts)
 
 
-def check_ctime(path: str, last_event_ts: float, tolerance: float = CTIME_TOLERANCE_S) -> dict:
-    """判定文件是否被整体替换过。"""
+def check_ctime(path: str, last_event_ts: float,
+                tolerance: float = CTIME_TOLERANCE_S,
+                platform: str | None = None) -> dict:
+    """判定文件是否被整体替换过。
+
+    Windows 的 st_ctime 是**创建时间**，追加内容不会更新它，所以
+    “ctime 早于最后事件时间”在 Windows 上是正常现象，不能当成异常。
+    只有“文件被重新创建”（ctime 明显晚于最后事件）在 Windows 上有效。
+    """
     gap = ctime_gap(path, last_event_ts)
     if gap is None:
         return {"ok": True, "reason": "UNKNOWN", "gap": None}
-    # ctime 早于最后事件时间是不可能的（写入必然更新 ctime），说明时钟/文件异常
-    if gap < -tolerance:
+
+    plat = platform if platform is not None else sys.platform
+    if gap < -tolerance and plat != "win32":
         return {"ok": False, "reason": "CTIME_BEFORE_EVENT", "gap": gap}
     # ctime 明显晚于最后事件时间：文件被重新创建过（拷贝旧数据）
     if gap > tolerance:

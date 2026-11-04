@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -190,6 +191,16 @@ def main() -> int:
           any(p == "PUBKEY_MISMATCH" for p in problems), str(problems))
 
     # ---- 11. ctime anomaly -------------------------------------------
+    # Windows 的 st_ctime 是创建时间，追加内容不会更新它：
+    # 负 gap 在 Windows 上必须视为正常，否则每次启动都误报“时间被改过”
+    tmp_file = os.path.join(tempfile.mkdtemp(prefix="ctime_"), "x.esc")
+    open(tmp_file, "w").write("x")
+    res_win = integrity.check_ctime(tmp_file, time.time() + 3600, platform="win32")
+    check("windows ignores ctime older than the last event", res_win["ok"], res_win["reason"])
+    res_mac = integrity.check_ctime(tmp_file, time.time() + 3600, platform="darwin")
+    check("macOS still flags ctime older than the last event",
+          not res_mac["ok"] and res_mac["reason"] == "CTIME_BEFORE_EVENT", res_mac["reason"])
+
     ct_chain = fresh_chain("ct_")
     last_ts = ct_chain.last_ts()
     res = integrity.check_ctime(ct_chain.path, last_ts - 3600)

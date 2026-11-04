@@ -31,6 +31,9 @@ SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
 TIMEOUT = 3.0
 
+#: 下载页的备用入口（老师那边 github.com 常被墙）
+DEFAULT_PROXY = "https://gh-proxy.com/"
+
 
 # ---------------------------------------------------------------- 本地信息
 
@@ -107,6 +110,11 @@ def check_url(cfg: dict) -> str:
     return str(cfg.get("check_url") or DEFAULT_CHECK_URL).format(repo=cfg["repo"])
 
 
+def check_urls(cfg: dict) -> list[str]:
+    """检查地址候选列表：直连优先，失败再走 proxy。"""
+    return _with_proxy(check_url(cfg), cfg)
+
+
 def _with_proxy(url: str, cfg: dict) -> list[str]:
     """直连优先，失败再走 proxy（老师用 gh-proxy 的既有习惯）。"""
     urls = [url]
@@ -163,20 +171,18 @@ def version_tuple(text: str) -> tuple[int, int, int] | None:
 
 
 def is_newer(remote: dict, local_pair: tuple[str, str]) -> bool:
-    """远端是否比本地新。
+    """远端是否比本地新 —— **只看版本号**。
 
-    版本号相同但 build 不同 → 视为“同版本小更新”，也提示。
-    这样发版不一定非要改版本号。
+    早期实现还会比较 build 时间，但那个时间在本地是“打包时刻”、
+    在远端是“发布时刻”，同一个版本永远刚好多出几分钟，于是每次启动
+    都误报“有新版本”。现在每个 release 都递增版本号（tag 冲突会失败），
+    版本号本身就是唯一可靠的判据。
     """
     remote_version = version_tuple(remote.get("version", ""))
     local_version = version_tuple(local_pair[0])
     if remote_version is None or local_version is None:
         return False
-    if remote_version != local_version:
-        return remote_version > local_version
-    remote_build = (remote.get("build") or "").strip()
-    local_build = (local_pair[1] or "").strip()
-    return bool(remote_build) and remote_build != local_build
+    return remote_version > local_version
 
 
 # ---------------------------------------------------------------- 下载
@@ -205,6 +211,16 @@ def download_url(cfg: dict, remote: dict) -> str:
 
 def release_page(cfg: dict) -> str:
     return RELEASE_PAGE.format(repo=cfg["repo"])
+
+
+def proxy_prefix(cfg: dict) -> str:
+    """配置里的 proxy，没有就用默认的 gh-proxy。"""
+    proxy = str(cfg.get("proxy") or "").strip()
+    return (proxy or DEFAULT_PROXY).rstrip("/") + "/"
+
+
+def release_page_via_proxy(cfg: dict) -> str:
+    return proxy_prefix(cfg) + release_page(cfg)
 
 
 def download(cfg: dict, remote: dict, dest_dir: str = "", timeout: float = 120.0) -> str:
