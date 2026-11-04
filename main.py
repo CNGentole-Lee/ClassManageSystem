@@ -288,9 +288,11 @@ def main():
             store.apply_ledger_state(state)
             pubkey = _guard_pubkey()
             chain._pubkey_b64 = pubkey
+            # 先比对，再写锚点：反过来的话“当前值”会覆盖掉上一次的记录，
+            # 比对就变成了自己跟自己比，永远一致。
+            security = _guard.evaluate(chain, state, pubkey, _guard.network_time())
             chain.write_anchor(chain.count(), chain.head(), ts=int(state.get("ts", 0)),
                                digest=chain.state_digest(state), pubkey=pubkey)
-            security = _guard.evaluate(chain, state, pubkey, _guard.network_time())
             ledger_state = {"ok": True, "error": problem, "recovered": True}
             # 回滚事件本身必须留档：恢复成功不代表没发生过
             try:
@@ -315,9 +317,11 @@ def main():
             store.apply_ledger_state(state)
             pubkey = _guard_pubkey()
             chain._pubkey_b64 = pubkey
+            # 先比对，再写锚点：反过来的话“当前值”会覆盖掉上一次的记录，
+            # 比对就变成了自己跟自己比，永远一致。
+            security = _guard.evaluate(chain, state, pubkey, _guard.network_time())
             chain.write_anchor(chain.count(), chain.head(), ts=int(state.get("ts", 0)),
                                digest=chain.state_digest(state), pubkey=pubkey)
-            security = _guard.evaluate(chain, state, pubkey, _guard.network_time())
 
         # 只有链可信时才挂上：链不可信还继续追加，会把坏链写得更长
         if ledger_state["ok"]:

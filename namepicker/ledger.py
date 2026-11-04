@@ -294,11 +294,22 @@ class Ledger:
                     "ts": int(data.get("ts", 0) or 0),
                     "digest": str(data.get("digest", "") or ""),
                     "pubkey": str(data.get("pubkey", "") or ""),
+                    # 旧版锚点没有 pubkey 字段：这是"还没有"，不是"不一致"
+                    "has_pubkey": "pubkey" in data,
                 }
         return best
 
     def write_anchor(self, seq: int, head: bytes, ts: int = 0,
                      digest: str = "", pubkey: str = "") -> None:
+        """更新锚点。
+
+        **公钥只写一次**：锚点里已有公钥就沿用旧值，绝不覆盖。
+        否则每次启动 / 每次改分都会把“当前公钥”写进去，随后的比对
+        永远一致 —— 那等于把 PUBKEY_MISMATCH 废掉。
+        """
+        existing = self.read_anchor_full()
+        if existing.get("has_pubkey") and existing.get("pubkey"):
+            pubkey = existing["pubkey"]
         body = json.dumps({
             "seq": int(seq),
             "head": base64.b64encode(head).decode("ascii"),
@@ -400,10 +411,14 @@ class Ledger:
         ts = self.last_ts()
         if anchor["ts"] and ts and ts < int(anchor["ts"]):
             problems.append(f"TIME_ROLLBACK {ts}<{anchor['ts']}")
-        if state is not None and anchor["digest"]:
+        # digest 只在“链长度与锚点相同”时比；链正常增长时 digest 必然变，
+        # 那不是篡改，比较它只会每天误报。
+        if state is not None and anchor["digest"] and count == int(anchor["seq"]):
             if self.state_digest(state) != anchor["digest"]:
                 problems.append("STATE_MISMATCH")
-        if pubkey_b64 and anchor["pubkey"] and pubkey_b64 != anchor["pubkey"]:
+        # 旧锚点没有 pubkey 字段：视为“还没有”，不报错（升级兼容）
+        if (pubkey_b64 and anchor.get("has_pubkey", bool(anchor["pubkey"]))
+                and anchor["pubkey"] and pubkey_b64 != anchor["pubkey"]):
             problems.append("PUBKEY_MISMATCH")
         return problems
 

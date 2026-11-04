@@ -238,6 +238,46 @@ def main() -> int:
     data = nb.repair(c.load())
     check("a genuine chain can still be re-signed", data["count"] == c.count())
 
+    # ---- 锚点：公钥只写一次、digest 按 seq gate、旧格式兼容 ----
+    print("\n--- Anchor: public key pinning ---")
+    t = tempfile.mkdtemp(prefix="cm_anchor_")
+    c = L.Ledger(os.path.join(t, "config.ini"))
+    c.migrate_from(3, ["A", "B", "C"], [0, 0, 0])
+    c.write_anchor(c.count(), c.head(), ts=int(c.state()["ts"]),
+                   digest=c.state_digest(c.state()), pubkey="PUBKEY_ONE")
+    c.write_anchor(c.count(), c.head(), ts=int(c.state()["ts"]),
+                   digest=c.state_digest(c.state()), pubkey="PUBKEY_TWO")
+    anchor = c.read_anchor_full()
+    check("public key is pinned to the first value",
+          anchor["pubkey"] == "PUBKEY_ONE", anchor["pubkey"])
+    check("a different key is reported",
+          "PUBKEY_MISMATCH" in c.anchor_problems(c.state(), pubkey_b64="PUBKEY_THREE"))
+
+    import json as _json
+    import base64 as _b64mod
+    t2 = tempfile.mkdtemp(prefix="cm_anchor_old_")
+    c2 = L.Ledger(os.path.join(t2, "config.ini"))
+    c2.migrate_from(3, ["A", "B", "C"], [0, 0, 0])
+    legacy = _json.dumps({"seq": c2.count(),
+                          "head": _b64mod.b64encode(c2.head()).decode()})
+    for path in c2.anchor_paths():
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w", encoding="utf-8").write(legacy)
+    problems = c2.anchor_problems(c2.state(), pubkey_b64="ANY_KEY")
+    check("legacy anchor without a pubkey does not report a mismatch",
+          "PUBKEY_MISMATCH" not in problems, str(problems))
+
+    t3 = tempfile.mkdtemp(prefix="cm_anchor_grow_")
+    c3 = L.Ledger(os.path.join(t3, "config.ini"))
+    c3.migrate_from(3, ["A", "B", "C"], [0, 0, 0])
+    c3._pubkey_b64 = "K"
+    c3.write_anchor(c3.count(), c3.head(), ts=int(c3.state()["ts"]),
+                    digest=c3.state_digest(c3.state()), pubkey="K")
+    c3.apply("draw", name="A", total=1)
+    problems = c3.anchor_problems(c3.state(), pubkey_b64="K")
+    check("a longer chain does not trip STATE_MISMATCH",
+          not any(p.startswith("STATE_MISMATCH") for p in problems), str(problems))
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")
