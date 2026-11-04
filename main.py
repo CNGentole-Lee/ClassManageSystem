@@ -236,6 +236,9 @@ def main():
     # --- 事件链：校验 / 迁移 / 重放 --------------------------------
     # 分数以事件链为准：启动时先验签，通过则重放出组名与分数；
     # 失败说明文件被替换或损坏，此时**不采用**链上数据，并记录告警。
+    class _ForeignData(Exception):
+        """链属于另一个用户/机器，解密不可能成功。"""
+
     ledger_state = {"ok": True, "error": ""}
     security = {"level": "info", "problems": [], "ntp": {}}
     chain = None                                  # 链不可用时保持 None
@@ -260,6 +263,20 @@ def main():
                 store.all_scores(),
             )
         problem = ""
+        # 先看公钥：锚点记录的公钥与当前机器/用户的不一致，
+        # 说明整条链是用另一把密钥加密的，解密必然失败 —— 这不是篡改，
+        # 而是“换了机器或换了用户”，要给出不同的提示。
+        _anchor = chain.read_anchor_full()
+        _current_pub = _guard_pubkey()
+        if (_anchor.get("pubkey") and _current_pub
+                and _anchor["pubkey"] != _current_pub):
+            ledger_state = {"ok": False, "foreign": True,
+                            "error": _current_pub}
+            startup_log.record([
+                "ledger belongs to another user/machine: "
+                f"anchor={_anchor['pubkey'][:8]}… current={_current_pub[:8]}…"])
+            raise _ForeignData()
+
         if chain.count() and not chain.verify():
             problem = chain.verify_error() or "BAD_CHAIN"
         elif chain.count():
@@ -307,6 +324,8 @@ def main():
             store.attach_ledger(chain)
         else:
             startup_log.record(["ledger not attached: chain is not trustworthy"])
+    except _ForeignData:
+        pass                                      # 已经设置好 foreign 状态
     except Exception as exc:                      # noqa: BLE001
         # 这里只可能是“安全模块不可用 / 程序内部错误”，不是数据被篡改。
         # 两者必须分开提示：把程序 bug 说成“数据被替换”会误导老师。
@@ -389,6 +408,14 @@ def main():
             tr("⚠ 检测到数据被删除或替换，已从安全副本恢复（{e}）。",
                "⚠ Data deletion or replacement detected; restored from a safe copy ({e}).",
                e=ledger_state["error"]),
+            0,
+        )
+    elif ledger_state.get("foreign"):
+        main_win.statusBar().showMessage(
+            tr("⚠ 这份数据属于另一个用户或另一台电脑，本机无法解密。"
+               "如需继续使用，请在积分面板按 config.ini 重新录入。",
+               "⚠ This data belongs to another user or machine and cannot be "
+               "decrypted here. Re-enter the scores from config.ini if needed."),
             0,
         )
     elif ledger_state.get("internal"):
