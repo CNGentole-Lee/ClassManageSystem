@@ -102,9 +102,14 @@ def _start_update_check(window):
         return
 
     from PySide6.QtCore import QUrl
-    from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest
+    from PySide6.QtNetwork import (QNetworkAccessManager, QNetworkProxy,
+                                   QNetworkRequest)
 
     manager = QNetworkAccessManager(window)
+    # 不走系统代理：macOS 上的 PAC 脚本（通常是代理工具的本地端口）一旦失效，
+    # CFNetwork 会往终端刷 "Execution of PAC script ... failed"。
+    # 更新检查是尽力而为的，失败就静默跳过；需要代理时用 update.json 里的前缀。
+    manager.setProxy(QNetworkProxy(QNetworkProxy.NoProxy))
     urls = updater.check_urls(cfg)
 
     def attempt(index: int) -> None:
