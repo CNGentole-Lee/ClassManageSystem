@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import shutil
+import time
 
 from . import native_bridge
 
@@ -155,7 +156,8 @@ class Ledger:
         try:
             head = hashlib.blake2b(new_records[-1], digest_size=32).digest()
             self.write_anchor(len(new_records), head, ts=0, digest="",
-                              pubkey=self._pubkey_b64)
+                              pubkey=self._pubkey_b64,
+                              repaired_at=int(time.time()))
         except Exception:                            # noqa: BLE001
             pass
 
@@ -287,7 +289,8 @@ class Ledger:
 
     def read_anchor_full(self) -> dict:
         """取所有锚点里 seq 最大的一份（含 ts/digest/pubkey）。"""
-        best: dict = {"seq": 0, "head_bytes": b"", "ts": 0, "digest": "", "pubkey": ""}
+        best: dict = {"seq": 0, "head_bytes": b"", "ts": 0, "digest": "",
+                      "pubkey": "", "repaired_at": 0}
         for path in self.anchor_paths():
             try:
                 with open(path, "r", encoding="utf-8") as fh:
@@ -303,13 +306,15 @@ class Ledger:
                     "ts": int(data.get("ts", 0) or 0),
                     "digest": str(data.get("digest", "") or ""),
                     "pubkey": str(data.get("pubkey", "") or ""),
+                    "repaired_at": int(data.get("repaired_at", 0) or 0),
                     # 旧版锚点没有 pubkey 字段：这是"还没有"，不是"不一致"
                     "has_pubkey": "pubkey" in data,
                 }
         return best
 
     def write_anchor(self, seq: int, head: bytes, ts: int = 0,
-                     digest: str = "", pubkey: str = "") -> None:
+                     digest: str = "", pubkey: str = "",
+                     repaired_at: int = 0) -> None:
         """更新锚点。
 
         **公钥只写一次**：锚点里已有公钥就沿用旧值，绝不覆盖。
@@ -317,14 +322,22 @@ class Ledger:
         永远一致 —— 那等于把 PUBKEY_MISMATCH 废掉。
         """
         existing = self.read_anchor_full()
+        # 全零链头只在 seq=0（创世）时合法；seq>0 传进来说明调用方还没重放，
+        # 此时保留旧链头，避免把锚点写成一片 0 造成 HEAD_MISMATCH。
+        if seq > 0 and head and not any(head):
+            head = existing.get("head_bytes", b"") or head
         if existing.get("has_pubkey") and existing.get("pubkey"):
             pubkey = existing["pubkey"]
+        # 重签时间同样只保留，不被后续启动覆盖
+        if not repaired_at:
+            repaired_at = int(existing.get("repaired_at", 0) or 0)
         body = json.dumps({
             "seq": int(seq),
             "head": base64.b64encode(head).decode("ascii"),
             "ts": int(ts),
             "digest": digest,
             "pubkey": pubkey,
+            "repaired_at": int(repaired_at),
         }, separators=(",", ":")).encode("utf-8")
         for path in self.anchor_paths():
             try:
@@ -397,6 +410,10 @@ class Ledger:
             "scores": [int(x) for x in state.get("scores", [])],
         }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return hashlib.blake2b(canonical.encode("utf-8"), digest_size=32).hexdigest()
+
+    def repaired_at(self) -> int:
+        """最近一次重签的时间（0 = 从未重签）。"""
+        return int(self.read_anchor_full().get("repaired_at", 0) or 0)
 
     def last_ts(self) -> int:
         """最后一条事件的单调时间戳（秒）。"""

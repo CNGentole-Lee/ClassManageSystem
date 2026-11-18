@@ -90,7 +90,10 @@ def evaluate(chain, state: dict, pubkey: str, ntp: dict | None,
 
     problems += chain.anchor_problems(state, pubkey_b64=pubkey)
 
-    ctime = integrity.check_ctime(chain.path, chain.last_ts(), tolerance_ctime)
+    # 重签会重写文件（ctime 变成现在），这不算“拷回了旧数据”。
+    # 用“最后事件时间”和“最近重签时间”的较大者作比较基准。
+    reference_ts = max(int(chain.last_ts()), int(chain.repaired_at()))
+    ctime = integrity.check_ctime(chain.path, reference_ts, tolerance_ctime)
     if not ctime["ok"]:
         problems.append(ctime["reason"])
 
