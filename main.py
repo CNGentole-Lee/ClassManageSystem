@@ -103,7 +103,7 @@ def _start_update_check(window):
 
     from PySide6.QtCore import QUrl
     from PySide6.QtNetwork import (QNetworkAccessManager, QNetworkProxy,
-                                   QNetworkRequest)
+                                   QNetworkReply, QNetworkRequest)
 
     manager = QNetworkAccessManager(window)
     # 不走系统代理：macOS 上的 PAC 脚本（通常是代理工具的本地端口）一旦失效，
@@ -124,6 +124,12 @@ def _start_update_check(window):
         reply = manager.get(request)
 
         def finished():
+            # 请求失败时 reply 可能没打开，直接 readAll() 会打印
+            # "QIODevice::read ... device not open"。先看错误码，再读。
+            if reply.error() != QNetworkReply.NetworkError.NoError:
+                reply.deleteLater()
+                attempt(index + 1)
+                return
             try:
                 remote = updater.parse_remote(bytes(reply.readAll().data()))
             except Exception:                          # noqa: BLE001
