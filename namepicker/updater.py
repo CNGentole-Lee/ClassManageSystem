@@ -59,23 +59,52 @@ def _build_info_paths() -> list[str]:
     return paths
 
 
+def _source_version() -> str:
+    """从 about_dialog.py 里读 VERSION（不导入 PySide6）。
+
+    源码运行时 build-info.txt 往往是上次打包时留下的，会比 VERSION 旧，
+    于是"明明已经是最新代码，却一直提示有新版本"。
+    """
+    import re as _re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "namepicker", "about_dialog.py")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        match = _re.search(r'^VERSION\s*=\s*"([^"]+)"', text, _re.M)
+        return match.group(1) if match else ""
+    except OSError:
+        return ""
+
+
 def local() -> tuple[str, str]:
     """(version, build)；读不到就返回 ("", "")。
 
     源码运行或旧版打包没有这个文件 —— 此时上层直接跳过更新检查，
     免得给开发机和老用户弹莫名其妙的提示。
     """
+    version = ""
+    build = ""
     for path in _build_info_paths():
         try:
             with open(path, encoding="utf-8") as fh:
                 data = json.load(fh)
         except (OSError, ValueError):
             continue
-        version = str(data.get("version", "")).strip()
-        build = str(data.get("build", "")).strip()
-        if VERSION_RE.match(version):
-            return version, build
-    return "", ""
+        candidate = str(data.get("version", "")).strip()
+        if VERSION_RE.match(candidate):
+            version = candidate
+            build = str(data.get("build", "")).strip()
+            break
+
+    if not getattr(sys, "frozen", False):
+        # 源码运行：取 build-info 与代码 VERSION 中较新的那个。
+        # build-info 往往是上次打包留下的旧值，不能让它把版本说旧。
+        source = _source_version()
+        if VERSION_RE.match(source):
+            if not version or version_tuple(source) > version_tuple(version):
+                version = source
+    return version, build
 
 
 # ---------------------------------------------------------------- 配置

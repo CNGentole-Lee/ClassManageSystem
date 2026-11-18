@@ -111,9 +111,18 @@ def main() -> int:
         check("local build info is read", updater.local() == ("9.9.9", "test"), str(updater.local()))
         with open(path, "w", encoding="utf-8") as fh:
             fh.write("garbage")
-        check("corrupt build info yields empty", updater.local() == ("", ""))
+        check("corrupt build info falls back to the code version",
+              bool(updater.local()[0]) and updater.local()[1] == "",
+              str(updater.local()))
     finally:
         updater._build_info_paths = old
+
+    # ---- 源码运行时不能用过期的 build-info 判断版本 ----
+    from namepicker.about_dialog import VERSION as _V
+    check("source run uses the code version",
+          updater.local()[0] == _V, f"{updater.local()[0]} vs {_V}")
+    check("no update is offered for the current version",
+          not updater.is_newer({"version": _V}, updater.local()))
 
     print("\n" + "=" * 60)
     if failures:
