@@ -278,6 +278,25 @@ def main() -> int:
     check("a longer chain does not trip STATE_MISMATCH",
           not any(p.startswith("STATE_MISMATCH") for p in problems), str(problems))
 
+    # ---- 重复 seq 的链必须能修好（导入曾从空链开始导致撞号）----
+    print("\n--- Repair a chain with duplicate seq ---")
+    import base64 as _b64d
+    t = tempfile.mkdtemp(prefix="cm_dup_")
+    c = L.Ledger(os.path.join(t, "config.ini"))
+    c.migrate_from(3, ["A", "B", "C"], [0, 0, 0])
+    # 手工再追加一条 seq=1 的记录（模拟旧 bug），直接拼到文件里
+    dup = nb.apply([], "init", count=6, names="a,b,c,d,e,f", scores="0,0,0,0,0,0")
+    with open(c.path, "a", encoding="ascii") as fh:
+        fh.write(dup["record"] + "\n")
+    victim = L.Ledger(os.path.join(t, "config.ini"))
+    ok = victim.verify()
+    check("duplicate-seq chain is repaired", ok, victim.verify_error())
+    check("repair renumbers records",
+          [int.from_bytes(r[0:4], "little") for r in victim.load()] == [1, 2],
+          str([int.from_bytes(r[0:4], "little") for r in victim.load()]))
+    check("repaired chain survives a restart",
+          L.Ledger(os.path.join(t, "config.ini")).verify())
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")

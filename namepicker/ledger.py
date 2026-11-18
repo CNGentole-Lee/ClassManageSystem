@@ -150,6 +150,15 @@ class Ledger:
         self._plains = plains
         self._resigned = True
 
+        # 重签后链头变了，锚点必须同步更新，否则下次启动会误报 HEAD_MISMATCH。
+        # digest 留空：重签后的状态还没重放，等正常流程再写。
+        try:
+            head = hashlib.blake2b(new_records[-1], digest_size=32).digest()
+            self.write_anchor(len(new_records), head, ts=0, digest="",
+                              pubkey=self._pubkey_b64)
+        except Exception:                            # noqa: BLE001
+            pass
+
     def _has_format_marker(self) -> bool:
         return os.path.isfile(os.path.join(os.path.dirname(self.path), FORMAT_FILE))
 
@@ -491,8 +500,11 @@ class Ledger:
         names = [str(x) for x in state.get("names", [])]
         scores = [int(x) for x in state.get("scores", [])]
         count = int(state.get("count", len(scores)))
+        # 关键：把【已有记录】传下去，签名器才会算出正确的 seq。
+        # 传空列表会让它从 seq=1 重新开始，与现有记录撞号，整条链报废。
+        existing = self.load()
         try:
-            data = native_bridge.apply([], "init", count=count,
+            data = native_bridge.apply(existing, "init", count=count,
                                        names=",".join(names),
                                        scores=",".join(map(str, scores)))
         except native_bridge.NativeError as exc:
