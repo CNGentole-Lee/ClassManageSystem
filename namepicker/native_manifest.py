@@ -7,11 +7,11 @@ Do not edit by hand: rebuild, then re-run the tool.
 # platform -> role -> (binary name, sha256 hex, size in bytes, backup file name)
 NATIVE = {
     "darwin": {
-        "sign": ("cmd_sign", "d1ddab1b27bba4252c396b739f6c59ef91414333c594a2a7f32fbeca4ced4d71", 291136, "cmd_sign.gz"),
-        "verify": ("cmd_verify", "fc8e1a4cc71f6f1870fbe8969b689289b901897c2d5edcebb5ff7603fe2d080c", 190032, "cmd_verify.gz"),
+        "sign": ("cmd_sign", "2e9f35e64893a5b9b7922a81e0b71d63b3e33f8534670c3eb1b9e0bfec4f4f41", 291136, "cmd_sign.gz"),
+        "verify": ("cmd_verify", "efada8a3bf5b9400536dec27e48f14bf17c18dc7203da07c0d94edf08934572e", 190032, "cmd_verify.gz"),
     },
     "win32": {
-        "sign": ("cmd_sign.exe", "674456736baa845e31ae4da182055ea734509f91fc0ee5c72f0533c38cfa63ce", 811520, "cmd_sign.exe.gz"),
-        "verify": ("cmd_verify.exe", "cbb131deb1bfbce95cec44d6dea4d879799541f55ac8131ad99af2b92fec5bc5", 716288, "cmd_verify.exe.gz"),
+        "sign": ("cmd_sign.exe", "fdff330b4513febb61ec2adc111f0242258498cc009e8d90c5fdfb1bdcf5bf54", 811520, "cmd_sign.exe.gz"),
+        "verify": ("cmd_verify.exe", "794cb9dbfa1a9db3e39c8a3f3546fcd85bfd31c0d86dec43166835be6583df65", 716288, "cmd_verify.exe.gz"),
     },
 }
