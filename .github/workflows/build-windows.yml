@@ -42,16 +42,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" != "schedule" ]; then
+          event="${{ github.event_name }}"
+
+          # 手动触发永远执行
+          if [ "$event" = "workflow_dispatch" ]; then
             echo "build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git tag --points-at HEAD | grep -q '^V'; then
+
+          # 排除法：默认照常构建，只在【高峰时段】推迟。
+          # 高峰 = 北京时间 08:00-23:00；高峰里的 push 交给次日 07:00 的定时任务。
+          hour=$(TZ=Asia/Shanghai date +%-H)
+          if [ "$event" = "push" ] && [ "$hour" -ge 8 ] && [ "$hour" -lt 23 ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "peak hour in CST (${hour}:00); deferred to the 07:00 run"
+            exit 0
+          fi
+
+          # 定时任务：HEAD 已经打过 V* 标签就不再重复构建
+          if [ "$event" = "schedule" ] && git tag --points-at HEAD | grep -q '^V'; then
             echo "build=false" >> "$GITHUB_OUTPUT"
             echo "HEAD already tagged; scheduled build skipped"
-          else
-            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          echo "build=true" >> "$GITHUB_OUTPUT"
 
   build:
     needs: guard
