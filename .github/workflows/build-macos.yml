@@ -28,8 +28,8 @@ on:
       - "packaging/macos/**"
   workflow_dispatch:
   schedule:
-    # 23:00 UTC = 次日 07:00 北京时间；避开白天高峰期
-    - cron: "0 23 * * *"
+    # 10:00 UTC = 02:00 美西 / 18:00 北京时间：避开美西工作时段
+    - cron: "0 10 * * *"
 
 permissions:
   contents: read
@@ -56,11 +56,12 @@ jobs:
           fi
 
           # 排除法：默认照常构建，只在【高峰时段】推迟。
-          # 高峰 = 北京时间 08:00-23:00；高峰里的 push 交给次日 07:00 的定时任务。
-          hour=$(TZ=Asia/Shanghai date +%-H)
-          if [ "$event" = "push" ] && [ "$hour" -ge 8 ] && [ "$hour" -lt 23 ]; then
+          # 高峰按 GitHub 所在的美西时间（PT）算：08:00-18:00 PT
+          # 对应北京时间 00:00-10:00（PT = CST - 16h，冬令时）。
+          hour=$(TZ=America/Los_Angeles date +%-H)
+          if [ "$event" = "push" ] && [ "$hour" -ge 8 ] && [ "$hour" -lt 18 ]; then
             echo "build=false" >> "$GITHUB_OUTPUT"
-            echo "peak hour in CST (${hour}:00); deferred to the 07:00 run"
+            echo "peak hour in PT (${hour}:00); deferred to the next off-peak run"
             exit 0
           fi
 
