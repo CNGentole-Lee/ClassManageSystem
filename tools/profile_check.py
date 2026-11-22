@@ -49,7 +49,7 @@ def main() -> int:
 
     tmp = tempfile.mkdtemp(prefix="cm_profile_")
     ledger = Ledger(os.path.join(tmp, "ledger.esc"))
-    ledger.apply("init", count=3, names="甲组,乙组,丙组", scores="0,0,0")
+    ledger.migrate_from(0, [], [])     # V4：init 只写「预设列表」，此刻是空的
     store = ProfileStore(chain=ledger)
 
     print("\n--- 1. Create / rename ---")
@@ -124,8 +124,8 @@ def main() -> int:
     # Ledger 会把路径规范化到 <dir>/Data/ 下，就按它实际用的目录检查
     ledger_dir = os.path.dirname(ledger.path)
     produced = sorted(os.listdir(ledger_dir))
-    check("presets add no files of their own (only ledger + anchor)",
-          set(produced) <= {"ledger.esc", "anchor.json"}, str(produced))
+    check("presets add no files of their own (only ledger + anchor + format)",
+          set(produced) <= {"ledger.esc", "anchor.json", "format"}, str(produced))
 
     print("\n--- 7. Helpers ---")
     bal = store.balanced_assignment(4, 40)
@@ -140,27 +140,37 @@ def main() -> int:
     from namepicker import export_import
 
     src = Ledger(os.path.join(tmp, "src", "ledger.esc"))
-    src.apply("init", count=3, names="甲组,乙组,丙组", scores="0,0,0")
+    src.migrate_from(0, [], [])
     src_store = ProfileStore(chain=src)
     spid = src_store.create("化学课")
     src_store.set_rule(spid, 2, 3)
     src_store.assign_bulk(spid, {0: 1, 1: 2, 2: 1})
+    src_store.set_group_name(1, "雄鹰组", spid)
+    src_store.add_score(1, 5, spid)
+    src_store.add_score(2, -2, spid)
+    src_store.record_draw(2, 3, spid)          # 第 3 个人被抽过 3 次
     src_store.use(spid)
 
     class _FakeConfig:
-        group_count = 3
+        group_count = 2
 
         def get_group_name(self, i):
-            return ["甲组", "乙组", "丙组"][i - 1]
+            return ["雄鹰组", "第二组"][i - 1]
 
         def all_scores(self):
-            return [0, 0, 0]
+            return [5, -2]
 
     payload = export_import.export_payload(
         _FakeConfig(), draws={"张三": 2},
         profiles=src_store.list(), active_profile=src_store.active_id())
     check("export carries the profiles",
           payload["profiles"][0]["name"] == "化学课", str(payload.get("profiles")))
+    check("export carries each profile's scores",
+          payload["profiles"][0]["scores"] == [5, -2],
+          str(payload["profiles"][0].get("scores")))
+    check("export carries each profile's draw counts",
+          payload["profiles"][0]["draw_counts"] == [0, 0, 3],
+          str(payload["profiles"][0].get("draw_counts")))
     snap = os.path.join(tmp, "snap.json")
     export_import.save(payload, snap)
     loaded = export_import.load(snap)
@@ -169,7 +179,7 @@ def main() -> int:
           and loaded["active_profile"] == payload["active_profile"])
 
     dst = Ledger(os.path.join(tmp, "dst", "ledger.esc"))
-    dst.apply("init", count=3, names="甲组,乙组,丙组", scores="0,0,0")
+    dst.migrate_from(0, [], [])
     dst.import_snapshot(loaded)
     dst_store = ProfileStore(chain=dst)
     check("import restores the preset",
@@ -179,7 +189,25 @@ def main() -> int:
           dst_store.get(dst_store.active_id())["members"] == [1, 2, 1],
           str(dst_store.get(dst_store.active_id())))
     check("import restores the active marker", dst_store.active_id() == 1)
+    check("import restores the group names",
+          dst_store.get_group_name(1) == "雄鹰组", dst_store.get_group_name(1))
+    check("import restores the scores",
+          dst_store.scores() == [5, -2], str(dst_store.scores()))
+    check("import restores the draw counts",
+          dst_store.draw_counts() == [0, 0, 3], str(dst_store.draw_counts()))
     check("grouping works after the import", dst_store.grouping_enabled() is True)
+
+    # 3.x 时代的快照（只有组名/分数、没有 profiles）也要能用
+    legacy_dst = Ledger(os.path.join(tmp, "legacy", "ledger.esc"))
+    legacy_dst.migrate_from(0, [], [])
+    legacy_dst.import_snapshot({"count": 3, "names": ["甲组", "乙组", "丙组"],
+                                "scores": [1, 2, 3], "draws": {}})
+    legacy_store = ProfileStore(chain=legacy_dst)
+    check("an old snapshot becomes a single profile",
+          [p["name"] for p in legacy_store.list()] == ["导入的预设"],
+          str([p["name"] for p in legacy_store.list()]))
+    check("the old snapshot's scores survive",
+          legacy_store.scores() == [1, 2, 3], str(legacy_store.scores()))
 
     bogus = dict(payload)          # 原始 payload 带 format 字段
     bogus["profiles"] = [{"id": 5, "name": "坏组", "group_count": 99,

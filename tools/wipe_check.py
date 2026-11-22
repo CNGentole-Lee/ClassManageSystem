@@ -33,6 +33,7 @@ isolate_settings()
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 from namepicker import i18n, log_store, wipe_service  # noqa: E402
+from _v4_fixture import open_store  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 from namepicker.name_engine import NameEngine  # noqa: E402
 from namepicker.stats_store import StatsStore  # noqa: E402
@@ -52,12 +53,11 @@ def main() -> int:
     tmp = tempfile.mkdtemp(prefix="cm_wipe_check_")
 
     from namepicker.ledger import Ledger
-    store = ConfigStore(os.path.join(tmp, "config.ini"))
+    # V4：组名/分数/次数都在预设里，先准备一条链 + 一个 5 组的预设
+    store = open_store(os.path.join(tmp, "config.ini"), groups=5)
     _chain = Ledger(store.path)
-    if _chain.count() == 0:
-        _chain.migrate_from(5, ["甲组", "乙组", "丙组", "丁组", "戊组"], [0] * 5)
-    store.attach_ledger(_chain)
     stats = StatsStore(os.path.join(tmp, "stats.ini"), chain=_chain)
+    stats.set_names([str(i) for i in range(1, 6)])
     engine = NameEngine()
     engine.generate_number_list(1, 5)
 
@@ -212,14 +212,13 @@ def main() -> int:
     print("\n--- 8. A failed write is reported, not silently ignored ---")
     import os as _os, stat as _stat
     ro_dir = tempfile.mkdtemp(prefix="cm_wipe_ro_")
-    ro_store = ConfigStore(os.path.join(ro_dir, "config.ini"))
+    ro_store = open_store(os.path.join(ro_dir, "config.ini"), groups=3)
     ro_store.set_score(1, 5)
     ro_store.save()
     from namepicker.ledger import Ledger as _Ledger
     _ro_chain = _Ledger(ro_store.path)
-    if _ro_chain.count() == 0:
-        _ro_chain.migrate_from(3, ["甲组", "乙组", "丙组"], [0, 0, 0])
     ro_stats = StatsStore(os.path.join(ro_dir, "stats.ini"), chain=_ro_chain)
+    ro_stats.set_names(["1", "2", "3"])
     ro_engine = NameEngine()
     ro_engine.generate_number_list(1, 3)
     mode = _os.stat(ro_dir).st_mode
@@ -231,10 +230,14 @@ def main() -> int:
         check("failed save is reported as not ok", not failed.ok(),
               f"saved={failed.saved} verified={failed.verified}")
         check("failure carries a reason", bool(failed.error), failed.error)
-        # 失败后界面应回到磁盘上的真实数据，而不是继续显示“已清空”
+        # 失败后界面要回到**真实状态**，而不是继续显示"已清空"的假象。
+        # V4：真数据在链上（清空其实已经进链、并通过了验证），
+        # 写不进去的只是 config.dat 这份给人看的副本 —— 所以这里以链为准。
         ro_store.reload_from_disk()
-        check("reload_from_disk restores the on-disk values",
-              ro_store.get_score(1) == 5, f"actual {ro_store.get_score(1)}")
+        check("reload_from_disk shows the chain's real values",
+              ro_store.get_score(1) == 0, f"actual {ro_store.get_score(1)}")
+        check("the store is still usable after a failed save",
+              ro_store.group_count == 3, f"actual {ro_store.group_count}")
     finally:
         _os.chmod(ro_dir, mode)
 

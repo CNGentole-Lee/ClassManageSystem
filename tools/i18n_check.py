@@ -40,6 +40,7 @@ from namepicker import (  # noqa: E402
     about_dialog, dialogs, i18n, log_store, restart, theme, wipe_dialog,
 )
 from namepicker import config_store  # noqa: E402
+from _v4_fixture import open_store, reopen_store  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 from namepicker.main_window import MainWindow  # noqa: E402
 from namepicker.name_engine import NameEngine  # noqa: E402
@@ -75,7 +76,7 @@ def main() -> int:
 
     print("\n--- 2. Widgets follow the language ---")
     tmp = tempfile.mkdtemp(prefix="cm_i18n_")
-    store = ConfigStore(os.path.join(tmp, "config.ini"))
+    store = open_store(os.path.join(tmp, "config.ini"))
 
     i18n.set_language("zh")
     store.set_score(1, 3, reason=i18n.both("+3", "+3"))
@@ -128,7 +129,7 @@ def main() -> int:
 
     print("\n--- 5. Default group names follow the language ---")
     i18n.set_language("zh")
-    localized = ConfigStore(os.path.join(tmp, "localized.ini"))
+    localized = open_store(os.path.join(tmp, "localized.ini"))
     check("zh defaults are Chinese", localized.get_group_name(1) == "第一组",
           localized.get_group_name(1))
     localized.set_group_name(2, "雄鹰组")
@@ -138,13 +139,13 @@ def main() -> int:
           localized.get_group_name(1) == "Group 1", localized.get_group_name(1))
     check("custom name is untouched",
           localized.get_group_name(2) == "雄鹰组", localized.get_group_name(2))
-    reloaded = ConfigStore(localized.path)
+    reloaded = reopen_store(localized.path)
     check("localization survives a reload (not written back)",
           reloaded.get_group_name(1) == "Group 1"
           and reloaded.get_group_name(2) == "雄鹰组")
     i18n.set_language("zh")
     check("switching back restores Chinese defaults",
-          ConfigStore(localized.path).get_group_name(1) == "第一组")
+          reopen_store(localized.path).get_group_name(1) == "第一组")
 
     print("\n--- 6. Language change asks to restart ---")
     restarts = []
@@ -197,7 +198,7 @@ def main() -> int:
     print("\n--- 7. Long foreign names ---")
     i18n.set_language("en")
     long_name = "Bartholomew Montgomery-Fitzgerald"
-    long_store = ConfigStore(os.path.join(tmp, "long.ini"))
+    long_store = open_store(os.path.join(tmp, "long.ini"))
     long_store.set_group_name(1, long_name)
     long_store.save()
     long_points = PointsWindow(long_store)
@@ -348,7 +349,7 @@ def main() -> int:
     probe.close()
 
     print("\n--- 8d. Language persisted twice (QSettings + config.dat) ---")
-    lang_store = ConfigStore(os.path.join(tmp, "lang.ini"))
+    lang_store = open_store(os.path.join(tmp, "lang.ini"))
     lang_store.set_language("en")
     lang_store.save()
     check("config.dat keeps the language",

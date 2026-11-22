@@ -244,9 +244,12 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | 右键卡片            | 清零本组积分                   |
 | `Ctrl+Z`        | 撤销最近一次加减分                |
 | `1 / 2 / 3 / 4` | `-1 / +1 / +2 / +3`      |
-| 「小组数量...」       | 改组数（需二次确认，会清空组名与分数）      |
 | 「全部清零」          | 所有小组归零（不可撤销）             |
-| 「操作日志」          | 打开只读日志查看器（唯一入口，中英双语逐条显示） |
+| 「操作日志」          | 打开只读日志查看器（唯一入口，中英双语逐条显示，默认只看当前预设） |
+
+> **4.0 起组数由「预设」决定**，面板上的「小组数量...」按钮已删除：
+> 一门课一个预设（化学课 4 组、语文课 0 组），组数、组名、分数、抽取次数
+> 各自独立。改组数请到悬浮球 → 预设。
 
 小组名支持任意长度的名字（外国人名可能几十个字符）：卡片和抽选弹窗会按宽度
 自动省略显示「…」，完整名字放在 tooltip 里，鼠标悬停可见；抽选弹窗还会先缩小
@@ -256,6 +259,28 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 上图同时展示了英文模式下的默认组名：只改过名字的小组显示自定义名，
 没改过的显示 `Group 4/5/6`。
+
+### 课堂预设：一门课一套数据（4.0）
+
+悬浮球右键 → 预设，可以为每门课建一个预设：
+
+```
+化学课   4 组   组名：雄鹰组…   分数：+5…   抽取次数：各算各的
+语文课   0 组   不启用小组制（积分面板打不开，会提示原因）
+```
+
+- **组数、组名、分数、抽取次数都跟着预设走**，切预设就是整套换掉，
+  化学课抽过的次数不会跑到语文课去。
+- 预设只活在事件链里（与分数同一套签名与加密），**不产生文件**；
+  导出 / 导入会把所有预设连同组名、分数、次数一起搬走。
+- 首次启动会自动建一个 6 组的默认预设，开箱即可计分；
+  之后删光了也不会再长回来（那是你的选择，不是 bug）。
+- 预设窗口里改完点「保存」才写链，误点不会产生事件。
+
+> **升级到 4.0 前请先看一眼这行**：4.0 的链结构与 3.x 不兼容
+> （旧版把组名/分数存在全局，4.0 全部搬进预设）。旧链不会被改写，
+> 程序会提示「检测到旧版本（3.x）的数据」，此时请按 `config.ini` 里的
+> 组名与分数在「预设」里重新录入一次。原文件始终保留在 `Data/ledger.esc`。
 
 ### 管理面板：各项设置
 
@@ -647,7 +672,7 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 │   ├── macos_check.py               # macOS 平台自检（菜单栏 / 浮层 / 深色 / 全屏覆盖）
 │   ├── _fullscreen_helper.py         # 自检用：进入原生全屏的辅助进程
 │   ├── smoke_test.py                # GUI 冒烟测试
-│   ├── group_count_stress.py        # 小组数量功能 + 300 轮压力
+│   ├── group_count_stress.py        # 组数（预设）功能 + 300 轮压力
 │   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图（中/英、深/浅）
 │   ├── wipe_check.py                # 彻底重置的勾选与逐项清空测试
 │   ├── i18n_check.py                # 双语切换 / 持久化 / 双语日志测试
@@ -692,15 +717,17 @@ python tools/windows_check.py          # 平台自检（在 Windows 上才跑真
 python tools/macos_check.py            # 平台自检（菜单栏 / 浮层 / 深色 / 激活策略 / 模态框层级）
 python tools/macos_check.py --fullscreen   # 额外跑一次「真·原生全屏」覆盖测试
 python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、落盘、撤销、连抽
-python tools/group_count_stress.py     # 小组数量功能 + 300 轮压力
+python tools/group_count_stress.py     # 组数（预设）功能 + 300 轮压力
 python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
 python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志(需要GUI)
 python tools/native_check.py           # 原生模块：状态机、规则拒绝、篡改/重排/换机器
 python tools/ledger_check.py           # 事件链：迁移、C++ 改分、回档检测、安全副本恢复
 ```
 
-- `wipe_check` 现在覆盖：写盘失败必须被报告（只读目录）、失败后界面回退到磁盘真实数据、
+- `wipe_check` 现在覆盖：写盘失败必须被报告（只读目录）、失败后界面回到链上的真实数据、
   `os.replace` 遇到 Windows 占用时的重试与最终失败。
+- `stats_check` 现在覆盖：抽取次数属于**当前预设**（化学课与语文课各算各的）、
+  名单没对齐时宁可报错也不静默丢次数、旧 `stats.ini` 只迁移一次。
 - `i18n_check` 现在覆盖：关于窗口非模态时悬浮球仍可抽人、隐藏父窗口下的对话框定位、
   语言双写、`--restarted` 参数、单实例重试（跨进程）。
 - `windows_check` 现在覆盖：对话框置顶（`WS_EX_TOPMOST`）、语言写入 `config.dat`。
@@ -1205,9 +1232,13 @@ Grab it from **GitHub Releases** (if nothing is published yet, see
 | Right-click a card    | Reset this group to zero                                                     |
 | `Ctrl+Z`              | Undo the last score change                                                   |
 | `1 / 2 / 3 / 4`       | `-1 / +1 / +2 / +3`                                                          |
-| "Group count..."      | Change the number of groups (confirmation required; clears names and scores) |
 | "Clear all"           | Set every group to zero (not undoable)                                       |
-| "Log"                 | Open the read-only log viewer (the only entry point; shows both languages)   |
+| "Log"                 | Open the read-only log viewer (the only entry point; shows both languages, current profile by default) |
+
+> **Since 4.0 the group count belongs to a classroom profile**, so the "Group count..."
+> button is gone: one profile per subject (Chemistry: 4 groups, Literature: 0 groups),
+> each with its own group count, names, scores and draw counts. Change the count from
+> the floating ball → Profiles.
 
 Group names may be arbitrarily long (foreign names are often dozens of characters):
 cards and the draw popup elide them with "…" and put the full name in a tooltip. The
@@ -1218,6 +1249,29 @@ never pushes the window off screen.
 
 The image above also shows default group names in English mode: renamed groups keep
 their custom name, untouched ones show `Group 4/5/6`.
+
+### Classroom profiles: one data set per subject (4.0)
+
+Floating ball → Profiles lets you create one profile per subject:
+
+```
+Chemistry   4 groups   names: Eagles…   scores: +5…   draw counts: tracked separately
+Literature  0 groups   grouping off (the points panel refuses to open and says why)
+```
+
+- **Group count, group names, scores and draw counts all belong to the profile.**
+  Switching profiles swaps the whole set; draws in Chemistry never leak into Literature.
+- Profiles live only in the event chain (same signing and encryption as scores), so they
+  **produce no files**; export/import carries every profile with its names, scores and counts.
+- A fresh install gets one 6-group default profile, so scoring works out of the box.
+  Delete them all and they stay deleted — that was your decision, not a bug.
+- Edits are written only when you press Save in the profile window.
+
+> **Read this before upgrading to 4.0**: the 4.0 chain is not compatible with 3.x
+> (3.x kept names and scores globally; 4.0 moves all of it into profiles). The old chain is
+> never rewritten — the app reports "data from an older version (3.x)" and asks you to
+> re-enter the names and scores from `config.ini` under Profiles. The original file stays
+> at `Data/ledger.esc`.
 
 ### Management panel: settings
 

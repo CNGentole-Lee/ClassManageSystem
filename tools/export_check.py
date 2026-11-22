@@ -16,9 +16,11 @@ utf8_output()
 
 os.environ.setdefault("CLASSMANAGE_STATE_DIR", tempfile.mkdtemp(prefix="cm_exp_"))
 
-from namepicker import export_import as ei      # noqa: E402
-from namepicker.config_store import ConfigStore  # noqa: E402
-from namepicker.ledger import Ledger             # noqa: E402
+from _v4_fixture import open_store                    # noqa: E402
+from namepicker import export_import as ei            # noqa: E402
+from namepicker.config_store import ConfigStore       # noqa: E402
+from namepicker.ledger import Ledger                  # noqa: E402
+from namepicker.profiles import ProfileStore          # noqa: E402
 
 failures = []
 
@@ -31,8 +33,7 @@ def check(label, ok, detail=""):
 
 def main() -> int:
     tmp = tempfile.mkdtemp(prefix="cm_export_")
-    store = ConfigStore(os.path.join(tmp, "config.ini"))
-    store.set_group_count(3)
+    store = open_store(os.path.join(tmp, "config.ini"), groups=3)
     store.set_group_name(1, "雄鹰组")
     store.set_score(1, 7)
     store.set_score(2, -3)
@@ -70,12 +71,15 @@ def main() -> int:
     except ValueError:
         check("out-of-range group count is rejected", True)
 
-    # 导入：链上新增一条 init，之后的分数以它为准
+    # 导入：链被重建（一条 init + 预设事件），数据以它为准
     chain = Ledger(os.path.join(tmp, "import", "config.ini"))
     chain.import_snapshot(loaded)
-    check("import writes one record", chain.count() == 1, str(chain.count()))
+    check("import writes the new chain head", chain.count() >= 1, str(chain.count()))
     state = chain.state()
-    check("imported state replays", state["scores"][:2] == [7, -3], str(state["scores"]))
+    profiles = state["profiles"]
+    check("imported state replays",
+          profiles and profiles[0]["scores"][:2] == [7, -3],
+          str(profiles[0]["scores"] if profiles else None))
 
     reopened = Ledger(os.path.join(tmp, "import", "config.ini"))
     check("imported chain verifies", reopened.verify(), reopened.verify_error())
@@ -109,8 +113,7 @@ def main() -> int:
 
     # ---- 导入/导出必须留痕 ----
     from namepicker import log_store
-    cs = ConfigStore(os.path.join(tmp, "logdir", "config.ini"))
-    cs.set_group_count(2)
+    cs = open_store(os.path.join(tmp, "logdir", "config.ini"), groups=2)
     cs.save()
     cs.log_operation("导出数据：已导出 2 个小组到 a.json",
                      "export data: 2 groups to a.json")
@@ -121,9 +124,10 @@ def main() -> int:
     en = [e[2] for e in entries]
     check("export is written to the operation log", any("导出数据" in x for x in zh), str(zh))
     check("import is written to the operation log", any("导入数据" in x for x in zh), str(zh))
+    # V4：每条日志都带 [预设名] 前缀，所以这里按「包含」判断
     check("import/export log entries are bilingual",
-          any(x.startswith("import data") for x in en)
-          and any(x.startswith("export data") for x in en), str(en))
+          any("import data" in x for x in en)
+          and any("export data" in x for x in en), str(en))
 
     print("\n" + "=" * 60)
     if failures:

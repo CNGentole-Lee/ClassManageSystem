@@ -67,62 +67,115 @@ def main() -> int:
           len(fp) == 64 and all(c in "0123456789abcdef" for c in fp), fp[:16] + "...")
     check("fingerprint is stable", nb.fingerprint() == fp)
 
-    # ---- 业务状态机（数据由 C++ 计算） ----------------------------
-    r = nb.apply([], "init", count=3, names="甲,乙,丙", scores="0,0,0")
+    # ---- 业务状态机（数据由 C++ 计算，V4：全部在预设里） --------------
+    r = nb.apply([], "init", count=2, names="化学课,语文课")
     check("init returns a record", bool(r.get("record")))
     rec1 = base64.b64decode(r["record"])
     plain1 = base64.b64decode(r["plain"])
-    check("init state", r["count"] == 3 and r["names"] == ["甲", "乙", "丙"]
-          and r["scores"] == [0, 0, 0], str(r["scores"]))
+    check("init creates the profiles",
+          [p["name"] for p in r["profiles"]] == ["化学课", "语文课"],
+          str([p["name"] for p in r["profiles"]]))
 
-    r = nb.apply([rec1], "score", group=2, delta=5)
+    r = nb.apply([rec1], "profile-rule", id=1, count=3, members=4)
     rec2 = base64.b64decode(r["record"])
     plain2 = base64.b64decode(r["plain"])
-    check("score applied by C++", r["scores"] == [0, 5, 0], str(r["scores"]))
-    check("score returns new seq", r["seq"] == 2, str(r["seq"]))
+    check("profile-rule sets the group count",
+          r["profiles"][0]["group_count"] == 3, str(r["profiles"][0]["group_count"]))
+    check("profile-rule allocates score slots",
+          r["profiles"][0]["scores"] == [0, 0, 0], str(r["profiles"][0]["scores"]))
+    check("profile-rule allocates member slots",
+          r["profiles"][0]["members"] == [0, 0, 0, 0],
+          str(r["profiles"][0]["members"]))
+    check("profile-rule returns new seq", r["seq"] == 2, str(r["seq"]))
 
-    r = nb.apply([rec1, rec2], "rename", group=1, name="雄鹰组")
+    r = nb.apply([rec1, rec2], "profile-score", id=1, group=2, delta=5)
     rec3 = base64.b64decode(r["record"])
     plain3 = base64.b64decode(r["plain"])
-    check("rename applied by C++", r["names"][0] == "雄鹰组", r["names"][0])
+    check("profile-score adds to that profile's group",
+          r["profiles"][0]["scores"] == [0, 5, 0], str(r["profiles"][0]["scores"]))
+    check("the other profile is untouched",
+          r["profiles"][1]["scores"] == [], str(r["profiles"][1]["scores"]))
 
-    st = nb.state([rec1, rec2, rec3], [plain1, plain2, plain3])
+    r = nb.apply([rec1, rec2, rec3], "profile-groupname", id=1, group=1,
+                 name="雄鹰组")
+    rec4 = base64.b64decode(r["record"])
+    plain4 = base64.b64decode(r["plain"])
+    check("profile-groupname renames that profile's group",
+          r["profiles"][0]["group_names"][0] == "雄鹰组",
+          str(r["profiles"][0]["group_names"]))
+
+    r = nb.apply([rec1, rec2, rec3, rec4], "profile-member", id=1, index=2, group=1)
+    rec5 = base64.b64decode(r["record"])
+    plain5 = base64.b64decode(r["plain"])
+    check("profile-member assigns a list index",
+          r["profiles"][0]["members"][2] == 1, str(r["profiles"][0]["members"]))
+
+    r = nb.apply([rec1, rec2, rec3, rec4, rec5], "draw", id=1, index=2, total=3)
+    rec6 = base64.b64decode(r["record"])
+    plain6 = base64.b64decode(r["plain"])
+    check("draw records per-profile draw counts",
+          r["profiles"][0]["draw_counts"][2] == 3,
+          str(r["profiles"][0]["draw_counts"]))
+
+    r = nb.apply([rec1, rec2, rec3, rec4, rec5, rec6], "profile-use", id=1)
+    rec7 = base64.b64decode(r["record"])
+    plain7 = base64.b64decode(r["plain"])
+    check("profile-use selects the active profile", r["active_profile"] == 1,
+          str(r["active_profile"]))
+
+    records = [rec1, rec2, rec3, rec4, rec5, rec6, rec7]
+    plains = [plain1, plain2, plain3, plain4, plain5, plain6, plain7]
+    st = nb.state(records, plains)
     check("state replays to the same result",
-          st["names"][0] == "雄鹰组" and st["scores"] == [0, 5, 0], str(st["scores"]))
+          st["profiles"][0]["scores"] == [0, 5, 0]
+          and st["profiles"][0]["group_names"][0] == "雄鹰组",
+          str(st["profiles"][0]["scores"]))
     check("state reports the head", len(base64.b64decode(st["head"])) == 32)
 
     # ---- 非 ASCII 参数（Windows 上曾因 argv 代码页而乱码）----------
     # Windows 的 main(int, char**) 拿的是当前代码页的窄字符；
     # 这里用中文 + emoji 覆盖 UTF-16 -> UTF-8 的转换路径。
-    r = nb.apply([], "init", count=3, names="甲组,乙组,丙组", scores="0,0,0")
+    r = nb.apply([], "init", count=2, names="甲组,乙组")
     ascii_rec = base64.b64decode(r["record"])
     ascii_plain = base64.b64decode(r["plain"])
-    check("non-ASCII names survive init", r["names"] == ["甲组", "乙组", "丙组"],
-          str(r["names"]))
-    r = nb.apply([ascii_rec], "rename", group=1, name="🚀火箭组")
+    check("non-ASCII names survive init",
+          [p["name"] for p in r["profiles"]] == ["甲组", "乙组"],
+          str([p["name"] for p in r["profiles"]]))
+    r = nb.apply([ascii_rec], "profile-rule", id=1, count=2, members=1)
+    a2 = base64.b64decode(r["record"])
+    a2p = base64.b64decode(r["plain"])
+    r = nb.apply([ascii_rec, a2], "profile-groupname", id=1, group=1, name="🚀火箭组")
     emoji_rec = base64.b64decode(r["record"])
     emoji_plain = base64.b64decode(r["plain"])
-    check("emoji name survives rename", r["names"][0] == "🚀火箭组", r["names"][0])
-    st = nb.state([ascii_rec, emoji_rec], [ascii_plain, emoji_plain])
+    check("emoji name survives rename",
+          r["profiles"][0]["group_names"][0] == "🚀火箭组",
+          r["profiles"][0]["group_names"][0])
+    st = nb.state([ascii_rec, a2, emoji_rec], [ascii_plain, a2p, emoji_plain])
     check("non-ASCII names replay correctly",
-          st["names"] == ["🚀火箭组", "乙组", "丙组"], str(st["names"]))
+          st["profiles"][0]["group_names"][0] == "🚀火箭组",
+          str(st["profiles"][0]["group_names"]))
 
     # ---- 规则在 C++ 侧 --------------------------------------------
     try:
-        nb.apply([rec1, rec2, rec3], "score", group=99, delta=1)
+        nb.apply(records, "profile-score", id=1, group=99, delta=1)
         check("out-of-range group is rejected", False)
     except nb.NativeError as exc:
         check("out-of-range group is rejected", "BAD_GROUP" in str(exc), str(exc)[:40])
     try:
-        nb.apply([rec1, rec2, rec3], "score", group=1, delta=10 ** 9)
+        nb.apply(records, "profile-score", id=1, group=1, delta=10 ** 9)
         check("absurd score delta is rejected", False)
     except nb.NativeError as exc:
         check("absurd score delta is rejected", "BAD_SCORE" in str(exc), str(exc)[:40])
     try:
-        nb.apply([rec1, rec2, rec3], "count", count=999)
+        nb.apply(records, "profile-rule", id=1, count=999, members=0)
         check("absurd group count is rejected", False)
     except nb.NativeError as exc:
         check("absurd group count is rejected", "BAD_COUNT" in str(exc), str(exc)[:40])
+    try:
+        nb.apply(records, "profile-score", id=99, group=1, delta=1)
+        check("unknown profile is rejected", False)
+    except nb.NativeError as exc:
+        check("unknown profile is rejected", "BAD_PROFILE" in str(exc), str(exc)[:40])
 
     # ---- 链完整性 -------------------------------------------------
     records = [rec1, rec2, rec3]
@@ -228,8 +281,13 @@ def main() -> int:
     except nb.NativeError as exc:
         check("activating a missing profile is rejected", "BAD_PROFILE" in str(exc), str(exc))
 
-    check("old chains replay with no profiles",
-          nb.state(records, plains)["profiles"] == [], "legacy chain")
+    # V4 给 INIT 载荷加了格式版本字节：3.x 的链必须被明确拒绝，
+    # 这样 Python 侧才能区分"版本旧"和"数据被篡改"。
+    check("V4 chains carry the format marker",
+          nb.state(records, plains)["profiles"][0]["id"] == 1,
+          "V4 chain replays")
+    legacy_payload = bytes([1]) + bytes([2, 0])          # OP_INIT + count=2（无版本字节）
+    check("a payload without the format marker is not V4", len(legacy_payload) == 3)
 
     print("\n" + "=" * 60)
     if failures:

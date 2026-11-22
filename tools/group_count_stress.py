@@ -1,8 +1,12 @@
-"""小组数量功能的测试 + 压力测试。
+"""小组数量（= 当前预设的组数）的测试 + 压力测试。
+
+V4 起组数由「预设」决定，积分面板上的「小组数量...」按钮已经删掉；
+组数变化通过 store.set_group_count() / 预设窗口发生。语义也随之改变：
+**改组数不再清空分数** —— 只影响拼出多少张卡片，前 N 个槽位的分数保留。
 
 覆盖两件事：
-  1. 功能 — 改数量 = 整段重来（组名回默认、分数归零），边界夹取，落盘，
-     彻底重置后卡片数跟着回到默认；数量没变时不许动分数
+  1. 功能 — 改组数保留已有分数、新槽位为 0、边界夹取、落盘、
+     彻底重置后卡片数回到默认；数量没变时什么都不动
   2. 压力 — 反复改组数 × 加减分 × 重建卡片 × 存盘，程序不能崩、文件不能坏
 
 用法:
@@ -28,8 +32,9 @@ from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()  # 测试数据不写进真实的隐蔽备份（Windows 注册表 / macOS plist）
 
+from _v4_fixture import open_store, reopen_store  # noqa: E402
 from namepicker.config_store import (  # noqa: E402
-    DEFAULT_GROUP_COUNT, MAX_GROUP_COUNT, ConfigStore,
+    DEFAULT_GROUP_COUNT, MAX_GROUP_COUNT,
 )
 from namepicker.points_window import DELTAS, GroupCard, PointsWindow  # noqa: E402
 
@@ -54,8 +59,10 @@ def test_defaults(store, points):
     print("--- Default state ---")
     check(f"{DEFAULT_GROUP_COUNT} groups by default",
           len(points._cards) == DEFAULT_GROUP_COUNT, f"actual {len(points._cards)}")
-    check("bottom bar has a Group count button",
-          any(b.text() == "小组数量..." for b in points.findChildren(QPushButton)))
+    labels = [b.text() for b in points.findChildren(QPushButton)]
+    check("the Group count button is gone (V4: counts live in profiles)",
+          "小组数量..." not in labels, str(labels))
+    check("the Operation log button is still there", "操作日志" in labels, str(labels))
     check("card grid lives in a scroll area (many groups fit)",
           len(points.findChildren(QScrollArea)) == 1)
 
@@ -66,7 +73,7 @@ def test_change_count(store, points):
     points._rebuild_cards()
     check("changed to 8 groups", applied == 8 and len(points._cards) == 8,
           f"applied={applied} cards={len(points._cards)}")
-    check("all scores reset to zero after count change", all(c.score() == 0 for c in points._cards),
+    check("new slots start at zero", all(c.score() == 0 for c in points._cards),
           f"actual {[c.score() for c in points._cards]}")
     check("group names back to defaults after count change",
           [c._name_label.text() for c in points._cards[:2]] == ["第一组", "第二组"],
@@ -74,8 +81,8 @@ def test_change_count(store, points):
     check("UI matches file after count change", *cards_match_store(store, points))
 
     points.save_now()
-    check("group count persisted", ConfigStore(points._store.path).group_count == 8,
-          f"actual {ConfigStore(points._store.path).group_count}")
+    check("group count persisted", reopen_store(points._store.path).group_count == 8,
+          f"actual {reopen_store(points._store.path).group_count}")
 
     # 缩小：卡片要跟着减少，且不能留下孤儿控件
     store.set_group_count(4)
@@ -84,8 +91,8 @@ def test_change_count(store, points):
     check("UI matches file after shrinking", *cards_match_store(store, points))
 
 
-def test_scores_are_wiped(store, points):
-    print("\n--- Changing count with scores present -> scores wiped ---")
+def test_scores_are_kept(store, points):
+    print("\n--- Changing count with scores present -> scores kept ---")
     store.set_group_count(6)
     points._rebuild_cards()
     for i in range(1, 7):
@@ -96,10 +103,15 @@ def test_scores_are_wiped(store, points):
 
     store.set_group_count(9)
     points._rebuild_cards()
-    check("all 9 cards are 0 after the count change", [c.score() for c in points._cards] == [0] * 9,
+    check("existing 6 slots keep their scores",
+          [c.score() for c in points._cards[:6]] == [3] * 6,
           f"actual {[c.score() for c in points._cards]}")
-    check("scores in the file are also zeroed after the count change",
-          [store.get_score(i) for i in range(1, 10)] == [0] * 9,
+    check("the 3 new slots start at 0",
+          [c.score() for c in points._cards[6:]] == [0] * 3,
+          f"actual {[c.score() for c in points._cards[6:]]}")
+    check("scores in the chain agree with the cards",
+          [store.get_score(i) for i in range(1, 10)]
+          == [c.score() for c in points._cards],
           f"actual {[store.get_score(i) for i in range(1, 10)]}")
     check("UI matches file after count change", *cards_match_store(store, points))
 
@@ -124,8 +136,9 @@ def test_undo_and_selection(store, points):
 
 def test_clamping_and_same_count(store, points):
     print("\n--- Clamping / unchanged count must not touch scores ---")
-    check("lower bound clamps to 1", store.set_group_count(0) == 1)
-    check("negatives clamp to 1", store.set_group_count(-5) == 1)
+    # V4：0 是合法值（预设「不启用小组制」），负数夹到 0
+    check("0 turns grouping off", store.set_group_count(0) == 0)
+    check("negatives clamp to 0", store.set_group_count(-5) == 0)
     check("upper bound clamps to 24", store.set_group_count(999) == MAX_GROUP_COUNT,
           f"actual {store.group_count}")
     check("invalid value keeps the current count", store.set_group_count("abc") == store.group_count,
@@ -214,7 +227,7 @@ def test_stress(store, points):
           f"actual {[c.score() for c in points._cards][:6]}…")
     check("UI matches file after stress", *cards_match_store(store, points))
 
-    reread = ConfigStore(points._store.path)
+    reread = reopen_store(points._store.path)
     check("config.ini still parses after stress", reread.group_count == MAX_GROUP_COUNT,
           f"actual {reread.group_count}")
     check("scores read back from file match after stress",
@@ -249,8 +262,8 @@ def test_stress(store, points):
     points.apply_delta(1, 3)
     points.save_now()
     check("can still add points and persist after stress",
-          ConfigStore(points._store.path).get_score(1) == before + 3,
-          f"actual {ConfigStore(points._store.path).get_score(1)}")
+          reopen_store(points._store.path).get_score(1) == before + 3,
+          f"actual {reopen_store(points._store.path).get_score(1)}")
 
 
 def main():
@@ -258,7 +271,7 @@ def main():
 
     tmp_dir = tempfile.mkdtemp()
     config_path = os.path.join(tmp_dir, "config.ini")
-    store = ConfigStore(config_path)
+    store = open_store(config_path)
     store.reset_scores()
 
     points = PointsWindow(store)
@@ -267,7 +280,7 @@ def main():
 
     test_defaults(store, points)
     test_change_count(store, points)
-    test_scores_are_wiped(store, points)
+    test_scores_are_kept(store, points)
     test_undo_and_selection(store, points)
     test_clamping_and_same_count(store, points)
     test_wipe_returns_to_default(store, points)

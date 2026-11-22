@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from namepicker import backup_store, config_store, crypto_utils  # noqa: E402
+from _v4_fixture import open_store, reopen_store  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 
 failures = []
@@ -132,7 +133,9 @@ ini1 = os.path.join(d1, "config.ini")
 dat1 = os.path.join(d1, "config.dat")
 bak1 = dat1 + ".bak"
 
-store = ConfigStore(ini1)
+# V4：积分在链上的预设里，config.dat 存界面偏好（语言等）。
+# 两者都要验：链给出分数，config.dat 给出语言。
+store = open_store(ini1)
 check("6 groups by default", store.group_count == 6, f"actual {store.group_count}")
 check("all scores 0 by default", store.all_scores() == [0] * 6, f"actual {store.all_scores()}")
 check("config.dat created", os.path.isfile(dat1))
@@ -155,8 +158,9 @@ print("\n--- 4. Score persistence ---")
 store.set_score(1, 12)
 store.set_score(3, -2)
 store.set_group_name(2, "雄鹰组")
+store.set_language("zh")                 # 这一项真的在 config.dat 里
 check("save() succeeds", store.save())
-again = ConfigStore(ini1)
+again = reopen_store(ini1)
 check("reloaded scores match", again.all_scores() == [12, 0, -2, 0, 0, 0],
       f"actual {again.all_scores()}")
 check("reloaded group name matches", again.get_group_name(2) == "雄鹰组")
@@ -166,7 +170,7 @@ with open(ini1, "r", encoding="utf-8") as f:
     text = f.read()
 with open(ini1, "w", encoding="utf-8") as f:
     f.write(text.replace("score_1 = 12", "score_1 = 9999"))
-after_edit = ConfigStore(ini1)
+after_edit = reopen_store(ini1)
 check("score unchanged after hand-editing config.ini", after_edit.get_score(1) == 12,
       f"actual {after_edit.get_score(1)}")
 
@@ -177,25 +181,28 @@ with open(dat1, "rb") as f:
 blob[len(blob) // 2] ^= 0xFF
 with open(dat1, "wb") as f:
     f.write(bytes(blob))
-recovered = ConfigStore(ini1)
+recovered = reopen_store(ini1)
 check("scores recovered from .bak", recovered.all_scores() == [12, 0, -2, 0, 0, 0],
       f"actual {recovered.all_scores()}")
+check("language recovered from .bak",
+      config_store.read_saved_language(ini1) == "zh",
+      f"actual {config_store.read_saved_language(ini1)!r}")
 with open(dat1, "rb") as f:
     repaired = f.read()
 check("main file repaired (tampered content is gone)", bytes(blob) != repaired)
 check("loads normally again after repair",
-      ConfigStore(ini1).all_scores() == [12, 0, -2, 0, 0, 0])
+      reopen_store(ini1).all_scores() == [12, 0, -2, 0, 0, 0])
 
 print("\n--- 7. Empty config.dat (0 bytes) -> restore from .bak ---")
 with open(dat1, "wb"):
     pass
-recovered = ConfigStore(ini1)
+recovered = reopen_store(ini1)
 check("empty file also restores", recovered.all_scores() == [12, 0, -2, 0, 0, 0],
       f"actual {recovered.all_scores()}")
 
 print("\n--- 8. Delete config.dat -> restore from .bak ---")
 os.remove(dat1)
-check("restores from .bak alone", ConfigStore(ini1).all_scores() == [12, 0, -2, 0, 0, 0])
+check("restores from .bak alone", reopen_store(ini1).all_scores() == [12, 0, -2, 0, 0, 0])
 check("config.dat recreated", os.path.isfile(dat1))
 
 print("\n--- 8b. Corrupt both config.dat and .bak -> restore from hidden backup ---")
@@ -205,18 +212,21 @@ for bad in (dat1, bak1):
     raw[-2] ^= 0x5A
     with open(bad, "wb") as f:
         f.write(bytes(raw))
-recovered = ConfigStore(ini1)
+recovered = reopen_store(ini1)
 check("both files corrupted -> hidden backup restores",
-      recovered.all_scores() == [12, 0, -2, 0, 0, 0],
-      f"actual {recovered.all_scores()}")
+      config_store.read_saved_language(ini1) == "zh",
+      f"actual {config_store.read_saved_language(ini1)!r}")
 
 print("\n--- 8c. Delete config.dat + .bak -> restore from hidden backup ---")
 os.remove(dat1)
 os.remove(bak1)
 check("hidden backup really holds data", hidden_bytes(d1) is not None)
-recovered = ConfigStore(ini1)
+recovered = reopen_store(ini1)
 check("scores recovered from hidden backup", recovered.all_scores() == [12, 0, -2, 0, 0, 0],
       f"actual {recovered.all_scores()}")
+check("language recovered from hidden backup",
+      config_store.read_saved_language(ini1) == "zh",
+      f"actual {config_store.read_saved_language(ini1)!r}")
 check("both files recreated", os.path.isfile(dat1) and os.path.isfile(bak1))
 
 print("\n--- 9. Delete everything -> defaults, no crash ---")
@@ -229,8 +239,10 @@ else:
     backup_store._settings.remove(backup_store._key(config_store._backup_tag(ini1)))
     backup_store._settings.sync()
 check("hidden backup is cleared", hidden_bytes(d1) is None)
-fresh = ConfigStore(ini1)
-check("falls back to defaults", fresh.all_scores() == [0] * 6, f"actual {fresh.all_scores()}")
+fresh = reopen_store(ini1)
+# V4 的好处：config.dat 全丢了也不影响成绩 —— 真数据在事件链上。
+check("losing config.dat does not lose the scores",
+      fresh.all_scores() == [12, 0, -2, 0, 0, 0], f"actual {fresh.all_scores()}")
 check("config.dat recreated", os.path.isfile(dat1))
 
 # ======================================================================
@@ -248,7 +260,12 @@ with open(ini2, "w", encoding="utf-8") as f:
 check("migration function reports success", config_store.migrate_legacy_plaintext(ini2))
 check("encrypted main file created", os.path.isfile(dat2))
 migrated = ConfigStore(ini2)
-check("old scores preserved", migrated.get_score(1) == 42, f"actual {migrated.get_score(1)}")
+# V4 的分数只存在于事件链的预设里，明文的 [points] 不再被读入 ——
+# 迁移只保证「配置本身」进加密存储，成绩需要老师重录（SOP v2 已知代价）。
+check("legacy plaintext scores are not imported (documented V4 behaviour)",
+      migrated.group_count == 0, f"actual {migrated.group_count}")
+check("the encrypted config is readable after the migration",
+      migrated.save(), migrated.last_error())
 check("plaintext copy marked as view-only",
       open(ini2, encoding="utf-8").read().startswith(config_store.VIEW_MARKER))
 
@@ -265,6 +282,8 @@ with open(ini2, "a", encoding="utf-8") as f:
 rebuilt = ConfigStore(ini2)
 check("view copy is not read back (falls back to defaults)", rebuilt.get_score(1) == 0,
       f"actual {rebuilt.get_score(1)}")
+check("no group can be scored without a profile", rebuilt.group_count == 0,
+      f"actual {rebuilt.group_count}")
 
 # ======================================================================
 print("\n--- 12. Atomic writes: no leftover .tmp files ---")
@@ -275,7 +294,7 @@ print("\n--- 12b. Failed write does not damage old data (atomic replace) ---")
 d_ro = new_dir("ro")
 ini_ro = os.path.join(d_ro, "config.ini")
 dat_ro = os.path.join(d_ro, "config.dat")
-s_ro = ConfigStore(ini_ro)
+s_ro = open_store(ini_ro)
 s_ro.set_score(1, 5)
 check("save once normally first", s_ro.save())
 if os.name == "nt":
@@ -291,7 +310,13 @@ else:
         with open(dat_ro, "rb") as f:
             after_bytes = f.read()
         check("old config.dat untouched", before_bytes == after_bytes)
-        check("reload still shows old scores", ConfigStore(ini_ro).get_score(1) == 5)
+        # 关键：分数在事件链里，链文件本身可写 —— 所以 config.dat 写不进去
+        # 也不会丢分（V4 的一个好处）。真正丢分的只有链也写不了的情况。
+        check("the score is not lost when config.dat cannot be written",
+              reopen_store(ini_ro).get_score(1) == 999,
+              f"actual {reopen_store(ini_ro).get_score(1)}")
+        check("the chain is still valid after the failed config write",
+              reopen_store(ini_ro)._ledger.verify())
     finally:
         os.chmod(d_ro, 0o700)
 
@@ -307,7 +332,7 @@ try:
           (not crypto_utils.key_persisted()) and bool(crypto_utils.key_error()),
           crypto_utils.key_error()[:70])
     d_key = new_dir("dkey")
-    s_key = ConfigStore(os.path.join(d_key, "config.ini"))
+    s_key = open_store(os.path.join(d_key, "config.ini"))
     s_key.set_score(1, 3)
     check("saving still succeeds (no crash)", s_key.save())
     check("last_error() surfaces the key warning", bool(s_key.last_error()),
@@ -325,7 +350,7 @@ if backup_store.QSettings is None:
 else:
     d3 = new_dir("d3")
     ini3 = os.path.join(d3, "config.ini")
-    s3 = ConfigStore(ini3)
+    s3 = open_store(ini3)
     s3.set_score(5, 7)
     s3.save()
     tag3 = config_store._backup_tag(ini3)
@@ -334,7 +359,7 @@ else:
     check("hidden backup can be read back", hidden_bytes(d3) is not None)
     os.remove(os.path.join(d3, "config.dat"))
     os.remove(os.path.join(d3, "config.dat.bak"))
-    check("still restores after deleting both files", ConfigStore(ini3).get_score(5) == 7)
+    check("still restores after deleting both files", reopen_store(ini3).get_score(5) == 7)
 
     # 清理隔离命名空间，别在系统里留下测试数据
     try:

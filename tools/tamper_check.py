@@ -49,6 +49,7 @@ os.environ.setdefault("CLASSMANAGE_STATE_DIR", tempfile.mkdtemp(prefix="cm_tampe
 from namepicker import ledger as L          # noqa: E402
 from namepicker import native_bridge as nb  # noqa: E402
 from namepicker import integrity, sntp      # noqa: E402
+from namepicker.profiles import ProfileStore  # noqa: E402
 
 failures = []
 
@@ -60,14 +61,27 @@ def check(label, ok, detail=""):
 
 
 def fresh_chain(prefix="tamper_"):
+    """一条带预设的临时链（至少 5 条记录，够做「改/删/重排中间一条」）。
+
+    V4 的 init 只写预设列表，改分/改组名都是 profile-* 事件。
+    """
     tmp = tempfile.mkdtemp(prefix=prefix)
     cfg = os.path.join(tmp, "config.ini")
     chain = L.Ledger(cfg)
-    chain.migrate_from(3, ["甲组", "乙组", "丙组"], [0, 0, 0])
-    # 至少三条记录，才能做“改中间一条 / 删中间一条”的测试
-    chain.apply("score", group=1, delta=2)
-    chain.apply("score", group=2, delta=3)
+    chain.migrate_from(0, [], [])
+    store = ProfileStore(chain=chain)
+    pid = store.create("化学课")
+    store.set_rule(pid, 3, 3)
+    store.use(pid)
+    store.add_score(1, 2, pid)
+    store.add_score(2, 3, pid)
     return chain
+
+
+def bump(chain, group, delta):
+    """给当前预设的某一组加减分（V4：分数属于预设）。"""
+    store = ProfileStore(chain=chain)
+    store.add_score(group, delta, store.active_id())
 
 
 def main() -> int:
@@ -161,7 +175,7 @@ def main() -> int:
     # ---- 7. rollback via anchor --------------------------------------
     live = fresh_chain("roll_")
     snapshot = open(live.path, encoding="ascii").read()
-    live.apply("score", group=1, delta=5)
+    bump(live, 1, 5)
     with open(live.path, "w", encoding="ascii") as fh:
         fh.write(snapshot)
     rolled = L.Ledger(live.config_path)
@@ -233,7 +247,7 @@ def main() -> int:
     mono = fresh_chain("mono_")
     stamps = [mono.last_ts()]
     for i in range(3):
-        mono.apply("score", group=2, delta=1)
+        bump(mono, 2, 1)
         stamps.append(mono.last_ts())
     check("timestamps strictly increase", all(b > a for a, b in zip(stamps, stamps[1:])),
           str(stamps))

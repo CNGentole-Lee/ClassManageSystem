@@ -65,6 +65,7 @@ except Exception as e:
     has_qt = False
 
 from namepicker import backup_store, config_store, crypto_utils, log_store  # noqa: E402
+from _v4_fixture import open_store, reopen_store  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 
 print("\n--- 2. Floating ball topmost (ctypes.wintypes bug fixed?) ---")
@@ -179,12 +180,14 @@ TMP = os.path.join(tempfile.mkdtemp(prefix="cm_win_check_"), "班级 管理 测�
 os.makedirs(TMP, exist_ok=True)
 CFG = os.path.join(TMP, "config.ini")
 print(f"\n--- 4. Full read/write under a Chinese + space path ({TMP}) ---")
-store = ConfigStore(CFG)
+# V4：组名/分数在链上的预设里，config.dat 只放界面偏好（语言等）。
+store = open_store(CFG)
 store.set_group_name(1, "雄鹰组")
 store.set_score(1, 7, reason="+7")
 store.set_score(1, 3, reason="-4")
+store.set_language("zh")            # 这一项确实存在 config.dat 里，用于回档验收
 check("save() succeeds (Chinese fields + Chinese path)", store.save())
-again = ConfigStore(CFG)
+again = reopen_store(CFG)
 check("Chinese group name survives reload", again.get_group_name(1) == "雄鹰组",
       f"actual {again.get_group_name(1)!r}")
 check("score is correct after reload", again.get_score(1) == 3, f"actual {again.get_score(1)}")
@@ -195,7 +198,7 @@ check("plaintext view copy is UTF-8 and carries the marker", "仅供查看" in i
 
 print("\n--- 5. Atomic write (os.replace over an existing file) ---")
 check("two consecutive saves succeed",
-      store.save() and ConfigStore(CFG).save())
+      store.save() and reopen_store(CFG).save())
 check("no .tmp leftovers", not [n for n in os.listdir(TMP) if n.endswith(".tmp")],
       f"actual {[n for n in os.listdir(TMP) if n.endswith('.tmp')]}")
 
@@ -206,11 +209,17 @@ with open(dat, "rb") as f:
 raw[len(raw) // 2] ^= 0xFF
 with open(dat, "wb") as f:
     f.write(bytes(raw))
-check("corrupt main file -> restored from .bak", ConfigStore(CFG).get_score(1) == 3)
+# 分数与组名在链上，config.dat 坏了也不该丢；语言是 config.dat 里的内容，
+# 坏了必须能从 .bak / 隐蔽备份恢复 —— 两者一起验。
+check("corrupt main file -> restored from .bak",
+      config_store.read_saved_language(CFG) == "zh",
+      f"actual {config_store.read_saved_language(CFG)!r}")
+check("scores are unaffected by a corrupt config.dat", reopen_store(CFG).get_score(1) == 3)
 os.remove(dat)
 os.remove(dat + ".bak")
 check("delete main + .bak -> restored from hidden backup",
-      ConfigStore(CFG).get_group_name(1) == "雄鹰组")
+      config_store.read_saved_language(CFG) == "zh",
+      f"actual {config_store.read_saved_language(CFG)!r}")
 
 print("\n--- 7. QSettings hidden backup (Windows = HKCU registry) ---")
 if not has_qt:

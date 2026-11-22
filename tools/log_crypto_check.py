@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from namepicker import backup_store, i18n, log_store  # noqa: E402
+from _v4_fixture import open_store  # noqa: E402
 from namepicker.config_store import ConfigStore  # noqa: E402
 
 failures = []
@@ -74,7 +75,7 @@ BAK = log_store.log_backup_path_for(CFG)
 TAG = log_store._tag(CFG)
 
 print("\n--- 1. Every score change is logged automatically ---")
-store = ConfigStore(CFG)
+store = open_store(CFG)          # V4：积分要在链上的预设里
 check("log starts empty", log_store.load(CFG).entries == [])
 store.set_score(1, 3, reason="+3")
 store.set_score(1, 1, reason="-2")
