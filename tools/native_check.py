@@ -150,6 +150,87 @@ def main() -> int:
     finally:
         nb._fp_cache = saved
 
+    print("\n--- profiles (grouping, all incremental) ---")
+    r = nb.apply([], "profile-new", id=1, name="化学课")
+    p_new, pp_new = base64.b64decode(r["record"]), base64.b64decode(r["plain"])
+    check("profile-new creates the profile", r["profiles"][0]["name"] == "化学课",
+          str(r.get("profiles")))
+    check("a fresh profile has no groups yet", r["profiles"][0]["group_count"] == 0)
+
+    r = nb.apply([p_new], "profile-rule", id=1, count=2, members=3)
+    p_rule, pp_rule = base64.b64decode(r["record"]), base64.b64decode(r["plain"])
+    check("profile-rule sets group count and member slots",
+          r["profiles"][0]["group_count"] == 2
+          and r["profiles"][0]["members"] == [0, 0, 0], str(r["profiles"][0]))
+
+    # 增量：一次只改一个人
+    chain_recs = [p_new, p_rule]
+    chain_plains = [pp_new, pp_rule]
+    for index, group in ((0, 1), (1, 2), (2, 1)):
+        rr = nb.apply(chain_recs, "profile-member", id=1, index=index, group=group)
+        chain_recs.append(base64.b64decode(rr["record"]))
+        chain_plains.append(base64.b64decode(rr["plain"]))
+    check("profile-member assigns one index at a time",
+          rr["profiles"][0]["members"] == [1, 2, 1], str(rr["profiles"][0]["members"]))
+
+    st_a = nb.state(chain_recs, chain_plains)
+    st_b = nb.state(chain_recs, chain_plains)
+    check("profile replay is deterministic",
+          st_a["profiles"] == st_b["profiles"]
+          and st_a["active_profile"] == st_b["active_profile"])
+    check("profile replay keeps the assignment",
+          st_a["profiles"][0]["members"] == [1, 2, 1], str(st_a["profiles"][0]["members"]))
+
+    # 名单变短：越界下标必须被丢弃，而不是让整条链打不开
+    rr = nb.apply(chain_recs, "profile-member", id=1, index=9, group=1)
+    short_recs = chain_recs + [base64.b64decode(rr["record"])]
+    short_plains = chain_plains + [base64.b64decode(rr["plain"])]
+    check("out-of-range member index is dropped, not fatal",
+          nb.state(short_recs, short_plains)["profiles"][0]["members"] == [1, 2, 1])
+
+    rr = nb.apply(short_recs, "profile-rule", id=1, count=2, members=2)
+    shrink_recs = short_recs + [base64.b64decode(rr["record"])]
+    shrink_plains = short_plains + [base64.b64decode(rr["plain"])]
+    check("shrinking the name list trims the assignment",
+          nb.state(shrink_recs, shrink_plains)["profiles"][0]["members"] == [1, 2])
+
+    rr = nb.apply(short_recs, "profile-use", id=1)
+    use_recs = short_recs + [base64.b64decode(rr["record"])]
+    use_plains = short_plains + [base64.b64decode(rr["plain"])]
+    check("profile-use marks the active profile",
+          nb.state(use_recs, use_plains)["active_profile"] == 1)
+
+    rr = nb.apply(use_recs, "profile-del", id=1)
+    del_recs = use_recs + [base64.b64decode(rr["record"])]
+    del_plains = use_plains + [base64.b64decode(rr["plain"])]
+    st_del = nb.state(del_recs, del_plains)
+    check("profile-del removes it and clears the active marker",
+          st_del["profiles"] == [] and st_del["active_profile"] == 0, str(st_del["profiles"]))
+
+    # 规则校验（duplicate 用删掉之前的链：del_recs 里的 1 号已经不存在了）
+    for label, chain, kwargs, error in (
+        ("duplicate profile id", chain_recs, dict(id=1, name="dup"), "BAD_PROFILE"),
+        ("empty profile name", del_recs, dict(id=2, name=""), "BAD_NAME"),
+    ):
+        try:
+            nb.apply(chain, "profile-new", **kwargs)
+            check(label + " is rejected", False, "no error")
+        except nb.NativeError as exc:
+            check(label + " is rejected", error in str(exc), str(exc))
+    try:
+        nb.apply(chain_recs, "profile-member", id=1, index=0, group=9)
+        check("member group beyond group_count is rejected", False, "no error")
+    except nb.NativeError as exc:
+        check("member group beyond group_count is rejected", "BAD_GROUP" in str(exc), str(exc))
+    try:
+        nb.apply(del_recs, "profile-use", id=7)
+        check("activating a missing profile is rejected", False, "no error")
+    except nb.NativeError as exc:
+        check("activating a missing profile is rejected", "BAD_PROFILE" in str(exc), str(exc))
+
+    check("old chains replay with no profiles",
+          nb.state(records, plains)["profiles"] == [], "legacy chain")
+
     print("\n" + "=" * 60)
     if failures:
         print(f"{len(failures)} FAILED: {failures}")
