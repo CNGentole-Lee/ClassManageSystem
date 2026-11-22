@@ -38,6 +38,16 @@ class NameEngine(QObject):
     RECENT_PENALTY = 0.35     # 刚被抽过的人的权重下限（避免连庄）
     MIN_WEIGHT = 0.01         # 保证每个有资格的人仍可被抽中
 
+    # --- 分组（仅当前预设启用分组时生效，无预设时这些值完全不参与计算）---
+    # 组权重必须大过个人：否则连续几次单抽全落在同一组，那组一口气多拿好几分，
+    # 别组追不回来。两者相乘，真正的「组间优先」倍数是
+    # R = GROUP_STRENGTH / FAIRNESS_STRENGTH（8/4 = 2：组间差 1 次 ≈ 组内差 2 次）。
+    # tools/fairness_benchmark.py 的「分组」一节验证过这些取值。
+    GROUP_STRENGTH = 8.0      # 组权重强度，必须 > FAIRNESS_STRENGTH
+    GROUP_STREAK_LOOKBACK = 12   # 回溯最近多少次单抽来算 gap
+    GROUP_PENALTY_ADJACENT = 0.05  # gap <= 1（同一组连着被抽）：重罚
+    GROUP_PENALTY_GAP = 0.35       # gap == 2：普通罚；gap > 2 不罚
+
     # --- 信号 ---
     name_drawn = Signal(str)          # (name) —— 滚动结束后的最终结果
     rolling_start = Signal(str)       # (name) —— 引擎选中，开始滚动动画
@@ -61,6 +71,11 @@ class NameEngine(QObject):
         self._last_draw_ordinal: dict[str, int] = {} # name -> 上次被抽时的序号
         self._draw_ordinal: int = 0                  # 本次会话已抽总次数
         self._last_round_min: int = 0                # 上一轮抽完后的最低次数
+
+        # --- 分组（课堂预设）---
+        # name -> 组号（1..N）；空字典 = 这节课不分组，权重复原成纯个人。
+        self._group_of: dict[str, int] = {}
+        self._group_history: list[int] = []         # 最近被抽中的组号序列
 
     # --- 名单来源 ---
 
@@ -170,6 +185,12 @@ class NameEngine(QObject):
         self._draw_counts[name] = self._draw_counts.get(name, 0) + 1
         self._last_draw_ordinal[name] = self._draw_ordinal
 
+        group = self._group_of.get(name)
+        if group:
+            self._group_history.append(group)
+            if len(self._group_history) > self.GROUP_STREAK_LOOKBACK * 2:
+                del self._group_history[:-self.GROUP_STREAK_LOOKBACK]
+
         # 轮次边界：现在每个人都至少被抽了 new_min 次
         new_min = min(self._draw_counts.get(n, 0) for n in self._names)
         if new_min > self._last_round_min:
@@ -223,7 +244,51 @@ class NameEngine(QObject):
                 ratio = gap / self.RECENT_GAP
                 weight *= self.RECENT_PENALTY + (1.0 - self.RECENT_PENALTY) * ratio
 
+        if self._group_of:
+            weight *= self._group_weight(name)
+            group = self._group_of.get(name)
+            # 只有被抽中过的组才有「上次被抽」可言；没抽过的组满权重。
+            if group and group in self._group_history:
+                weight *= self._group_penalty(group)
+
         return max(weight, self.MIN_WEIGHT)
+
+    # --- 分组权重 ---
+
+    def _group_counts(self) -> dict[int, int]:
+        """{组号: 被抽总次数}。由个人次数累加得出，不单独存。"""
+        out: dict[int, int] = {}
+        for name, group in self._group_of.items():
+            out[group] = out.get(group, 0) + self._draw_counts.get(name, 0)
+        return out
+
+    def _group_weight(self, name: str) -> float:
+        """落后越多的组权重越高。指数换成 GROUP_STRENGTH/FAIRNESS_STRENGTH，
+        这样它和个人权重乘在一起时，倍数是可解释的。"""
+        group = self._group_of.get(name)
+        if not group:
+            return 1.0
+        counts = self._group_counts()
+        if not counts:
+            return 1.0
+        deficit = max(counts.values()) - counts.get(group, 0)
+        return (deficit + 1.0) ** (self.GROUP_STRENGTH / self.FAIRNESS_STRENGTH)
+
+    def _group_penalty(self, group: int) -> float:
+        """按「距离上一次本组被抽隔了几次」给惩罚。
+
+        gap 0/1 = 连着被抽（最该压）；gap 2 = 挨得近；gap > 2 = 正常轮换，不罚。
+        这与个人 recency 是同一套思路，只是组的影响更大。
+        """
+        window = self._group_history[-self.GROUP_STREAK_LOOKBACK:]
+        for back, hit in enumerate(reversed(window)):
+            if hit == group:
+                if back <= 1:
+                    return self.GROUP_PENALTY_ADJACENT
+                if back == 2:
+                    return self.GROUP_PENALTY_GAP
+                return 1.0
+        return 1.0
 
     def get_draw_probabilities(self) -> dict[str, float]:
         """每人当前的抽取概率 —— 供界面的公平性视图使用。"""
@@ -347,3 +412,24 @@ class NameEngine(QObject):
 
     def get_total_draws(self) -> int:
         return sum(self._draw_counts.values())
+
+    # --- 分组配置（由 main.py 在切换预设时调用）---
+
+    def set_group_map(self, group_of: dict[str, int] | None) -> None:
+        """设定「学生 → 组号」。传空字典 = 不分组，权重复原成纯个人。
+
+        只影响权重，不动任何统计：切换预设不会把已经积累的抽取次数打乱。
+        """
+        self._group_of = {k: int(v) for k, v in (group_of or {}).items() if int(v) > 0}
+        self._group_history = [g for g in self._group_history if g in set(self._group_of.values())]
+
+    def get_group_map(self) -> dict[str, int]:
+        return dict(self._group_of)
+
+    def get_group_counts(self) -> dict[int, int]:
+        """{组号: 被抽总次数}；不分组时为空。"""
+        return self._group_counts() if self._group_of else {}
+
+    def get_group_history(self) -> list[int]:
+        """最近被抽中的组号，供界面/测试检查轮换情况。"""
+        return list(self._group_history)
