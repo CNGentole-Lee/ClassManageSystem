@@ -860,6 +860,18 @@ QSettings 隐蔽备份恢复。
 
 ## 已知限制
 
+- **原生模块的字符串混淆挡不住编译器**：`OBF()` 的设计是「运行时异或」，
+  源码里的字符串字面量本身是编译期常量，编译器有权把它原样放进目标文件。
+  实测（clang，`-O0` 也一样）：`"cmenc001"`、`"BAD_SCORE"` 等仍能在
+  `cmd_sign` / `cmd_sign.exe` 里直接搜到。换过 `constexpr` / `volatile`
+  / `noinline` / `memcpy` / 逐字节 volatile 五种写法，都挡不住。
+  混淆器本身没有漏包 —— 源码确实被正确转写成 `\xNN` 形式。
+  这不是安全问题：**KDF 上下文是 libsodium 的公开常量名，不是密钥**；
+  `ObfStr` 的异或钥匙同样可以从二进制里还原。混淆从始至终的定位是
+  **抬高静态分析的成本，不是密码学保护**（见 `native/src/obf.hpp` 开头）。
+  `tools/tamper_check.py` 只把这一项记为提示，不判失败。
+  真想彻底隐藏，必须让源码里不存在该字面量（改成字节列表），
+  代价是 35 处调用点全部重写 —— 目前不做。
 - **未做代码签名/公证**：Windows 有 SmartScreen 提示，macOS 拷贝到别的机器需右键打开。
 - **不能交叉编译**：受限于 PyInstaller，macOS 上打不出 `.exe`，Windows 包必须在 Windows 上构建。
   （测试本身已可在无头环境运行：`tools/run_all_tests.py` 默认 offscreen。）
@@ -1907,6 +1919,19 @@ ASCII + CRLF.
 
 ## Known limitations
 
+- **String obfuscation in the native module does not defeat the compiler**: `OBF()` works
+  by XOR-ing at *run time*, but a string literal in the source is a compile-time constant
+  and the compiler is free to place it in the object file as-is. Measured with clang (also
+  at `-O0`): `"cmenc001"`, `"BAD_SCORE"` etc. are still directly findable inside
+  `cmd_sign` / `cmd_sign.exe`. Five different formulations (`constexpr`, `volatile`,
+  `noinline`, `memcpy`, per-byte volatile) all leaked. The obfuscator is not at fault —
+  the sources really are rewritten into `\xNN` form.
+  This is not a security hole: the KDF context is a *public libsodium constant name*, not
+  a key, and the `ObfStr` XOR key can itself be recovered from the binary. Obfuscation has
+  always been positioned as **raising the cost of static analysis, not cryptography**
+  (see the header of `native/src/obf.hpp`). `tools/tamper_check.py` reports this as a note
+  rather than a failure. Truly hiding it would require eliminating the literal from the
+  source altogether (byte lists), at the cost of rewriting 35 call sites — not done.
 - **No code signing / notarisation**: Windows shows SmartScreen, and macOS requires
   right-click → Open when the app is copied to another machine.
 - **CI cannot be used; no cross-compilation**: CI hangs at the smoke-test stage because

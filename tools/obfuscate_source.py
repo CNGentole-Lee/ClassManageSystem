@@ -33,6 +33,32 @@ SKIP_LINE_PREFIXES = ("#include", "#define", "#if", "#endif", "#else", "#pragma"
 SKIP_LINE_TOKENS = ("CROSS_TOKEN",)
 
 
+def hex_escape(literal: str) -> str:
+    """把 "abc" 变成 "\\x61\\x62\\x63"。
+
+    为什么需要：OBF("cmenc001") 展开成 ObfStr<9,K>("cmenc001")，模板参数 s 是
+    编译期常量，编译器会把**原始字面量本身**留在 .rodata 里 —— 异或只作用在
+    data[N] 上，明文根本没被消除。实测 cmenc001 / BAD_SCORE 等就是这样漏出去的。
+
+    改成十六进制转义后，源码里不再出现可读串，二进制里也就搜不到了。
+    长度和内容完全不变（一个源字符对应一个有效字符），因此 sizeof(s) 不变，
+    OBF 的模板参数、以及任何依赖该字面量的逻辑都一个字节都不会变。
+
+    转义规则：
+        * \\   -> \\\\      （最先处理，否则会二次转义）
+        * "   -> \\"       （结束引号会提前截断）
+        * 其余一律 \\xNN   （包括 \\n \\t 等，统一走十六进制，避免歧义）
+        * 连续的 \\xNN 会在下一段重新起头，不存在 "\\x63" "6" 被吞位的问题，
+          因为每个字符都自带 \\x 前缀、恰好两位十六进制。
+    """
+    body = literal[1:-1]
+    out = ['"']
+    for ch in body:
+        out.append("\\x%02x" % ord(ch))
+    out.append('"')
+    return "".join(out)
+
+
 def wrap_literals(source: str) -> str:
     out: list[str] = []
     i = 0
@@ -115,7 +141,9 @@ def wrap_literals(source: str) -> str:
             if skip:
                 out.append(literal)
             else:
-                out.append("OBF(" + literal + ")")
+                # 只对不含转义序列的字面量做十六进制改写：已经是 \xNN 的直接跳过
+                escaped = literal if "\\" in literal else hex_escape(literal)
+                out.append("OBF(" + escaped + ")")
             continue
 
         out.append(ch)
