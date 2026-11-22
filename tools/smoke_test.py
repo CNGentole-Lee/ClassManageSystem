@@ -339,8 +339,27 @@ def test_floating_ball():
 
     menu = ball.build_context_menu()
     texts = [a.text() for a in menu.actions()]
-    check("menu contains multi draw / points / open panel",
-          texts[:4] == ["连抽", "积分管理", "", "打开管理面板"], f"actual {texts}")
+    check("menu contains multi draw / points / profiles / open panel",
+          texts[:6] == ["连抽", "积分管理", "", "预设", "", "打开管理面板"],
+          f"actual {texts}")
+
+    # 预设子菜单：没有预设时也必须有「管理预设…」，否则第一次用的人
+    # 永远找不到新建入口
+    profile_menu = next(a.menu() for a in menu.actions() if a.text() == "预设")
+    sub_texts = [x.text() for x in profile_menu.actions()]
+    check("profiles submenu always offers management",
+          any("管理预设" in t for t in sub_texts), f"actual {sub_texts}")
+
+    # 有预设时，选中项打勾
+    ball.set_profiles([{"id": 1, "name": "化学课", "group_count": 4},
+                       {"id": 2, "name": "语文课", "group_count": 0}], 1)
+    menu2 = ball.build_context_menu([{"id": 1, "name": "化学课", "group_count": 4},
+                                     {"id": 2, "name": "语文课", "group_count": 0}], 1)
+    sub2 = next(a.menu() for a in menu2.actions() if a.text() == "预设")
+    checked = [x.text() for x in sub2.actions() if x.isCheckable() and x.isChecked()]
+    check("the active profile is ticked", checked == ["化学课（4 组）"], f"actual {checked}")
+    check("profiles submenu keeps management with profiles present",
+          any("管理预设" in x.text() for x in sub2.actions()))
     # 托盘在 macOS 上可能不可见（无 Dock 图标 + 菜单栏自动隐藏），
     # 这些动作必须能通过悬浮球右键菜单触达
     check("menu fallback contains draw name / full reset / quit",

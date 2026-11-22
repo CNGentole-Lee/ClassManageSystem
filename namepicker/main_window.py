@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         self._ball = None
         self._points_window = None
         self._wipe_handler = None
+        self._profile_handler = None
         self._tray_icon: QSystemTrayIcon | None = None
         self._settings = QSettings("NamePicker", "Config")
         self._name_items: dict[str, QListWidgetItem] = {}  # name → item mapping
@@ -68,6 +69,10 @@ class MainWindow(QMainWindow):
     def set_wipe_handler(self, handler) -> None:
         """Called after the user confirms 彻底重置 (main.py owns the stores)."""
         self._wipe_handler = handler
+
+    def set_profile_handler(self, handler) -> None:
+        """打开「预设」管理窗口的回调（main.py 持有 ProfileDialog）。"""
+        self._profile_handler = handler
 
     # --- UI Construction ---
 
@@ -245,6 +250,17 @@ class MainWindow(QMainWindow):
         import_btn.clicked.connect(self._on_import)
         bottom_layout.addWidget(import_btn)
 
+        # 预设（分组制）：课前点一下换一套「谁在哪一组」的规则。
+        # 入口同时放在这里、悬浮球右键和托盘菜单 —— 三条路都能到，
+        # 因为老师的习惯各不相同，而且 macOS 上没有 Dock 图标。
+        self._profile_btn = QPushButton(tr("预设", "Profiles"))
+        self._profile_btn.setToolTip(
+            tr("管理课堂预设：把学生分到各组，课前切换",
+               "Manage classroom profiles: assign students to groups and switch "
+               "before a lesson"))
+        self._profile_btn.clicked.connect(self._on_profiles)
+        bottom_layout.addWidget(self._profile_btn)
+
         clear_btn = QPushButton(tr("清空历史", "Clear history"))
         clear_btn.clicked.connect(self._on_clear_history)
         bottom_layout.addWidget(clear_btn)
@@ -287,6 +303,9 @@ class MainWindow(QMainWindow):
         import_action = QAction(tr("导入数据...", "Import data..."), self)
         import_action.triggered.connect(self._on_import)
         menu.addAction(import_action)
+        profile_action = QAction(tr("预设（分组）...", "Profiles (groups)..."), self)
+        profile_action.triggered.connect(self._on_profiles)
+        menu.addAction(profile_action)
         menu.addSeparator()
         # Apache-2.0 要求随附许可证与 NOTICE，这里给出入口
         about_action = QAction(tr("关于", "About"), self)
@@ -715,6 +734,18 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self, tr("已导出", "Exported"),
             tr("已保存到：\n{p}", "Saved to:\n{p}", p=path))
+
+    def _on_profiles(self) -> None:
+        """打开预设（分组制）管理窗口。真正的窗口由 main.py 持有。"""
+        handler = self._profile_handler
+        if handler is None:
+            QMessageBox.warning(
+                self, tr("预设不可用", "Profiles unavailable"),
+                tr("安全模块或数据不可用，暂时无法管理预设。",
+                   "The security module or the data is unavailable, so profiles "
+                   "cannot be managed right now."))
+            return
+        handler()
 
     def _on_import(self) -> None:
         """导入前必须由用户明确确认“我信任这份数据”。"""

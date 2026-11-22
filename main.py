@@ -449,6 +449,7 @@ def main():
 
     # 预设管理窗口：改完点「保存」才写链，误点不会产生事件
     profile_dialog = ProfileDialog(profile_store, name_supplier=engine.get_names)
+    main_win.set_profile_handler(profile_dialog.show_and_activate)
 
     # 事件链校验失败：必须让老师看见，而不是静默用旧数据
     if ledger_state.get("recovered"):
@@ -592,6 +593,9 @@ def main():
 
     profile_dialog.saved.connect(on_profile_saved)
     ball.profiles_requested.connect(open_profile_manager)
+    # 启动时就把菜单填好：否则老师第一次右键悬浮球只会看到空的「预设」，
+    # 自然也就找不到「管理预设…」。
+    refresh_profile_menu()
 
     # 右键菜单里的兜底动作（macOS 没有 Dock 图标、菜单栏可能自动隐藏）
     ball.wipe_requested.connect(main_win._on_wipe_all)

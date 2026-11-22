@@ -282,34 +282,42 @@ class FloatingBall(QWidget):
         menu.addAction(points_action)
 
         # 预设：课前点一下换一套分组规则。选中项打勾，切换后立即生效。
-        if profiles:
-            menu.addSeparator()
-            profile_menu = menu.addMenu(tr("预设", "Profiles"))
-            profile_menu.setStyleSheet(self.menu_stylesheet())
-            for profile in profiles:
-                label = profile.get("name") or ""
-                groups = int(profile.get("group_count", 0) or 0)
-                if groups > 0:
-                    label = tr("{name}（{n} 组）", "{name} ({n} groups)",
-                               name=label, n=groups)
-                action = QAction(label, self)
-                action.setCheckable(True)
-                action.setChecked(int(profile.get("id", 0)) == int(active_profile))
-                action.triggered.connect(
-                    lambda _checked=False, pid=int(profile.get("id", 0)):
-                    self.profile_selected.emit(pid)
-                )
-                profile_menu.addAction(action)
+        # 「管理预设…」**无条件**出现 —— 没有预设时它就是新建第一个的入口，
+        # 藏进 if profiles 里会让第一次使用的人永远找不到。
+        menu.addSeparator()
+        profile_menu = menu.addMenu(tr("预设", "Profiles"))
+        profile_menu.setStyleSheet(self.menu_stylesheet())
+        for profile in profiles or []:
+            label = profile.get("name") or ""
+            groups = int(profile.get("group_count", 0) or 0)
+            if groups > 0:
+                label = tr("{name}（{n} 组）", "{name} ({n} groups)",
+                           name=label, n=groups)
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(int(profile.get("id", 0)) == int(active_profile))
+            action.triggered.connect(
+                lambda _checked=False, pid=int(profile.get("id", 0)):
+                self.profile_selected.emit(pid)
+            )
+            profile_menu.addAction(action)
 
+        if profiles:
             profile_menu.addSeparator()
             if active_profile:
                 none_action = QAction(tr("本次不分班", "No groups this lesson"), self)
                 none_action.triggered.connect(
                     lambda _checked=False: self.profile_selected.emit(0))
                 profile_menu.addAction(none_action)
-            manage_action = QAction(tr("管理预设…", "Manage profiles…"), self)
-            manage_action.triggered.connect(self.profiles_requested.emit)
-            profile_menu.addAction(manage_action)
+        else:
+            hint = QAction(tr("（还没有预设）", "(no profiles yet)"), self)
+            hint.setEnabled(False)
+            profile_menu.addAction(hint)
+            profile_menu.addSeparator()
+
+        manage_action = QAction(tr("管理预设…", "Manage profiles…"), self)
+        manage_action.triggered.connect(self.profiles_requested.emit)
+        profile_menu.addAction(manage_action)
 
         menu.addSeparator()
 
