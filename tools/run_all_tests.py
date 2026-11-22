@@ -48,6 +48,8 @@ TESTS = [
     ("group_count_stress", 180),
     ("native_check", 120),        # 原生模块；缺失时返回 77 -> SKIP
     ("ledger_check", 180),        # 事件链：迁移/重放/篡改/回滚
+    ("profile_check", 120),       # 预设（分组制）：增量写入、随导出导入往返
+    ("group_check", 300),         # 分组权重：单课不会让一个组吃掉一半名额
     ("packaging_check", 60),      # 打包配置：spec / 安装包 / CI 一致性
     ("updater_check", 60),        # 更新检查：版本比较 / 非法响应 / URL 只来自常量
     ("export_check", 60),         # 导出/导入：快照格式、拒绝坏文件、导入后链可验证

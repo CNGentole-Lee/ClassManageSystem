@@ -532,6 +532,7 @@ class Ledger:
         # 关键：把【已有记录】传下去，签名器才会算出正确的 seq。
         # 传空列表会让它从 seq=1 重新开始，与现有记录撞号，整条链报废。
         existing = self.load()
+        plains = self.plains() if existing else []
         try:
             data = native_bridge.apply(existing, "init", count=count,
                                        names=",".join(names),
@@ -540,7 +541,8 @@ class Ledger:
             raise LedgerError(str(exc)) from exc
         record = base64.b64decode(data["record"])
         plain = base64.b64decode(data.get("plain", ""))
-        if not self._verify_with([record], [plain]):
+        # 验证器要复核**整条链**：只喂新记录会被判成“第一条记录的 prev 对不上”。
+        if not self._verify_with(existing + [record], plains + [plain]):
             raise LedgerError("verifier rejected the imported snapshot: "
                               + self._verify_error)
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -549,8 +551,63 @@ class Ledger:
             fh.flush()
             os.fsync(fh.fileno())
         self._records.append(record)
-        self._plains = (self._plains or []) + [plain]
+        self._plains = plains + [plain]
+        self._state = None                     # 强制下次重放，别拿旧状态
+
+        # 预设（分组制）跟着这份数据一起搬过来：换电脑后分组不用重录。
+        # 失败不影响导入本身 —— 分数已经落地，预设没了可以再分一次。
+        try:
+            self._import_profiles(state.get("profiles") or [],
+                                  int(state.get("active_profile", 0) or 0))
+        except Exception:                                  # noqa: BLE001
+            pass
         return True
+
+    def _load_incremental(self) -> list[bytes]:
+        """把磁盘上新追加的行接进内存（绕过 load() 的一次性读取缓存）。
+
+        `load()` 只在第一次读盘，之后一直返回缓存的列表；需要"看一眼最新
+        落盘内容"的场合（如导入外部快照）用这个方法。
+        """
+        self._loaded = False
+        self._records = []
+        return self.load()
+
+    def _import_profiles(self, profiles: list, active: int) -> None:
+        """把外部快照里的预设写成 profile-* 事件（不覆盖已有 id）。"""
+        current = {p["id"]: p for p in self.state().get("profiles", [])}
+        existing_max = max(current, default=0)
+        id_map: dict[int, int] = {}
+        pending: list[tuple[dict, int]] = []
+        for offset, raw in enumerate(profiles):
+            old_id = int(raw.get("id", 0))
+            name = str(raw.get("name", "")).strip()
+            groups = int(raw.get("group_count", 0))
+            if old_id <= 0 or not name or not (1 <= groups <= 24):
+                continue
+            if old_id in current:
+                # 同 id 已在链上：这份快照的预设跳过，绝不覆盖本机的
+                id_map[old_id] = old_id
+                continue
+            pid = old_id if old_id > existing_max else existing_max + 1 + offset
+            id_map[old_id] = pid
+            members = [int(g) for g in (raw.get("members") or [])]
+            pending.append(({"id": pid, "name": name, "group_count": groups,
+                             "members": members}, len(members)))
+        # 全部走 chain.apply：它负责签名、验证器复核、追加到磁盘并维护内存列表，
+        # 每一步都能看到上一条的结果（profile-new 之后才允许 profile-rule）。
+        for profile, member_count in pending:
+            pid = profile["id"]
+            self.apply("profile-new", id=pid, name=profile["name"])
+            self.apply("profile-rule", id=pid, count=profile["group_count"],
+                       members=member_count)
+            for index, group in enumerate(profile["members"]):
+                if 1 <= group <= profile["group_count"]:
+                    self.apply("profile-member", id=pid, index=index, group=group)
+        mapped = id_map.get(active, 0)
+        if mapped:
+            self.apply("profile-use", id=mapped)
+        self._state = None
 
     def migrate_from(self, group_count: int, names: list[str], scores: list[int]) -> bool:
         """把现有配置写成一条 init 事件（仅当链为空时）。"""

@@ -22,7 +22,9 @@ import time
 EXPORT_VERSION = 1
 
 
-def export_payload(store, chain=None, draws: dict | None = None) -> dict:
+def export_payload(store, chain=None, draws: dict | None = None,
+                   profiles: list | None = None,
+                   active_profile: int = 0) -> dict:
     """组装要导出的快照。"""
     count = int(store.group_count)
     names = [store.get_group_name(i) for i in range(1, count + 1)]
@@ -37,6 +39,18 @@ def export_payload(store, chain=None, draws: dict | None = None) -> dict:
     }
     if draws:
         payload["draws"] = {str(k): int(v) for k, v in draws.items()}
+    if profiles:
+        # 预设（分组制）跟着一起走：换电脑后分组不用重录
+        payload["profiles"] = [
+            {
+                "id": int(p.get("id", 0)),
+                "name": str(p.get("name", "")),
+                "group_count": int(p.get("group_count", 0)),
+                "members": [int(g) for g in p.get("members", [])],
+            }
+            for p in profiles
+        ]
+        payload["active_profile"] = int(active_profile or 0)
     return payload
 
 
@@ -59,11 +73,32 @@ def load(path: str) -> dict:
         raise ValueError(f"bad group_count: {count}")
     if len(scores) < count:
         raise ValueError("scores shorter than group_count")
+    profiles = []
+    for index, raw in enumerate(data.get("profiles") or []):
+        if not isinstance(raw, dict):
+            continue
+        try:
+            pid = int(raw.get("id", index + 1))
+            groups = int(raw.get("group_count", 0))
+            members = [int(g) for g in (raw.get("members") or [])]
+        except (TypeError, ValueError):
+            continue
+        if pid <= 0 or not (1 <= groups <= 24):
+            continue
+        profiles.append({
+            "id": pid,
+            "name": str(raw.get("name", "")),
+            "group_count": groups,
+            # 组号超出组数的一律归 0：宁可少分，也不要带入不一致的组号
+            "members": [g if 1 <= g <= groups else 0 for g in members],
+        })
     return {
         "count": count,
         "names": [str(x) for x in names[:count]],
         "scores": [int(x) for x in scores[:count]],
         "draws": {str(k): int(v) for k, v in (data.get("draws") or {}).items()},
+        "profiles": profiles,
+        "active_profile": int(data.get("active_profile", 0) or 0),
         "exported_at": str(data.get("exported_at", "")),
     }
 

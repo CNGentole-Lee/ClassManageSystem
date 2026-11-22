@@ -692,9 +692,15 @@ class MainWindow(QMainWindow):
             return
         try:
             draws = {}
+            profiles = []
+            active = 0
             if getattr(store, "_ledger", None) is not None:
-                draws = store._ledger.state().get("draws", {})
-            payload = export_import.export_payload(store, draws=draws)
+                state = store._ledger.state()
+                draws = state.get("draws", {})
+                profiles = state.get("profiles", [])
+                active = int(state.get("active_profile", 0) or 0)
+            payload = export_import.export_payload(
+                store, draws=draws, profiles=profiles, active_profile=active)
             export_import.save(payload, path)
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, tr("导出失败", "Export failed"), str(exc))
