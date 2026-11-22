@@ -263,6 +263,16 @@ class Ledger:
             "seq": int(data.get("seq", 0)),
             "ts": int(data.get("ts", 0) or 0),
             "draws": {str(k): int(v) for k, v in data.get("draws", [])},
+            "profiles": [
+                {
+                    "id": int(p.get("id", 0)),
+                    "name": str(p.get("name", "")),
+                    "group_count": int(p.get("group_count", 0)),
+                    "members": [int(g) for g in p.get("members", [])],
+                }
+                for p in data.get("profiles", [])
+            ],
+            "active_profile": int(data.get("active_profile", 0) or 0),
         }
         self._verify_error = ""
         self._verified = True
@@ -270,13 +280,15 @@ class Ledger:
 
     def state(self) -> dict:
         """返回当前业务状态；必要时先校验。"""
+        empty = {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0,
+                 "draws": {}, "profiles": [], "active_profile": 0}
         records = self.load()
         if not records:
-            return {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
+            return empty
         if self._state is None:
             if not self.verify():
                 raise LedgerError(self._verify_error or "CHAIN_BROKEN")
-        return self._state or {"count": 0, "names": [], "scores": [], "seq": 0, "ts": 0}
+        return self._state or empty
 
     # --- 基准（seq/head） ---
 
