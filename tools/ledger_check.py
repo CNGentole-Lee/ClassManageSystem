@@ -350,6 +350,10 @@ def main() -> int:
     check("duplicate-seq chain is repaired", ok, victim.verify_error())
     seqs = [int.from_bytes(r[0:4], "little") for r in victim.load()]
     check("repair renumbers records", seqs == list(range(1, len(seqs) + 1)), str(seqs))
+    # 重编号必须连时间戳一起摆正：链要求 ts 单调不减，倒退的记录会被判坏链
+    stamps = [int.from_bytes(p[32:40], "little") for p in victim.plains()]
+    check("repair keeps timestamps non-decreasing",
+          all(b >= a for a, b in zip(stamps, stamps[1:])), str(stamps))
     check("repaired chain survives a restart",
           L.Ledger(os.path.join(t, "config.ini")).verify())
 
