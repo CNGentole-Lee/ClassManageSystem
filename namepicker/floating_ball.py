@@ -90,6 +90,8 @@ class FloatingBall(QWidget):
     open_panel_requested = Signal()  # 右键 → 打开管理面板
     points_panel_requested = Signal()  # 右键 → 打开小组积分窗口
     multi_draw_requested = Signal(int)  # 右键 → 连抽 N 人
+    profile_selected = Signal(int)      # 右键 → 切换预设（0 = 不分组）
+    profiles_requested = Signal()       # 右键 → 管理预设…
     # 托盘被系统隐藏时（macOS 菜单栏自动隐藏 / 没有 Dock 图标），
     # 这些动作由悬浮球右键菜单兜底，保证功能不丢。
     wipe_requested = Signal()           # 右键 → 彻底重置
@@ -145,6 +147,8 @@ class FloatingBall(QWidget):
         self._drag_active = False
         self._click_count = 0
         self._click_timer: QTimer | None = None
+        # (profiles, active_id)：右键菜单要显示的预设，由 main.py 注入
+        self._menu_profiles: tuple[list[dict], int] = ([], 0)
 
         self._init_ui()
 
@@ -253,8 +257,13 @@ class FloatingBall(QWidget):
         """单击超时 —— 重置计数，不触发动作。"""
         self._click_count = 0
 
-    def build_context_menu(self) -> QMenu:
-        """构建右键菜单（与 exec_ 分开，便于测试）。"""
+    def build_context_menu(self, profiles=None,
+                           active_profile: int = 0) -> QMenu:
+        """构建右键菜单（与 exec_ 分开，便于测试）。
+
+        profiles 为 None 或空列表时不显示「预设」子菜单 —— 没建过预设的
+        老师看到的是和以前一样的菜单。
+        """
         menu = QMenu(self)
         menu.setStyleSheet(self.menu_stylesheet())
 
@@ -271,6 +280,36 @@ class FloatingBall(QWidget):
         points_action = QAction(tr("积分管理", "Points"), self)
         points_action.triggered.connect(self.points_panel_requested.emit)
         menu.addAction(points_action)
+
+        # 预设：课前点一下换一套分组规则。选中项打勾，切换后立即生效。
+        if profiles:
+            menu.addSeparator()
+            profile_menu = menu.addMenu(tr("预设", "Profiles"))
+            profile_menu.setStyleSheet(self.menu_stylesheet())
+            for profile in profiles:
+                label = profile.get("name") or ""
+                groups = int(profile.get("group_count", 0) or 0)
+                if groups > 0:
+                    label = tr("{name}（{n} 组）", "{name} ({n} groups)",
+                               name=label, n=groups)
+                action = QAction(label, self)
+                action.setCheckable(True)
+                action.setChecked(int(profile.get("id", 0)) == int(active_profile))
+                action.triggered.connect(
+                    lambda _checked=False, pid=int(profile.get("id", 0)):
+                    self.profile_selected.emit(pid)
+                )
+                profile_menu.addAction(action)
+
+            profile_menu.addSeparator()
+            if active_profile:
+                none_action = QAction(tr("本次不分班", "No groups this lesson"), self)
+                none_action.triggered.connect(
+                    lambda _checked=False: self.profile_selected.emit(0))
+                profile_menu.addAction(none_action)
+            manage_action = QAction(tr("管理预设…", "Manage profiles…"), self)
+            manage_action.triggered.connect(self.profiles_requested.emit)
+            profile_menu.addAction(manage_action)
 
         menu.addSeparator()
 
@@ -302,8 +341,16 @@ class FloatingBall(QWidget):
         return menu
 
     def _show_context_menu(self, pos: QPoint) -> None:
-        """弹出右键菜单。"""
-        self.build_context_menu().exec(pos)
+        """弹出右键菜单。预设列表由外部在弹出前通过 set_profiles 提供。"""
+        profiles, active = self._menu_profiles
+        self.build_context_menu(profiles, active).exec(pos)
+
+    def set_profiles(self, profiles=None, active: int = 0) -> None:
+        """让右键菜单知道有哪些预设、当前挂在哪个上。
+
+        切换预设后会重新调用一次，菜单里的勾选因此始终是最新的。
+        """
+        self._menu_profiles = (list(profiles or []), int(active or 0))
 
     # --- 辅助 ---
 

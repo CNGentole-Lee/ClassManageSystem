@@ -38,8 +38,10 @@ from namepicker.floating_ball import FloatingBall
 from namepicker.draw_popup import DrawResultPopup
 from namepicker.main_window import MainWindow
 from namepicker.points_window import PointsWindow
+from namepicker.profile_dialog import ProfileDialog
 from namepicker.single_instance import SingleInstance
 from namepicker.stats_store import StatsStore
+from namepicker.profiles import ProfileStore
 from namepicker import wipe_service
 from namepicker.i18n import tr
 
@@ -351,6 +353,11 @@ def main():
     stats = StatsStore(chain=chain if ledger_state["ok"] else None)
     engine = NameEngine()
 
+# --- 课堂预设（分组制）--------------------------------------
+    # 预设只活在事件链里，不产生任何文件。切换预设只是把「人 → 组」的
+    # 映射交给引擎，权重立刻按组生效，抽取次数一点都不动。
+    profile_store = ProfileStore(chain=chain if ledger_state["ok"] else None)
+
 # --- 公平性统计：stats.ini <-> 引擎 ------------------------
     # 抽取计数必须在重启后仍然保留，这样“加权少抽优先”才有意义，
     # 而且它们必须在“清空历史”后也仍然保留——这就是为什么它们
@@ -362,8 +369,31 @@ def main():
     def restore_stats() -> None:
         engine.set_draw_counts(stats.load())
 
+    def apply_active_profile() -> None:
+        """把当前预设的「人 → 组」映射交给引擎；没有预设就清空（纯个人权重）。"""
+        profile = profile_store.active()
+        current = engine.get_names()
+        if profile and profile["group_count"] > 0:
+            member_of = {}
+            for index, group in enumerate(profile["members"]):
+                if group > 0 and index < len(current):
+                    member_of[current[index]] = int(group)
+            engine.set_group_map(member_of)
+        else:
+            engine.set_group_map({})
+        refresh_profile_menu()
+
+    def refresh_profile_menu() -> None:
+        ball.set_profiles(profile_store.list(), profile_store.active_id())
+
 # 在首次加载之前恢复，这样历史计数会立即生效。
-    engine.names_loaded.connect(lambda _count: restore_stats())
+    # 名单一换（可能换了班级、人数也变了），就把预设重新映射一次：
+    # 组员按下标存，人数对得上就仍然有效。
+    def on_names_loaded(_count: int) -> None:
+        restore_stats()
+        apply_active_profile()
+
+    engine.names_loaded.connect(on_names_loaded)
     engine.name_drawn.connect(lambda _name: save_stats())
 
     def wipe_everything(parts: dict) -> None:
@@ -416,6 +446,9 @@ def main():
     main_win.set_ball(ball)
     main_win.set_points_window(points_win)
     main_win.set_wipe_handler(wipe_everything)
+
+    # 预设管理窗口：改完点「保存」才写链，误点不会产生事件
+    profile_dialog = ProfileDialog(profile_store, name_supplier=engine.get_names)
 
     # 事件链校验失败：必须让老师看见，而不是静默用旧数据
     if ledger_state.get("recovered"):
@@ -532,6 +565,33 @@ def main():
 
     # 右键点击悬浮球 → 打开小组积分面板
     ball.points_panel_requested.connect(points_win.show_and_activate)
+
+    # 右键 → 预设：课前点一下换一套分组规则，立即生效、不用重启
+    def switch_profile(pid: int) -> None:
+        try:
+            profile_store.use(int(pid))
+        except Exception as exc:                       # noqa: BLE001
+            startup_log.record([f"profile switch failed: {exc}"])
+            main_win.statusBar().showMessage(
+                tr("切换预设失败：{e}", "Could not switch profile: {e}", e=exc), 0)
+            return
+        apply_active_profile()
+        name = (profile_store.get(int(pid)) or {}).get("name") if pid else ""
+        main_win.statusBar().showMessage(
+            tr("已切换预设：{n}", "Profile: {n}", n=name) if pid
+            else tr("本次不分组", "No groups this lesson"), 4000)
+
+    ball.profile_selected.connect(switch_profile)
+
+    def open_profile_manager() -> None:
+        profile_dialog.show_and_activate()
+
+    def on_profile_saved() -> None:
+        """管理窗口保存后：重新映射 + 刷新勾选。"""
+        apply_active_profile()
+
+    profile_dialog.saved.connect(on_profile_saved)
+    ball.profiles_requested.connect(open_profile_manager)
 
     # 右键菜单里的兜底动作（macOS 没有 Dock 图标、菜单栏可能自动隐藏）
     ball.wipe_requested.connect(main_win._on_wipe_all)
