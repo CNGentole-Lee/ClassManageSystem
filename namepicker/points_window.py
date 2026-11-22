@@ -15,13 +15,13 @@ from PySide6.QtGui import QAction, QFontDatabase
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QGridLayout, QVBoxLayout,
     QHBoxLayout, QMessageBox, QInputDialog, QSizePolicy, QMenu,
-    QScrollArea, QLayout, QDialog, QPlainTextEdit,
+    QScrollArea, QLayout, QDialog, QPlainTextEdit, QCheckBox,
 )
 
 from . import i18n, log_store, macos_window, theme
 from .i18n import tr
 from .widgets import ElidedLabel
-from .config_store import MAX_GROUP_COUNT, MIN_GROUP_COUNT
+# V4：组数由预设决定，面板不再需要组数上下限
 
 # 每个操作按钮对应的增减量，按显示顺序。
 DELTAS = (-1, 1, 2, 3)
@@ -371,11 +371,9 @@ class PointsWindow(QWidget):
         reset_btn.clicked.connect(self._on_reset_all)
         footer.addWidget(reset_btn)
 
-        count_btn = QPushButton(tr("小组数量...", "Group count..."))
-        count_btn.setToolTip(tr("修改显示的小组数量（会清空所有小组的名称和积分）",
-                                "Change the number of groups (clears all names and scores)"))
-        count_btn.clicked.connect(self._on_change_group_count)
-        footer.addWidget(count_btn)
+        # 「小组数量...」已删除：V4 起组数只能由「预设」决定。
+        # 面板上一个改组数的入口就是一条绕过预设的后门，删掉它才不会出现
+        # "预设 4 组、面板 6 张卡"这种自相矛盾的状态。
 
         # 操作日志的唯一入口：紧挨着「小组数量...」。除此之外程序里没有任何
         # 地方能读到日志（磁盘上只有密文，也没有明文副本）。
@@ -571,35 +569,23 @@ class PointsWindow(QWidget):
         self._undo_btn.setEnabled(False)
         self._schedule_save()
 
-    def _on_change_group_count(self) -> None:
-        """修改显示的小组数量，会清空所有小组的名称和分数。
+    def apply_profile(self, profile: dict | None) -> bool:
+        """跟随预设：组数只从预设来，面板不能自己改。
 
-        分两步（先选数字、再确认）：小组数量一学期最多改一次，若做成紧挨
-        「全部清零」的一键控件，太容易误点。分数被清掉不是附带损失：换了
-        组数就是换了一套分组，旧分数没有可挂靠的小组。
+        返回 False 表示当前预设没启用小组制（组数 0），调用方应当拒绝打开面板。
         """
-        current = len(self._cards)
-        count, ok = QInputDialog.getInt(
-            self, tr("小组数量", "Group count"), tr("显示几个小组？", "How many groups?"),
-            current, MIN_GROUP_COUNT, MAX_GROUP_COUNT, 1,
-        )
-        if not ok or count == current:
-            return
+        count = int(profile.get("group_count", 0)) if profile else 0
+        if count <= 0:
+            return False
+        if count != len(self._cards):
+            self._rebuild_cards()
+        self._set_profile_label(profile)
+        return True
 
-        reply = QMessageBox.question(
-            self, tr("确认", "Confirm"),
-            tr("改为 {n} 个小组？\n\n所有小组的名称和积分都会被清空。",
-               "Switch to {n} groups?\n\nAll group names and scores will be cleared.",
-               n=count),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
-            return
-
-        applied = self._store.set_group_count(count)
-        self._rebuild_cards()
-        self._schedule_save()
-        self._set_status(tr("已改为 {n} 个小组", "Now {n} groups", n=applied), ok=True)
+    def _set_profile_label(self, profile: dict | None) -> None:
+        name = (profile or {}).get("name", "")
+        self._config_label.setText(
+            tr("预设: {n}", "Profile: {n}", n=name) if name else "")
 
     def _schedule_save(self) -> None:
         """把快速连点合并成一次写入。"""
@@ -660,15 +646,19 @@ class PointsWindow(QWidget):
         这是全程序读取操作日志的唯一入口：日志只有密文落盘（没有明文副本），
         也不出现在托盘菜单或管理面板里。
         """
-        dialog = _LogViewerDialog(self._store.path, self)
+        profile = self._store.active_profile()
+        dialog = _LogViewerDialog(self._store.path, self,
+                                  profile_name=str((profile or {}).get("name", "")))
         dialog.exec()
 
 
 class _LogViewerDialog(QDialog):
     """操作日志查看器：只读，最新记录在最上面。"""
 
-    def __init__(self, config_path: str, parent=None):
+    def __init__(self, config_path: str, parent=None, profile_name: str = ""):
         super().__init__(parent)
+        self._profile_name = profile_name
+        self._entries: list[tuple] = []
         self.setWindowTitle(tr("操作日志 — 只读", "Operation log — read-only"))
         self.setMinimumSize(660, 460)
 
@@ -691,6 +681,14 @@ class _LogViewerDialog(QDialog):
         title = QLabel(title_text)
         title.setFont(theme.font(12, bold=True))
         layout.addWidget(title)
+
+        # V4：默认只看当前预设。一门课一个预设，混在一起看等于没有重点；
+        # 要对账（"这节课的都在这儿吗"）时再勾上"显示全部"。
+        self._show_all_box = QCheckBox(tr("显示全部预设", "Show all profiles"))
+        self._show_all_box.setChecked(not profile_name)
+        self._show_all_box.setEnabled(bool(profile_name))
+        self._show_all_box.toggled.connect(self._render)
+        layout.addWidget(self._show_all_box)
 
         # 数据来源与自动回档提示
         source_names = {
@@ -724,18 +722,9 @@ class _LogViewerDialog(QDialog):
             f"background: {theme.c('log_bg')}; color: {theme.c('text')};"
             f" border: 1px solid {theme.c('view_border')};"
         )
-        if entries:
-            lines = []
-            for stamp, zh, en in entries:
-                # 双语条目：中文一行，英文紧跟在下一行；老记录只有一段文本
-                lines.append(f"[{stamp}] {zh}")
-                if en and en != zh:
-                    lines.append(f"           {en}")
-            text.setPlainText("\n".join(lines))
-        else:
-            text.setPlainText(tr(
-                "还没有任何积分变动记录。\n每次加分 / 减分 / 撤销 / 清零 / 改组数都会自动记一条。",
-                "No score changes yet.\nEvery add / subtract / undo / clear / group-count change is logged."))
+        self._text = text
+        self._entries = list(entries)
+        self._render()
         layout.addWidget(text, 1)
 
         tip = QLabel(tr(
@@ -752,3 +741,34 @@ class _LogViewerDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         buttons.addWidget(close_btn)
         layout.addLayout(buttons)
+
+    def _render(self) -> None:
+        """按「显示全部」勾选状态重绘正文。"""
+        if not hasattr(self, "_text"):
+            return
+        show_all = not self._profile_name or self._show_all_box.isChecked()
+        marker = f"[{self._profile_name}] " if self._profile_name else ""
+        shown = [
+            item for item in self._entries
+            if show_all or (marker and str(item[1]).startswith(marker))
+        ]
+        if not shown:
+            if self._entries and not show_all:
+                self._text.setPlainText(tr(
+                    "当前预设「{n}」还没有任何记录。\n勾选上方「显示全部预设」可以看到其他课。",
+                    "No entries for the current profile \"{n}\" yet.\n"
+                    "Tick \"Show all profiles\" above to see the others.",
+                    n=self._profile_name))
+            else:
+                self._text.setPlainText(tr(
+                    "还没有任何积分变动记录。\n每次加分 / 减分 / 撤销 / 清零 / 改组数都会自动记一条。",
+                    "No score changes yet.\n"
+                    "Every add / subtract / undo / clear / group-count change is logged."))
+            return
+        lines = []
+        for stamp, zh, en in shown:
+            # 双语条目：中文一行，英文紧跟在下一行；老记录只有一段文本
+            lines.append(f"[{stamp}] {zh}")
+            if en and en != zh:
+                lines.append(f"           {en}")
+        self._text.setPlainText("\n".join(lines))

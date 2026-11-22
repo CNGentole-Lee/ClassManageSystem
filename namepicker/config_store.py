@@ -536,6 +536,7 @@ class ConfigStore:
         self._cp = _new_parser()
         self._last_error = ""
         self._ledger = None          # 可选：事件链（见 attach_ledger）
+        self._profiles = None        # 可选：ProfileStore（见 _profile_store）
         self.reload()
 
     # --- 加载 ---
@@ -575,6 +576,30 @@ class ConfigStore:
         """挂上事件链；之后每次改分/改组都先经 C++ 校验并追加事件。"""
         self._ledger = ledger
 
+    # --- 当前预设（V4：组名与分数的唯一来源）---
+
+    def _profile_store(self):
+        """懒加载 ProfileStore：没挂链时返回 None。"""
+        if self._ledger is None:
+            return None
+        if getattr(self, "_profiles", None) is None:
+            from .profiles import ProfileStore
+            self._profiles = ProfileStore(chain=self._ledger)
+        return self._profiles
+
+    def _active_profile(self) -> dict | None:
+        """当前预设；没有选中任何预设时返回 None。"""
+        store = self._profile_store()
+        return store.active() if store is not None else None
+
+    def active_profile(self) -> dict | None:
+        """对外暴露当前预设（界面用来判断是否启用小组制）。"""
+        return self._active_profile()
+
+    def grouping_enabled(self) -> bool:
+        """当前预设是否启用小组制（组数 > 0）。0 组时积分面板不可用。"""
+        return self.group_count > 0
+
     def _ledger_apply(self, op: str, **kwargs):
         """把操作交给 C++。
 
@@ -592,19 +617,26 @@ class ConfigStore:
         return state
 
     def _adopt_state(self, state: dict) -> bool:
-        """用 C++ 返回的状态覆盖内存配置（不落盘）。"""
-        try:
-            count = int(state.get("count", 0))
-        except (TypeError, ValueError):
-            return False
-        if count < MIN_GROUP_COUNT or count > MAX_GROUP_COUNT:
-            return False
+        """用 C++ 返回的状态刷新内存里那份"查看副本"（config.ini 用）。
+
+        V4：真数据在预设里，这里只把当前预设的组名/分数抄一份到 [points]，
+        让老师仍然能用文本编辑器看一眼。
+        """
+        profile = self._active_profile()
+        if profile is None:
+            self._cp.remove_section("points")
+            self._cp.add_section("points")
+            self._cp.set("points", "group_count", "0")
+            return True
+        count = int(profile.get("group_count", 0))
+        names = list(profile.get("group_names", []))
+        scores = list(profile.get("scores", []))
+        if self._cp.has_section("points"):
+            self._cp.remove_section("points")
+        self._cp.add_section("points")
         self._cp.set("points", "group_count", str(count))
-        names = list(state.get("names", []))
-        scores = list(state.get("scores", []))
         for i in range(1, count + 1):
             raw_name = str(names[i - 1]) if i - 1 < len(names) else ""
-            # C++ 用空串表示“默认名”，显示时按当前语言生成
             self._cp.set("points", f"group_{i}",
                          raw_name or default_group_name(i))
             score = int(scores[i - 1]) if i - 1 < len(scores) else 0
@@ -616,50 +648,77 @@ class ConfigStore:
         return self._adopt_state(state)
 
     # --- 小组 / 分数 ---
+    #
+    # V4：数据源是「当前预设」。组名、分数、组数都只能在预设里定义，
+    # 这里的方法只是把界面上的调用转发过去，不再有全局的 [points] 段。
 
     @property
     def group_count(self) -> int:
-        return _group_count_of(self._cp)
+        """当前预设的组数；没有预设或预设不启用分组时是 0。"""
+        profile = self._active_profile()
+        return int(profile.get("group_count", 0)) if profile else 0
 
     def set_group_count(self, count: int) -> int:
-        """改小组数量：整段重建 [points]，组名回默认、分数归零，返回实际生效值。
+        """改当前预设的组数（0 = 不启用小组制）。
 
-        换组数即换了一套分组，旧分数没有可挂靠的小组，所以一并清空。
+        组数只能通过预设来定（见 ProfileDialog）—— 这里保留方法是为了让
+        老调用方不炸。V4 起它**不再清空分数**：分数跟着预设走，
+        改组数只影响拼出来多少张卡片。名单槽位与抽取次数也一并保留。
         """
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is None or profile is None:
+            return self.group_count
         try:
-            count = int(count)
+            count = max(0, min(int(count), MAX_GROUP_COUNT))
         except (TypeError, ValueError):
             return self.group_count
-        count = max(MIN_GROUP_COUNT, min(count, MAX_GROUP_COUNT))
-        if count == self.group_count:
-            return count  # 数量没变，不做任何事，避免白清一次分数
-        applied = self._ledger_apply("count", count=count)
-        if applied is False:
-            return self.group_count
-        if applied is not None:
-            return self.group_count
-        self._write_default_groups(count)
+        old = self.group_count
+        if count == old:
+            return count
+        members = len(profile.get("members", []))
+        try:
+            store.set_rule(profile["id"], count, members)
+        except Exception as exc:                      # noqa: BLE001
+            self._last_error = f"ledger rejected: {exc}"
+            return old
+        if self._ledger is not None:
+            try:
+                self._adopt_state(self._ledger.state())
+            except Exception:                          # noqa: BLE001
+                pass
+        # 组数变了会改变界面上的卡片数，属可审计的改动，必须留痕
+        self._log(
+            f"修改小组数量：{old} → {count}",
+            f"change group count: {old} -> {count}",
+        )
         return count
 
     def get_group_name(self, index: int) -> str:
-        """小组 index（1 起）的显示名。
+        """第 index 组（1 起）的显示名。
 
-        存的是默认名（`第一组` / `Group 1`）时按当前界面语言返回 —— 这样切到
+        预设里存了自定义名就用它；否则按当前界面语言返回默认名 —— 这样切到
         英文后默认组名会变成 "Group 1"，而老师自定义的名字不受影响。
         """
-        raw = self._cp.get("points", f"group_{index}", fallback="").strip()
+        store = self._profile_store()
+        profile = self._active_profile()
+        raw = ""
+        if store is not None and profile is not None:
+            raw = (store.get_group_name(index, profile["id"]) or "").strip()
         if not raw or is_default_group_name(raw, index):
             return default_group_name(index)
         return raw
 
     def set_group_name(self, index: int, name: str) -> None:
-        name = name.strip()
-        if not name:
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is None or profile is None:
             return
-        applied = self._ledger_apply("rename", group=index, name=name)
-        if applied is False:
-            return
-        if applied is not None:
+        name = (name or "").strip()
+        try:
+            store.set_group_name(index, name, profile["id"])
+        except Exception as exc:                      # noqa: BLE001
+            self._last_error = f"ledger rejected: {exc}"
             return
         self._cp.set("points", f"group_{index}", name)
 
@@ -680,11 +739,11 @@ class ConfigStore:
         self._cp.set("meta", "language", (lang or "").strip().lower())
 
     def get_score(self, index: int) -> int:
-        raw = self._cp.get("points", f"score_{index}", fallback="0")
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is None or profile is None:
             return 0
+        return store.get_score(index, profile["id"])
 
     def set_score(self, index: int, value: int, reason=None) -> None:
         """改一个小组的分数；值真的变了才写一条操作日志。
@@ -692,44 +751,54 @@ class ConfigStore:
         reason 可以是 i18n.Bi / (中文, English) / 纯字符串 —— 会原样附在日志里。
         日志写失败不影响积分（见 _log）。
         """
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is None or profile is None:
+            return
         try:
             value = int(value)
         except (TypeError, ValueError):
             return
         old = self.get_score(index)
-        delta = value - old
-        if delta != 0:
-            applied = self._ledger_apply("score", group=index, delta=delta)
-            if applied is False:
-                return                          # C++ 拒绝：不改内存
-            if applied is not None:
-                value = self.get_score(index)   # 以 C++ 的状态为准
-            else:
-                self._cp.set("points", f"score_{index}", str(value))
-        else:
-            self._cp.set("points", f"score_{index}", str(value))
-        if value != old:
-            zh_reason, en_reason = i18n.as_pair(reason)
-            name = _shorten(self.get_group_name(index))
-            zh_suffix = f"｜{zh_reason}" if zh_reason else ""
-            en_suffix = f" | {en_reason}" if en_reason else ""
-            self._log(
-                f"第{index}组（{name}）{old} → {value}{zh_suffix}",
-                f"Group {index} ({name}) {old} → {value}{en_suffix}",
-            )
+        if value == old:
+            return
+        try:
+            store.set_score(index, value, profile["id"])
+        except Exception as exc:                      # noqa: BLE001
+            # 链写不进去（磁盘满/只读/被占用）：不让异常穿过 Qt 信号
+            # 把程序带崩，但也绝不假装成功 —— 界面会读回真实值。
+            self._last_error = f"ledger rejected: {exc}"
+            return
+        # 以链上的实际结果为准（C++ 可能夹紧或拒绝）
+        new_value = self.get_score(index)
+        self._cp.set("points", f"score_{index}", str(new_value))
+
+        zh_reason, en_reason = i18n.as_pair(reason)
+        name = _shorten(self.get_group_name(index))
+        zh_suffix = f"｜{zh_reason}" if zh_reason else ""
+        en_suffix = f" | {en_reason}" if en_reason else ""
+        self._log(
+            f"第{index}组（{name}）{old} → {new_value}{zh_suffix}",
+            f"Group {index} ({name}) {old} → {new_value}{en_suffix}",
+        )
 
     def all_scores(self) -> list[int]:
         return [self.get_score(i) for i in range(1, self.group_count + 1)]
 
     def reset_scores(self, reason=None) -> None:
         """所有小组归零，并把这次批量清零记成一条日志（而不是每组一条）。"""
-        olds = self.all_scores()
-        applied = self._ledger_apply("wipe", parts="scores")
-        if applied is False:
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is None or profile is None:
             return
-        if applied is None:
-            for i in range(1, self.group_count + 1):
-                self._cp.set("points", f"score_{i}", "0")
+        olds = self.all_scores()
+        try:
+            store.reset_scores(profile["id"])
+        except Exception as exc:                      # noqa: BLE001
+            self._last_error = f"ledger rejected: {exc}"
+            return
+        for i in range(1, self.group_count + 1):
+            self._cp.set("points", f"score_{i}", "0")
         if any(olds):
             zh_reason, en_reason = i18n.as_pair(reason)
             zh_reason = zh_reason or "全部清零"
@@ -740,24 +809,26 @@ class ConfigStore:
     # --- 可选清空（彻底重置对话框用） ---
 
     def wipe_group_names(self) -> None:
-        """只把组名恢复默认，保留分数与小组数量。"""
-        applied = self._ledger_apply("wipe", parts="names")
-        if applied is False:
+        """只把当前预设的组名恢复默认，保留分数与组数。"""
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is None or profile is None:
             return
-        if applied is None:
-            for i in range(1, self.group_count + 1):
-                self._cp.set("points", f"group_{i}", default_group_name(i))
+        for i in range(1, self.group_count + 1):
+            store.set_group_name(i, "", profile["id"])
+            self._cp.set("points", f"group_{i}", default_group_name(i))
         self._log("彻底重置：组名已恢复默认", "Full reset: group names restored")
 
     def wipe_scores(self) -> None:
-        """只把积分归零，保留组名。"""
+        """只把当前预设的积分归零，保留组名。"""
         olds = self.all_scores()
-        applied = self._ledger_apply("wipe", parts="scores")
-        if applied is False:
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is None or profile is None:
             return
-        if applied is None:
-            for i in range(1, self.group_count + 1):
-                self._cp.set("points", f"score_{i}", "0")
+        store.reset_scores(profile["id"])
+        for i in range(1, self.group_count + 1):
+            self._cp.set("points", f"score_{i}", "0")
         if any(olds):
             joined = "/".join(str(v) for v in olds)
             self._log(f"彻底重置：积分已清零（原 {joined}）",
@@ -768,9 +839,20 @@ class ConfigStore:
         self._log(zh, en)
 
     def _log(self, zh: str, en: str = "") -> None:
-        """写一条双语操作日志；失败静默 —— 日志绝不能影响积分流程。"""
+        """写一条双语操作日志；失败静默 —— 日志绝不能影响积分流程。
+
+        V4：每条记录都带上当前预设的名字（``[化学课] 第1组 +1``）。
+        一门课一个预设，学期末对账时"这条是谁加的"必须一眼看得出来；
+        而且日志查看器默认只显示当前预设，靠的就是这个前缀。
+        """
         try:
-            log_store.append(zh, en, self.path)
+            prefix = ""
+            profile = self._active_profile()
+            if profile is not None:
+                name = str(profile.get("name", "")).strip()
+                if name:
+                    prefix = f"[{name}] "
+            log_store.append(prefix + zh, (prefix + en) if en else "", self.path)
         except Exception:
             pass
 
@@ -799,21 +881,23 @@ class ConfigStore:
             )
 
     def reset_all(self) -> bool:
-        """回到出厂状态：组名、分数、组数全部重置（彻底重置用）。
+        """彻底重置**当前预设**：组名回默认、积分归零、组数回默认。
 
-        长期抽取次数不在这里，它存在事件链（op=draw，见 stats_store.py）。
+        V4 起预设之间互相独立，重置化学课不会影响语文课 —— 这是明确的产品决策。
         操作日志**不清空**：只追加一条标记，审计记录不能靠一个按钮抹掉。
         """
-        names = ",".join(default_group_name(i) for i in range(1, DEFAULT_GROUP_COUNT + 1))
-        scores = ",".join("0" for _ in range(DEFAULT_GROUP_COUNT))
-        applied = self._ledger_apply(
-            "reset", count=DEFAULT_GROUP_COUNT, names=names, scores=scores)
-        if applied is None:
-            self._write_default_groups(
-                DEFAULT_GROUP_COUNT,
-                reason=i18n.both("彻底重置", "full reset"),
-                force_log=True,
-            )
+        store = self._profile_store()
+        profile = self._active_profile()
+        if store is not None and profile is not None:
+            store.set_rule(profile["id"], DEFAULT_GROUP_COUNT, len(profile.get("members", [])))
+            store.reset_scores(profile["id"])
+            for i in range(1, DEFAULT_GROUP_COUNT + 1):
+                store.set_group_name(i, "", profile["id"])
+        self._write_default_groups(
+            DEFAULT_GROUP_COUNT,
+            reason=i18n.both("彻底重置", "full reset"),
+            force_log=True,
+        )
         # 早期版本把抽取次数写在 [stats] 段里，一并删除避免留下误导性残留。
         if self._cp.has_section("stats"):
             self._cp.remove_section("stats")

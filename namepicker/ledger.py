@@ -39,6 +39,17 @@ def ledger_path_for(config_path: str) -> str:
     return os.path.join(data_dir_for(config_path), "ledger.esc")
 
 
+#: 这些错误码表示"文件是老版本写的"，而不是"文件坏了"。
+#: 区别很重要：坏数据要报警/恢复，旧数据只要提示重录 —— 绝不能去"修"它。
+_LEGACY_ERRORS = ("BAD_FORMAT", "UNKNOWN_OP", "BAD_COUNT", "BAD_EVENT")
+
+
+def _is_format_mismatch(exc: Exception) -> bool:
+    """判断 native 报的错是不是"格式不兼容"（≡ 旧版本数据）。"""
+    message = str(exc)
+    return any(code in message for code in _LEGACY_ERRORS)
+
+
 def _anchor_dirs(config_path: str) -> list[str]:
     """基准/安全副本的位置：主目录一个，用户缓存目录一个（换个地方藏）。"""
     data_dir = data_dir_for(config_path)
@@ -89,24 +100,43 @@ class Ledger:
             raise LedgerError(str(exc)) from exc
         self._records = records
         self._loaded = True
+        self._legacy = False
         if records and self._has_format_marker():
             # 链存在但重放不了：可能是旧版签名密钥问题，尝试原地重签一次
             # （必须能解密且明文哈希匹配，否则放弃，不掩盖真正的篡改）
             try:
                 native_bridge.dump(records)
-            except native_bridge.NativeError:
-                self._repair_chain()
+            except native_bridge.NativeError as exc:
+                if _is_format_mismatch(exc):
+                    # 版本/格式不对：这是"旧数据"，不是"坏数据"。
+                    # 绝不能让 repair 去重签 —— 那会把用户的原始记录改写成
+                    # 新格式，等于悄悄替他做了迁移，而且迁移出来还是错的。
+                    self._legacy = True
+                else:
+                    self._repair_chain()
         if records and not self._has_format_marker():
             # 先判断是不是已经是 v2（新版本创建的链）：能 dump 就是 v2
             try:
                 native_bridge.dump(records)
-            except native_bridge.NativeError:
-                # 也可能是「本机指纹变了，解不开」——迁移同样会失败，
-                # 此时不要静默吞掉，直接报错，否则后面所有操作都会莫名其妙地失败。
-                self._migrate_v1()
+            except native_bridge.NativeError as exc:
+                if _is_format_mismatch(exc):
+                    self._legacy = True
+                else:
+                    # 也可能是「本机指纹变了，解不开」——迁移同样会失败，
+                    # 此时不要静默吞掉，直接报错，否则后面所有操作都会莫名其妙地失败。
+                    self._migrate_v1()
             else:
                 self._write_format_marker()
         return self._records
+
+    def is_legacy(self) -> bool:
+        """这条链是不是旧版本（格式不兼容）写的。
+
+        注意与"被篡改"区分：格式不兼容是**已知的旧版本**，
+        应当提示老师手动重录；而字节被改是安全问题，走另一条提示。
+        """
+        self.load()                     # 确保已判定过
+        return bool(getattr(self, "_legacy", False))
 
     def _repair_chain(self) -> None:
         """重新签名整条链；失败则保持原样（让上层报错）。"""
@@ -132,10 +162,15 @@ class Ledger:
             os.fsync(fh.fileno())
         os.replace(tmp, self.path)
 
-        # 写完后立即用验证器复核；不通过就回滚到备份，绝不留下坏链
+        # 写完后立即复核；不通过就回滚到备份，绝不留下坏链。
+        #
+        # 用 dump 而不是 state：dump 会完整走一遍「解密 → 验签 → 解析事件 →
+        # 应用状态」，验证强度和 state 一样；而 state() 要求把 plains 按顺序
+        # 喂进去，repair 重编号之后那份 plains 与记录不再一一对应，V4 的
+        # 有状态事件（profile-rule 依赖 profile-new）会因此被误判为失败。
         plains = [base64.b64decode(x) for x in data.get("plains", [])]
         try:
-            check = native_bridge.state(new_records, plains)
+            check = native_bridge.dump(new_records)
             verified = check.get("ok") is True
         except native_bridge.NativeError:
             verified = False
@@ -256,19 +291,24 @@ class Ledger:
             self._verified = False
             return False
         self._head = base64.b64decode(data["head"])
+        # V4：所有业务数据都在 profiles 里。count/names/scores/draws 保留空值，
+        # 只为让旧的调用方不至于 KeyError —— 它们是 3.x 的遗留字段。
         self._state = {
-            "count": int(data.get("count", 0)),
-            "names": list(data.get("names", [])),
-            "scores": [int(x) for x in data.get("scores", [])],
+            "count": 0,
+            "names": [],
+            "scores": [],
+            "draws": {},
             "seq": int(data.get("seq", 0)),
             "ts": int(data.get("ts", 0) or 0),
-            "draws": {str(k): int(v) for k, v in data.get("draws", [])},
             "profiles": [
                 {
                     "id": int(p.get("id", 0)),
                     "name": str(p.get("name", "")),
                     "group_count": int(p.get("group_count", 0)),
                     "members": [int(g) for g in p.get("members", [])],
+                    "group_names": [str(n) for n in p.get("group_names", [])],
+                    "scores": [int(v) for v in p.get("scores", [])],
+                    "draw_counts": [int(v) for v in p.get("draw_counts", [])],
                 }
                 for p in data.get("profiles", [])
             ],
@@ -523,25 +563,25 @@ class Ledger:
     def import_snapshot(self, state: dict) -> bool:
         """用一份外部数据（用户已确认信任）作为本机链的新起点。
 
-        只写一条 init 事件：已有的抽签/分数从这条开始重新累计。
-        调用方必须先让用户明确确认“我信任这份数据”。
+        V4：整条链被重建成「一条新的 init + 若干 profile-* 事件」——
+        预设名字、组数、组员、组名、分数、抽取次数全部照搬，
+        换电脑后不用重录任何东西。
+
+        调用方必须先让用户明确确认"我信任这份数据"：数据来自别的密钥体系，
+        签名证明不了来源，只能靠人。
         """
-        names = [str(x) for x in state.get("names", [])]
-        scores = [int(x) for x in state.get("scores", [])]
-        count = int(state.get("count", len(scores)))
+        profiles = list(state.get("profiles") or [])
         # 关键：把【已有记录】传下去，签名器才会算出正确的 seq。
         # 传空列表会让它从 seq=1 重新开始，与现有记录撞号，整条链报废。
         existing = self.load()
         plains = self.plains() if existing else []
         try:
-            data = native_bridge.apply(existing, "init", count=count,
-                                       names=",".join(names),
-                                       scores=",".join(map(str, scores)))
+            data = native_bridge.apply(existing, "init", count=0)
         except native_bridge.NativeError as exc:
             raise LedgerError(str(exc)) from exc
         record = base64.b64decode(data["record"])
         plain = base64.b64decode(data.get("plain", ""))
-        # 验证器要复核**整条链**：只喂新记录会被判成“第一条记录的 prev 对不上”。
+        # 验证器要复核**整条链**：只喂新记录会被判成"第一条记录的 prev 对不上"。
         if not self._verify_with(existing + [record], plains + [plain]):
             raise LedgerError("verifier rejected the imported snapshot: "
                               + self._verify_error)
@@ -555,13 +595,30 @@ class Ledger:
         self._state = None                     # 强制下次重放，别拿旧状态
 
         # 预设（分组制）跟着这份数据一起搬过来：换电脑后分组不用重录。
-        # 失败不影响导入本身 —— 分数已经落地，预设没了可以再分一次。
-        try:
-            self._import_profiles(state.get("profiles") or [],
-                                  int(state.get("active_profile", 0) or 0))
-        except Exception:                                  # noqa: BLE001
-            pass
+        # 没有 profiles 的旧快照（3.x 那种只有组名/分数的）也在这里被
+        # 装成一个预设，否则导入完就是「0 组」。
+        if not profiles:
+            profiles = [self._profile_from_legacy(state)]
+        # 失败不影响导入本身 —— init 已经落地，分数没了可以再录一次；
+        # 但这里不该吞掉编程错误，所以只忽略链层面的拒绝。
+        self._import_profiles(profiles, int(state.get("active_profile", 0) or 0))
         return True
+
+    @staticmethod
+    def _profile_from_legacy(state: dict) -> dict:
+        """把 3.x 快照的「组名 + 分数」装成一个预设。"""
+        count = int(state.get("count", len(state.get("scores") or [])) or 0)
+        names = [str(x) for x in (state.get("names") or [])][:count]
+        scores = [int(x) for x in (state.get("scores") or [])][:count]
+        return {
+            "id": 1,
+            "name": "导入的预设",
+            "group_count": count,
+            "members": [],
+            "group_names": names,
+            "scores": scores,
+            "draw_counts": [],
+        }
 
     def _load_incremental(self) -> list[bytes]:
         """把磁盘上新追加的行接进内存（绕过 load() 的一次性读取缓存）。
@@ -574,16 +631,25 @@ class Ledger:
         return self.load()
 
     def _import_profiles(self, profiles: list, active: int) -> None:
-        """把外部快照里的预设写成 profile-* 事件（不覆盖已有 id）。"""
+        """把外部快照里的预设写成 profile-* 事件（连同组名、分数、次数）。
+
+        快照里的 id 会被保留：导入前写的那条 init 已经把预设表清空，
+        所以 id 是自由的，不需要重新编号，界面上的勾选/引用也不会错位。
+        """
         current = {p["id"]: p for p in self.state().get("profiles", [])}
         existing_max = max(current, default=0)
         id_map: dict[int, int] = {}
-        pending: list[tuple[dict, int]] = []
+        pending: list[tuple[dict, dict]] = []
         for offset, raw in enumerate(profiles):
-            old_id = int(raw.get("id", 0))
+            if not isinstance(raw, dict):
+                continue
+            try:
+                old_id = int(raw.get("id", 0))
+                groups = int(raw.get("group_count", 0))
+            except (TypeError, ValueError):
+                continue
             name = str(raw.get("name", "")).strip()
-            groups = int(raw.get("group_count", 0))
-            if old_id <= 0 or not name or not (1 <= groups <= 24):
+            if old_id <= 0 or not name or not (0 <= groups <= 24):
                 continue
             if old_id in current:
                 # 同 id 已在链上：这份快照的预设跳过，绝不覆盖本机的
@@ -591,36 +657,57 @@ class Ledger:
                 continue
             pid = old_id if old_id > existing_max else existing_max + 1 + offset
             id_map[old_id] = pid
-            members = [int(g) for g in (raw.get("members") or [])]
-            pending.append(({"id": pid, "name": name, "group_count": groups,
-                             "members": members}, len(members)))
+            pending.append((raw, {"id": pid, "name": name, "group_count": groups}))
+
         # 全部走 chain.apply：它负责签名、验证器复核、追加到磁盘并维护内存列表，
         # 每一步都能看到上一条的结果（profile-new 之后才允许 profile-rule）。
-        for profile, member_count in pending:
+        for raw, profile in pending:
             pid = profile["id"]
+            groups = profile["group_count"]
+            members = [int(g) for g in (raw.get("members") or [])]
+            draw_counts = [int(v) for v in (raw.get("draw_counts") or [])]
+            member_count = max(len(members), len(draw_counts))
             self.apply("profile-new", id=pid, name=profile["name"])
-            self.apply("profile-rule", id=pid, count=profile["group_count"],
+            self.apply("profile-rule", id=pid, count=groups,
                        members=member_count)
-            for index, group in enumerate(profile["members"]):
-                if 1 <= group <= profile["group_count"]:
+            for index, group in enumerate(members):
+                if 1 <= group <= groups:
                     self.apply("profile-member", id=pid, index=index, group=group)
+            # 组名：空表示用默认名，不必写事件
+            for index, name in enumerate(list(raw.get("group_names") or [])[:groups]):
+                name = str(name)
+                if name:
+                    self.apply("profile-groupname", id=pid, group=index + 1,
+                               name=name)
+            # 分数：链上只记增量，从 0 加到目标值
+            for index, value in enumerate(list(raw.get("scores") or [])[:groups]):
+                value = max(-1000000, min(1000000, int(value)))
+                if value:
+                    self.apply("profile-score", id=pid, group=index + 1,
+                               delta=value)
+            # 抽取次数：按下标还原，0 不需要事件
+            for index, total in enumerate(draw_counts):
+                if int(total) > 0:
+                    self.apply("draw", id=pid, index=index, total=int(total))
+
         mapped = id_map.get(active, 0)
+        if not mapped and pending:
+            # 没指定当前预设（或指向的预设被跳过了）：默认用第一个，
+            # 否则导入完是"有预设但没启用"，界面还是 0 组。
+            mapped = min(id_map.values()) if id_map else 0
         if mapped:
             self.apply("profile-use", id=mapped)
         self._state = None
 
     def migrate_from(self, group_count: int, names: list[str], scores: list[int]) -> bool:
-        """把现有配置写成一条 init 事件（仅当链为空时）。"""
+        """把链写成一条 init 事件（仅当链为空时）。
+
+        V4 起 init 只记「预设列表」：首次运行时没有任何预设，因此写 count=0。
+        三个参数保留是为了不改调用方；它们描述的是 3.x 的全局组名/分数，
+        在 V4 里已经没有对应概念了。
+        """
         if self.count() > 0:
             return False
-        # 注意：名字按“位置”绑定到第 i 组，所以第 1 个组名必须落在 group_1。
-        # 早期实现直接在 names 为空时插了 "None"，导致整条链的证据（group_1..N）
-        # 与后续重放解释不一致。
-        clean = [str(x) for x in names][: int(group_count)]
-        while len(clean) < int(group_count):
-            clean.append("")
-        self.apply("init", count=int(group_count),
-                   names=",".join(clean),
-                   scores=",".join(str(int(x)) for x in scores))
+        self.apply("init", count=0)
         self._write_format_marker()
         return True

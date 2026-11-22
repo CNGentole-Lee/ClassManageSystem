@@ -31,7 +31,7 @@ from namepicker import win_window
 from namepicker import theme
 from namepicker.config_store import (
     ConfigStore, app_name, migrate_legacy_plaintext, read_saved_language,
-    resolve_config_path,
+    resolve_config_path, DEFAULT_GROUP_COUNT,
 )
 from namepicker.name_engine import NameEngine
 from namepicker.floating_ball import FloatingBall
@@ -252,6 +252,9 @@ def main():
     class _ForeignData(Exception):
         """链属于另一个用户/机器，解密不可能成功。"""
 
+    class _LegacyData(Exception):
+        """链是旧版本（3.x）写的，V4 格式不兼容，只能提示手动重录。"""
+
     ledger_state = {"ok": True, "error": ""}
     security = {"level": "info", "problems": [], "ntp": {}}
     chain = None                                  # 链不可用时保持 None
@@ -269,12 +272,9 @@ def main():
         if getattr(chain, "_resigned", False):
             startup_log.record(["ledger re-signed: legacy gen>0 records repaired"])
         if chain.count() == 0:
-            # 首次运行：把现有配置写成期初事件（只做一次）
-            chain.migrate_from(
-                store.group_count,
-                [store.get_group_name(i) for i in range(1, store.group_count + 1)],
-                store.all_scores(),
-            )
+            # 首次运行：写一条 init（V4 的 init 只记「预设列表」，此刻是空的）。
+            # 默认预设随后由 ProfileStore.ensure_default 建，见下方 attach 处。
+            chain.migrate_from(0, [], [])
         problem = ""
         # 先看公钥：锚点记录的公钥与当前机器/用户的不一致，
         # 说明整条链是用另一把密钥加密的，解密必然失败 —— 这不是篡改，
@@ -289,6 +289,14 @@ def main():
                 "ledger belongs to another user/machine: "
                 f"anchor={_anchor['pubkey'][:8]}… current={_current_pub[:8]}…"])
             raise _ForeignData()
+
+        if chain.is_legacy():
+            # 旧版本（3.x）写的链：V4 的格式变了，读不了。
+            # 这是"已知的旧数据"，不是"数据被篡改"，提示要写得不一样 ——
+            # 老师看到"被篡改"会以为数据被人动过，实际只是版本升级。
+            ledger_state = {"ok": False, "legacy": True, "error": "LEGACY_DATA"}
+            startup_log.record(["ledger is from an older version (V4 cannot read it)"])
+            raise _LegacyData()
 
         if chain.count() and not chain.verify():
             problem = chain.verify_error() or "BAD_CHAIN"
@@ -339,10 +347,19 @@ def main():
         # 只有链可信时才挂上：链不可信还继续追加，会把坏链写得更长
         if ledger_state["ok"]:
             store.attach_ledger(chain)
+            # 首次运行补一个默认预设：V4 的组名与分数只活在预设里，
+            # 一条预设都没有的话主窗口就是「0 个小组」，等于开箱不可用。
+            # 只在真正第一次启动时做（见 ProfileStore.ensure_default）。
+            created = ProfileStore(chain=chain).ensure_default(
+                DEFAULT_GROUP_COUNT)
+            if created:
+                startup_log.record([f"created the default profile: id={created}"])
         else:
             startup_log.record(["ledger not attached: chain is not trustworthy"])
     except _ForeignData:
         pass                                      # 已经设置好 foreign 状态
+    except _LegacyData:
+        pass                                      # 已经设置好 legacy 状态
     except Exception as exc:                      # noqa: BLE001
         # 这里只可能是“安全模块不可用 / 程序内部错误”，不是数据被篡改。
         # 两者必须分开提示：把程序 bug 说成“数据被替换”会误导老师。
@@ -367,12 +384,18 @@ def main():
         stats.save(engine.get_draw_counts())
 
     def restore_stats() -> None:
+        # 链上按下标存次数，先把当前名单交给它，名字才翻译得成下标。
+        stats.set_names(engine.get_names())
         engine.set_draw_counts(stats.load())
 
     def apply_active_profile() -> None:
         """把当前预设的「人 → 组」映射交给引擎；没有预设就清空（纯个人权重）。"""
-        profile = profile_store.active()
         current = engine.get_names()
+        profile = profile_store.active()
+        # 名单长度变了就先对齐：次数表按下标存，数组不够长的话，
+        # 新下标上的 draw 事件会被静默丢弃（公平计数会悄悄丢）。
+        if profile is not None and profile_store.sync_roster(len(current), profile["id"]):
+            profile = profile_store.active()
         if profile and profile["group_count"] > 0:
             member_of = {}
             for index, group in enumerate(profile["members"]):
@@ -381,6 +404,8 @@ def main():
             engine.set_group_map(member_of)
         else:
             engine.set_group_map({})
+        # 次数是「每个预设各一份」：换预设就是换一整套公平记录。
+        restore_stats()
         refresh_profile_menu()
 
     def refresh_profile_menu() -> None:
@@ -457,6 +482,17 @@ def main():
             tr("⚠ 检测到数据被删除或替换，已从安全副本恢复（{e}）。",
                "⚠ Data deletion or replacement detected; restored from a safe copy ({e}).",
                e=ledger_state["error"]),
+            0,
+        )
+    elif ledger_state.get("legacy"):
+        # 旧版本数据：不是被篡改，是格式不兼容。别让老师以为数据被人动过。
+        main_win.statusBar().showMessage(
+            tr("⚠ 检测到旧版本（3.x）的数据，本版本无法读取。"
+               "请在「预设」里重新录入各小组名称与分数。原文件已保留为 "
+               "Data/ledger.esc。",
+               "⚠ Data from an older version (3.x) was found and cannot be read. "
+               "Re-enter the group names and scores under Profiles. The original "
+               "file is kept as Data/ledger.esc."),
             0,
         )
     elif ledger_state.get("foreign"):
@@ -565,7 +601,27 @@ def main():
     ball.open_panel_requested.connect(main_win.activateWindow)
 
     # 右键点击悬浮球 → 打开小组积分面板
-    ball.points_panel_requested.connect(points_win.show_and_activate)
+    def open_points_panel() -> None:
+        """打开积分面板；当前预设没启用小组制时直接拒绝，不打开。
+
+        V4 起组数由预设决定：0 组意味着这节课不计分，
+        与其打开一个全灰的面板，不如当场说清楚为什么打不开。
+        """
+        profile = profile_store.active()
+        if not points_win.apply_profile(profile):
+            QMessageBox.information(
+                main_win,
+                tr("积分面板不可用", "Points panel unavailable"),
+                tr("当前预设「{n}」未启用小组制。\n\n"
+                   "要计分请先在「预设」里把组数改成 1 以上。",
+                   "The current profile \"{n}\" does not use groups.\n\n"
+                   "Set the group count to 1 or more under Profiles to score.",
+                   n=(profile or {}).get("name", "")),
+            )
+            return
+        points_win.show_and_activate()
+
+    ball.points_panel_requested.connect(open_points_panel)
 
     # 右键 → 预设：课前点一下换一套分组规则，立即生效、不用重启
     def switch_profile(pid: int) -> None:
@@ -577,10 +633,26 @@ def main():
                 tr("切换预设失败：{e}", "Could not switch profile: {e}", e=exc), 0)
             return
         apply_active_profile()
-        name = (profile_store.get(int(pid)) or {}).get("name") if pid else ""
+        profile = profile_store.active()
+        name = (profile or {}).get("name", "") if pid else ""
+
+        # 积分面板跟着换：组数不同就重建卡片；0 组就关掉
+        if not points_win.apply_profile(profile) and points_win.isVisible():
+            points_win.hide()
+
         main_win.statusBar().showMessage(
             tr("已切换预设：{n}", "Profile: {n}", n=name) if pid
             else tr("本次不分组", "No groups this lesson"), 4000)
+        # 切换预设会换掉整套分数与组名，必须留痕
+        try:
+            if profile:
+                store.log_operation(
+                    f"切换到预设：{name}（{profile.get('group_count', 0)} 组）",
+                    f"switch profile: {name} ({profile.get('group_count', 0)} groups)")
+            else:
+                store.log_operation("切换到：不使用预设", "switch profile: none")
+        except Exception:                              # noqa: BLE001
+            pass
 
     ball.profile_selected.connect(switch_profile)
 

@@ -418,10 +418,9 @@ class ProfileDialog(QDialog):
         try:
             profile = self._store.get(self._current_id) or {}
             if group_count <= 0:
-                # 0 = 不启用小组制。C++ 侧组数下限是 1（那个下限是给积分面板用的），
-                # 所以这里落成「1 组 + 全员未分组」：行为上等价，且不改原生模块。
-                self._store.set_rule(self._current_id, 1, 0)
-                self._store.assign_bulk(self._current_id, {})
+                # 0 组 = 不启用小组制（C++ 侧接受 0，见 OP_PROFILE_RULE）。
+                # 名单槽位仍按人数保留：抽取次数按下标存，槽位没了次数就写不进去。
+                self._store.set_rule(self._current_id, 0, len(names))
             else:
                 if profile.get("group_count") != group_count or \
                         len(profile.get("members", [])) != len(names):

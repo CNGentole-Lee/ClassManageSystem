@@ -799,12 +799,16 @@ class MainWindow(QMainWindow):
         try:
             if getattr(store, "_ledger", None) is not None:
                 store._ledger.import_snapshot(data)
-            store.set_group_count(data["count"])
-            for i, name in enumerate(data["names"], 1):
-                if name:
-                    store.set_group_name(i, name)
-            for i, score in enumerate(data["scores"], 1):
-                store.set_score(i, score)
+            # V4：快照带 profiles 时，预设（含组名、分数、次数）已经随导入
+            # 写进链了；再按顶层的老字段套一遍，只会覆盖刚导入的当前预设。
+            # 只有 3.x 那种没有 profiles 的快照才需要走这几步。
+            if not data.get("profiles"):
+                store.set_group_count(data["count"])
+                for i, name in enumerate(data["names"], 1):
+                    if name:
+                        store.set_group_name(i, name)
+                for i, score in enumerate(data["scores"], 1):
+                    store.set_score(i, score)
             store.save()
         except Exception as exc:                     # noqa: BLE001
             QMessageBox.warning(self, tr("导入失败", "Import failed"), str(exc))

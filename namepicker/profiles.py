@@ -134,15 +134,37 @@ class ProfileStore:
         self._apply("profile-name", id=int(pid), name=name)
 
     def set_rule(self, pid: int, group_count: int, member_count: int) -> None:
-        """设置组数，并预留 member_count 个组员槽位。
+        """设置组数，并预留 member_count 个名单槽位。
 
+        group_count = 0 表示这个预设不启用小组制。
         缩小 member_count 时，多出来的下标由 C++ 侧截断；指向已不存在
         组的分配就地清 0。
         """
-        group_count = max(1, int(group_count))
+        group_count = max(0, int(group_count))
         member_count = max(0, int(member_count))
         self._apply("profile-rule", id=int(pid),
                     count=group_count, members=member_count)
+
+    def sync_roster(self, name_count: int, pid: int | None = None) -> bool:
+        """让预设的成员表/次数表跟上名单长度；返回是否真的改了。
+
+        为什么必须有这一步
+            链上的抽取次数是 ``draw_counts[名单下标]``。名单变长以后，
+            新下标在数组里还不存在，写入时会被 C++ 判为越界**静默丢弃** ——
+            公平计数就这么无声地丢了。每次名单加载后对齐一次，它才不会丢。
+
+            增长时原有次数保留（resize 只补 0），缩短时尾部截断，
+            与「名单变短丢越界项」的既有语义一致。
+        """
+        profile = self._pick(pid)
+        if profile is None:
+            return False
+        count = max(0, int(name_count))
+        if (len(profile.get("members", [])) == count
+                and len(profile.get("draw_counts", [])) == count):
+            return False
+        self.set_rule(profile["id"], int(profile.get("group_count", 0)), count)
+        return True
 
     def assign(self, pid: int, index: int, group: int) -> None:
         """给一个名单下标指派组号（0 = 未分组）。"""
@@ -177,6 +199,125 @@ class ProfileStore:
     def use(self, pid: int) -> None:
         """切换当前预设；传 0 表示不分组。"""
         self._apply("profile-use", id=int(pid))
+
+    def ensure_default(self, group_count: int = 6) -> int:
+        """首次运行：一条预设都没有时，建一个默认的（默认 6 组）并设为当前。
+
+        为什么需要它
+            V4 起组名与分数只存在于预设里。全新安装若不做这件事，
+            老师打开程序看到的是「0 个小组」，第一反应是程序坏了 ——
+            而 V3 的开箱状态是 6 个小组。这里只是把这份体验补回来。
+
+        什么时候**不**做
+            · 已经有预设 —— 绝不覆盖老师的选择
+            · 链上不止一条 init —— 说明曾经有过预设（哪怕删光了），
+              老师是主动删的，不该每次启动都给他长回来
+
+        返回新建的预设 id；没建则返回 0。
+        """
+        if self.chain is None:
+            return 0
+        if self._profiles():
+            return 0
+        try:
+            if self.chain.count() > 1:
+                return 0
+        except Exception:                              # noqa: BLE001
+            return 0
+        try:
+            pid = self.create(tr("默认预设", "Default"))
+            self.set_rule(pid, int(group_count), 0)
+            self.use(pid)
+        except ProfileError:
+            return 0
+        return pid
+
+    # --- 每个预设自己的分数 / 组名 / 抽取次数（V4）---
+
+    def require_active(self) -> dict:
+        """取当前预设；没有就抛 ProfileError，调用方据此拒绝操作。"""
+        profile = self.active()
+        if profile is None:
+            raise ProfileError("no active profile")
+        return profile
+
+    def scores(self, pid: int | None = None) -> list[int]:
+        """某个预设（默认当前）的各组分数。"""
+        profile = self._pick(pid)
+        return list(profile.get("scores", [])) if profile else []
+
+    def get_score(self, group: int, pid: int | None = None) -> int:
+        """第 group 组（1 起）的分数；越界返回 0。"""
+        scores = self.scores(pid)
+        index = int(group) - 1
+        return int(scores[index]) if 0 <= index < len(scores) else 0
+
+    def set_score(self, group: int, value: int, pid: int | None = None) -> None:
+        """把第 group 组设为 value（内部换算成增量，链上只记 delta）。"""
+        target = pid if pid is not None else self.active_id()
+        if not target:
+            raise ProfileError("no active profile")
+        current = self.get_score(group, target)
+        delta = int(value) - current
+        if delta == 0:
+            return
+        self._apply("profile-score", id=int(target), group=int(group), delta=delta)
+
+    def add_score(self, group: int, delta: int, pid: int | None = None) -> None:
+        """第 group 组加减 delta 分。"""
+        target = pid if pid is not None else self.active_id()
+        if not target:
+            raise ProfileError("no active profile")
+        if int(delta) == 0:
+            return
+        self._apply("profile-score", id=int(target), group=int(group), delta=int(delta))
+
+    def reset_scores(self, pid: int | None = None) -> None:
+        """把某个预设（默认当前）的分数全部清零。"""
+        target = pid if pid is not None else self.active_id()
+        if not target:
+            raise ProfileError("no active profile")
+        self._apply("profile-clear", id=int(target))
+
+    def group_names(self, pid: int | None = None) -> list[str]:
+        """某个预设（默认当前）的组名；空字符串表示用默认名。"""
+        profile = self._pick(pid)
+        return list(profile.get("group_names", [])) if profile else []
+
+    def get_group_name(self, group: int, pid: int | None = None) -> str:
+        """第 group 组（1 起）的自定义组名；没设过返回空串。"""
+        names = self.group_names(pid)
+        index = int(group) - 1
+        return names[index] if 0 <= index < len(names) else ""
+
+    def set_group_name(self, group: int, name: str, pid: int | None = None) -> None:
+        """给第 group 组改名；空字符串表示恢复默认组名。"""
+        target = pid if pid is not None else self.active_id()
+        if not target:
+            raise ProfileError("no active profile")
+        name = "" if name is None else str(name)
+        if len(name.encode("utf-8")) > NAME_BYTES_MAX:
+            raise ProfileError("bad group name")
+        self._apply("profile-groupname", id=int(target),
+                    group=int(group), name=name)
+
+    def draw_counts(self, pid: int | None = None) -> list[int]:
+        """某个预设（默认当前）每个名单下标的累计抽取次数。"""
+        profile = self._pick(pid)
+        return list(profile.get("draw_counts", [])) if profile else []
+
+    def record_draw(self, index: int, total: int, pid: int | None = None) -> None:
+        """记一次抽取：名单下标 index 的累计次数变成 total。
+
+        次数只能前进（C++ 侧会拒绝倒退），所以这里直接写新的累计值。
+        """
+        target = pid if pid is not None else self.active_id()
+        if not target:
+            raise ProfileError("no active profile")
+        self._apply("draw", id=int(target), index=int(index), total=int(total))
+
+    def _pick(self, pid: int | None) -> dict | None:
+        return self.get(int(pid)) if pid else self.active()
 
     # --- 界面辅助 ---
 
