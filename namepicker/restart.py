@@ -12,6 +12,7 @@
 import os
 import subprocess
 import sys
+import time
 
 from PySide6.QtCore import QProcess
 
@@ -75,3 +76,37 @@ def restart(argv: list[str] | None = None) -> bool:
     except Exception:
         pass
     return _fallback(program, arguments)
+
+
+def wait_handover(timeout: float = RETRY_SECONDS) -> bool:
+    """等新进程把单实例套接字接过去；True = 超时前交接成功。
+
+    为什么不能固定 sleep：
+        旧进程 release() 之后，SERVER_NAME 上就没有监听者了；新进程
+        try_acquire() 里 listen 成功的那一刻，这个套接字才会重新可连。
+        所以「能连上」就是「新进程已经拿到单实例锁」的准确信号 —— 比盲等
+        若干秒既快又可靠，慢机器上也不会误判。
+
+    为什么旧进程必须等：
+        旧进程一 release 就 quit 的话，新进程的 try_acquire() 探测时旧进程
+        可能还在收尾，于是判定「已有实例」→ 中/英两个实例长期并存。
+    """
+    from PySide6.QtNetwork import QLocalSocket
+    from namepicker.single_instance import SERVER_NAME
+
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while time.monotonic() < deadline:
+        socket = QLocalSocket()
+        socket.connectToServer(SERVER_NAME)
+        connected = socket.waitForConnected(200)
+        if connected:
+            # 写一个字节：新进程的 _on_new_connection 里 waitForReadyRead
+            # 会立刻返回，不必干等 500ms。
+            socket.write(b"hi")
+            socket.waitForBytesWritten(200)
+        socket.abort()
+        socket.close()
+        if connected:
+            return True
+        time.sleep(0.05)
+    return False

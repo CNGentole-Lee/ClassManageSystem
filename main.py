@@ -482,10 +482,17 @@ def main():
             )
 
     def restart_app() -> None:
-        """切换语言后立即重启：先释放单实例锁，再拉起新进程，最后退出自己。"""
+        """切换语言后立即重启：先释放单实例锁，再拉起新进程，最后退出自己。
+
+        退出前必须等新进程真的把单实例锁接过去（wait_handover）。旧进程
+        一 release 就 quit 的话，新进程 try_acquire() 探测时旧进程还在收尾，
+        会判定「已有实例」而不再监听 —— 结果中/英两个实例长期并存。
+        """
         single.release()
         started = restart_service.restart()
-        startup_log.record([f"restart requested -> started={started}"])
+        handover = restart_service.wait_handover() if started else False
+        startup_log.record([f"restart requested -> started={started}, "
+                            f"handover={handover}"])
         if not started:
             QMessageBox.warning(
                 main_win,
@@ -494,6 +501,10 @@ def main():
                    "Could not restart automatically. Please close and reopen the app."),
             )
             return
+        if not handover:
+            # 新进程没在超时内接管：仍旧退出旧进程 —— 宁可短暂没有窗口，
+            # 也不要中/英两个实例长期并存。排查线索留在 startup.log。
+            startup_log.record(["restart: handover timeout; quitting anyway"])
         app.quit()
 
     def save_language(code: str) -> None:

@@ -284,6 +284,23 @@ def main() -> int:
             holder.terminate()
         holder.wait(timeout=5)
 
+    print("\n--- 8a2. Old instance waits for the new one to take over ---")
+    old = SingleInstance()
+    check("old instance holds the lock before restarting", old.try_acquire() is True)
+    old.release()
+    check("nobody listens right after the old instance releases",
+          restart.wait_handover(0.5) is False)
+    new = SingleInstance()
+    acquired_new = new.try_acquire()
+    _t0 = _time.monotonic()
+    handed = restart.wait_handover(3.0)
+    _dt = _time.monotonic() - _t0
+    check("new instance acquires once the old one released", acquired_new is True)
+    check("wait_handover sees the new owner", handed is True)
+    check("wait_handover returns as soon as the new owner listens",
+          _dt < 1.5, f"{_dt:.2f}s")
+    new.release()
+
     print("\n--- 8b. Dialogs must not block the ball (issue: license freezes drawing) ---")
     from PySide6.QtTest import QTest
     from namepicker import win_window
