@@ -23,6 +23,10 @@ from . import about_dialog, dialogs, i18n, theme, wipe_dialog
 from .config_store import app_name
 from .i18n import tr
 
+#: 开机自启动时附带的参数：只出悬浮球，不弹管理面板。
+#: 老师开机是为了上课，不是改配置；面板要用时点悬浮球右键。
+SILENT_FLAG = "--silent"
+
 
 class MainWindow(QMainWindow):
     """Main management window for loading names, viewing history, settings."""
@@ -517,7 +521,7 @@ class MainWindow(QMainWindow):
                 # Detect PyInstaller bundle vs source run
                 if getattr(sys, 'frozen', False):
                     # Running as bundled EXE — use the EXE directly
-                    command = f'"{sys.executable}"'
+                    command = f'"{sys.executable}" {SILENT_FLAG}'
                 else:
                     # Running from source — use pythonw.exe to avoid console
                     pythonw = os.path.join(
@@ -525,7 +529,7 @@ class MainWindow(QMainWindow):
                     )
                     if not os.path.isfile(pythonw):
                         pythonw = sys.executable  # fallback
-                    command = f'"{pythonw}" "{self._app_path}"'
+                    command = f'"{pythonw}" "{self._app_path}" {SILENT_FLAG}'
 
                 key = winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER, self.REG_RUN_KEY,
@@ -553,10 +557,14 @@ class MainWindow(QMainWindow):
     # --- 开机自启动：macOS 分支（Windows 分支见上面的 winreg 代码）---
 
     def _autostart_command(self) -> list:
-        """自启动命令：打包后用可执行文件，源码运行用当前解释器 + main.py。"""
+        """自启动命令：打包后用可执行文件，源码运行用当前解释器 + main.py。
+
+        带 ``--silent``：开机时只出悬浮球，不弹管理面板。
+        老师开机是为了上课，不是要改配置；面板要用时点悬浮球右键再打开。
+        """
         if getattr(sys, 'frozen', False):
-            return [sys.executable]
-        return [sys.executable, self._app_path]
+            return [sys.executable, SILENT_FLAG]
+        return [sys.executable, self._app_path, SILENT_FLAG]
 
     def _macos_agent_path(self) -> str:
         return os.path.join(self.MACOS_AGENT_DIR, self.AUTOSTART_LABEL + ".plist")

@@ -11,10 +11,10 @@
       下标由 C++ 回放丢弃，这里如实标出「未分配」，而不是假装还记着。
 """
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QInputDialog, QLabel,
-    QMessageBox, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QInputDialog,
+    QLabel, QMessageBox, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from . import dialogs, theme
@@ -23,6 +23,10 @@ from .profiles import ProfileError
 
 #: 组数上限（与 C++ 侧的 MAX_GROUPS 一致）
 MAX_GROUPS = 24
+
+#: 「未分组」按钮宽度：四个汉字在 13px 字号下约 52px，留够内边距，
+#: 否则文字会被裁成「未分」—— 用户就找不到取消分组的入口了。
+CLEAR_BUTTON_WIDTH = 76
 
 
 class ProfileDialog(QDialog):
@@ -83,13 +87,21 @@ class ProfileDialog(QDialog):
                                       "Spread the current names evenly across the groups"))
         self._split_btn.clicked.connect(self._on_split)
         rule.addWidget(self._split_btn)
-        rule.addStretch(1)
+        rule.addSpacing(12)
+        # 人数汇总单独一行放，避免和「均分」按钮挤在一起把文字压扁
+        rule.addWidget(QLabel(tr("人数：", "Sizes:")))
         self._sizes_label = QLabel("")
         rule.addWidget(self._sizes_label)
+        rule.addStretch(1)
         layout.addLayout(rule)
 
-        hint = QLabel(tr("点组号按钮给该学生分组；数字 = 组号，0 = 不分。",
-                         "Click a number to put that student in a group; 0 = unassigned."))
+        # 操作说明：一行字讲清楚每个按钮是干什么的
+        hint = QLabel(tr("点「1 2 3 …」把这个学生分到那一组；点「未分组」把他移出所有组"
+                         "（未分组的人不参与组间均衡）。左侧「未分组 / 第 N 组」是当前状态。",
+                         "Click a number to put a student in that group; click "
+                         "\"Ungrouped\" to remove them from every group (ungrouped "
+                         "students are ignored by group balancing). The label on the "
+                         "left shows the current state."))
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color: {theme.c('faint')}; font-size: 12px;")
         layout.addWidget(hint)
@@ -171,6 +183,9 @@ class ProfileDialog(QDialog):
             item = self._rows_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # 先脱离父对象再排队删除：只调 deleteLater() 的话，
+                # findChildren 在重建过程中仍会看到旧行，反复重建会不断堆积。
+                widget.setParent(None)
                 widget.deleteLater()
         self._group_buttons = []
 
@@ -188,24 +203,58 @@ class ProfileDialog(QDialog):
             row_layout.setSpacing(4)
 
             label = QLabel(f"{index + 1}. {name}")
-            label.setMinimumWidth(180)
+            label.setMinimumWidth(150)
             row_layout.addWidget(label, 1)
 
-            current = self._pending.get(index, 0)
-            for group in range(0, group_count + 1):
-                button = QPushButton("—" if group == 0 else str(group))
+            # 明确写出「这个人现在在第几组」，不要让人从按钮高亮去猜
+            current = int(self._pending.get(index, 0))
+            state = QLabel(self._group_text(current))
+            state.setFixedWidth(72)
+            state.setAlignment(Qt.AlignCenter)
+            state.setStyleSheet(
+                f"color: {theme.c('success') if current else theme.c('faint')};"
+                " font-size: 12px;")
+            row_layout.addWidget(state)
+
+            group_box = QButtonGroup(row)
+            group_box.setExclusive(True)
+            for group in range(1, group_count + 1):
+                button = QPushButton(str(group))
                 button.setCheckable(True)
                 button.setChecked(group == current)
-                button.setFixedWidth(34)
+                button.setFixedWidth(30)
+                button.setToolTip(tr("分到第 {g} 组", "Put in group {g}", g=group))
                 button.clicked.connect(
                     lambda _checked=False, i=index, g=group: self._assign(i, g))
+                group_box.addButton(button)
                 row_layout.addWidget(button)
-                if group > 0:
-                    self._group_buttons.append(button)
+
+            # 取消分组：单独一个「未分组」，不用再猜哪个按钮是取消。
+            # 宽度必须够 —— 四个字被裁掉一半就没人认得出来。
+            clear = QPushButton(tr("未分组", "Ungroup"))
+            clear.setFixedWidth(CLEAR_BUTTON_WIDTH)
+            clear.setCheckable(True)
+            clear.setChecked(current == 0)
+            clear.setToolTip(tr("取消分组（不参与组权重）",
+                                "Remove from any group (ignored by group weighting)"))
+            clear.clicked.connect(lambda _checked=False, i=index: self._assign(i, 0))
+            group_box.addButton(clear)
+            row_layout.addWidget(clear)
 
             self._rows_layout.addWidget(row)
         self._rows_layout.addStretch(1)
         self._update_sizes()
+
+    @staticmethod
+    def _group_text(group: int) -> str:
+        if group <= 0:
+            return tr("未分组", "No group")
+        return tr("第 {g} 组", "Group {g}", g=group)
+
+    def _set_status(self, text: str, ok: bool = True) -> None:
+        self._sizes_label.setText(text)
+        self._sizes_label.setStyleSheet(
+            f"color: {theme.c('success') if ok else theme.c('warning')}; font-size: 12px;")
 
     def _assign(self, index: int, group: int) -> None:
         if group <= 0:
@@ -228,8 +277,11 @@ class ProfileDialog(QDialog):
         unassigned = counts.get(0, 0)
         text = " / ".join(parts)
         if unassigned:
-            text += tr("  ·  未分配 {n} 人", "  ·  unassigned {n}", n=unassigned)
-        self._sizes_label.setText(text)
+            text += tr("  ·  未分组 {n} 人", "  ·  ungrouped {n}", n=unassigned)
+            # 有人没分组时给个提醒色：这些人不参与组权重
+            self._set_status(text, ok=False)
+        else:
+            self._set_status(text, ok=True)
 
     # --- 动作 ---
 

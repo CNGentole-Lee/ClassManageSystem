@@ -657,8 +657,14 @@ def main():
     engine.history_cleared.connect(main_win.on_history_cleared)
 
     # --- Show ---
+    # 开机自启动带 --silent：只出悬浮球，不弹管理面板。
+    # 老师开机是为了上课，面板要用时点悬浮球右键再打开。
+    _silent = "--silent" in sys.argv
     ball.show()
-    main_win.show()
+    if _silent:
+        startup_log.record(["started with --silent: ball only, panel stays hidden"])
+    else:
+        main_win.show()
 
     # 更新检查：窗口出来之后再查，失败静默（学校网络常访问不到 CDN）
     _start_update_check(main_win)
