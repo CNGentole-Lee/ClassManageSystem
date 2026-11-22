@@ -7,8 +7,8 @@ Do not edit by hand: rebuild, then re-run the tool.
 # platform -> role -> (binary name, sha256 hex, size in bytes, backup file name)
 NATIVE = {
     "darwin": {
-        "sign": ("cmd_sign", "706648ceeb7b7fae61509af68ce20667b1b7dc629556f617ea409bacb9031cd0", 307616, "cmd_sign.gz"),
-        "verify": ("cmd_verify", "c8bfab7a47ad0a8edb56ba1595d6d1dbca911fe44a121b4896262453e38f9473", 190064, "cmd_verify.gz"),
+        "sign": ("cmd_sign", "97540660f16d5686da6aa6ef6fe9aef75758981108ea0da717af1a1082c03ba2", 307616, "cmd_sign.gz"),
+        "verify": ("cmd_verify", "7ea73275577e8eb85e529bd2bb4cd2856bccd7112511be8c430c9df6a4341889", 190064, "cmd_verify.gz"),
     },
     "win32": {
         "sign": ("cmd_sign.exe", "d12e9f48e493d07dae1bb088c4bd5561cf1d8271d20ab4c411338e2a4408746e", 834560, "cmd_sign.exe.gz"),
