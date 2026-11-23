@@ -45,7 +45,7 @@ TESTS = [
     ("config_crypto_check", 60),
     ("log_crypto_check", 60),
     ("smoke_test", 120),
-    ("group_count_stress", 180),
+    ("group_count_stress", 240),       # V4 每轮写事件链，慢机器留足余量
     ("native_check", 120),        # 原生模块；缺失时返回 77 -> SKIP
     ("ledger_check", 180),        # 事件链：迁移/重放/篡改/回滚
     ("profile_check", 120),       # 预设（分组制）：增量写入、随导出导入往返

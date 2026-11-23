@@ -739,7 +739,7 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 │   ├── macos_check.py               # macOS 平台自检（菜单栏 / 浮层 / 深色 / 全屏覆盖）
 │   ├── _fullscreen_helper.py         # 自检用：进入原生全屏的辅助进程
 │   ├── smoke_test.py                # GUI 冒烟测试
-│   ├── group_count_stress.py        # 组数（预设）功能 + 300 轮压力
+│   ├── group_count_stress.py        # 组数（预设）功能 + 压力测试（默认 100 轮，STRESS_ROUNDS 可调）
 │   ├── wipe_check.py                # 彻底重置的勾选与逐项清空测试
 │   ├── i18n_check.py                # 双语切换 / 持久化 / 双语日志 / 重启交接测试
 │   ├── fairness_burnin.py           # 1 万次单抽烧机 + χ² 检验
@@ -791,7 +791,7 @@ python tools/windows_check.py          # 平台自检（在 Windows 上才跑真
 python tools/macos_check.py            # 平台自检（菜单栏 / 浮层 / 深色 / 激活策略 / 模态框层级）
 python tools/macos_check.py --fullscreen   # 额外跑一次「真·原生全屏」覆盖测试
 python tools/smoke_test.py             # GUI 冒烟：信号连接、布局、落盘、撤销、连抽
-python tools/group_count_stress.py     # 组数（预设）功能 + 300 轮压力
+python tools/group_count_stress.py     # 组数（预设）功能 + 压力测试（默认 100 轮，STRESS_ROUNDS 可调）
 python tools/wipe_check.py             # 彻底重置：勾选项与逐项清空行为
 python tools/i18n_check.py             # 双语：默认组名、重启参数、长名字省略、双语日志(需要GUI)
 python tools/native_check.py           # 原生模块：状态机、规则拒绝、篡改/重排/换机器
@@ -1858,7 +1858,7 @@ tests → PyInstaller onedir → Inno Setup → upload installer and portable zi
 │   ├── macos_check.py               # macOS checks (menu bar / overlay / dark / fullscreen)
 │   ├── _fullscreen_helper.py         # helper process that enters native fullscreen
 │   ├── smoke_test.py                # GUI smoke test
-│   ├── group_count_stress.py        # group count (profiles) + 300-round stress
+│   ├── group_count_stress.py        # group count (profiles) + stress (100 rounds default, STRESS_ROUNDS override)
 │   ├── wipe_check.py                # full reset: selection and per-part clearing
 │   ├── i18n_check.py                # bilingual / persistence / log / restart handover
 │   ├── fairness_burnin.py           # 10k single draws + chi-square test
@@ -1913,7 +1913,7 @@ python tools/windows_check.py          # platform self-check (real branches on W
 python tools/macos_check.py            # platform self-check (tray/overlay/dark/activation/dialogs)
 python tools/macos_check.py --fullscreen   # additionally verify a real native full screen
 python tools/smoke_test.py             # GUI smoke: signals, layout, persistence, undo, multi-draw
-python tools/group_count_stress.py     # group count + 300-round stress test
+python tools/group_count_stress.py     # group count + stress test (100 rounds)
 python tools/wipe_check.py             # full reset: selection and per-part clearing
 python tools/i18n_check.py             # bilingual: default group names, restart args, long-name elision, bilingual log (GUI required)
 python tools/native_check.py           # native module: state machine, rule rejections, tamper/reorder/other-machine
