@@ -78,6 +78,36 @@ def restart(argv: list[str] | None = None) -> bool:
     return _fallback(program, arguments)
 
 
+def hide_all_windows() -> int:
+    """把本进程所有顶层窗口（含悬浮球）立刻从屏幕上摘掉。
+
+    为什么重启时要做这件事：
+        app.quit() 只是「请求退出事件循环」，窗口不会当场销毁；退出路径上的
+        save_settings / points_win.save_now / save_stats 都可能较慢（写事件链、
+        调原生签名）。这段时间旧窗口仍然 visible —— 新进程已经显示了新语言的
+        球，旧球还挂在屏幕上，用户看到的就是「中英两个实例长期共存」。
+        语言与配置在 language_saved 信号里已经同步落盘，这里隐藏窗口不丢数据。
+
+    返回被隐藏的窗口数，便于测试断言。
+    """
+    try:
+        from PySide6.QtWidgets import QApplication
+    except Exception:                                  # noqa: BLE001
+        return 0
+    count = 0
+    for widget in QApplication.topLevelWidgets():
+        if not widget.isVisible():
+            continue
+        try:
+            widget.hide()
+            count += 1
+        except Exception:                              # noqa: BLE001
+            pass
+    if count:
+        QApplication.processEvents()                   # 让 hide 立刻生效
+    return count
+
+
 def wait_handover(timeout: float = RETRY_SECONDS) -> bool:
     """等新进程把单实例套接字接过去；True = 超时前交接成功。
 

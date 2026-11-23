@@ -302,6 +302,21 @@ def main() -> int:
           _dt < 1.5, f"{_dt:.2f}s")
     new.release()
 
+    print("\n--- 8a3. Restart hides the old windows (no two balls on screen) ---")
+    # app.quit() 不会当场销毁窗口；退出路径的保存较慢时，旧语言的球会留在
+    # 屏幕上和新球并存。restart_app 交接后调用 hide_all_windows 把它们摘掉。
+    from PySide6.QtWidgets import QWidget as _QWidget
+    from namepicker.floating_ball import FloatingBall as _Ball
+    _wins = [_QWidget(), _Ball()]
+    for _w in _wins:
+        _w.show()
+    app.processEvents()
+    check("windows are visible before restart", all(w.isVisible() for w in _wins))
+    _hidden = restart.hide_all_windows()
+    check("hide_all_windows hides every top-level window",
+          _hidden >= len(_wins) and not any(w.isVisible() for w in _wins),
+          f"hidden={_hidden} visible={[w.isVisible() for w in _wins]}")
+
     print("\n--- 8b. Dialogs must not block the ball (issue: license freezes drawing) ---")
     from PySide6.QtTest import QTest
     from namepicker import win_window

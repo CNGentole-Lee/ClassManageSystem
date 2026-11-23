@@ -575,6 +575,11 @@ def main():
             # 新进程没在超时内接管：仍旧退出旧进程 —— 宁可短暂没有窗口，
             # 也不要中/英两个实例长期并存。排查线索留在 startup.log。
             startup_log.record(["restart: handover timeout; quitting anyway"])
+
+        # 先摘掉本进程所有窗口（含悬浮球）再退出：app.quit() 不会当场销毁
+        # 窗口，退出路径的保存又较慢，旧球会和新球并存好一会儿（详见
+        # restart.hide_all_windows 的说明）。语言已提前落盘，隐藏不丢数据。
+        restart_service.hide_all_windows()
         app.quit()
 
     def save_language(code: str) -> None:
