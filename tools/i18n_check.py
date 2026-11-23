@@ -331,6 +331,39 @@ def main() -> int:
     finally:
         restart._exit = _orig_exit
 
+    print("\n--- 8a5. Legacy-data upgrade notice: bilingual, 10s gate, once ---")
+    from namepicker import legacy_dialog as ld
+
+    # 用短等待验证倒计时门禁逻辑（真实弹窗用 10 秒）
+    dlg = ld.LegacyDataDialog(None, wait_seconds=2)
+    check("notice starts with the close button disabled", not dlg.can_close())
+    check("button label shows both languages while counting down",
+          "/" in dlg._button.text(), dlg._button.text())
+    dlg._tick()
+    check("still locked before the wait elapses", not dlg.can_close(),
+          f"left={dlg.seconds_left()}")
+    dlg._tick()
+    check("close button unlocks after the wait", dlg.can_close(),
+          f"left={dlg.seconds_left()}")
+    check("unlocked label is bilingual", "/" in dlg._button.text(),
+          dlg._button.text())
+
+    # 双语正文：中文和 English 两块都在
+    from PySide6.QtWidgets import QLabel as _Label
+    dlg_text = "\n".join(w.text() for w in dlg.findChildren(_Label))
+    check("notice body contains Chinese", "旧版本" in dlg_text)
+    check("notice body contains English", "older version" in dlg_text)
+    dlg.close()
+
+    # 只弹一次：用临时 QSettings 验证 has_shown / mark_shown
+    st = QSettings("NamePicker", "i18n_check_legacy")
+    st.clear()
+    check("legacy notice not marked initially", ld.has_shown(st) is False)
+    ld.mark_shown(st)
+    st.sync()
+    check("legacy notice remembered after marking", ld.has_shown(st) is True)
+    st.clear()
+
     print("\n--- 8b. Dialogs must not block the ball (issue: license freezes drawing) ---")
     from PySide6.QtTest import QTest
     from namepicker import win_window

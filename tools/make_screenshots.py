@@ -30,6 +30,10 @@ from _settings_isolation import isolate_settings  # noqa: E402
 
 isolate_settings()
 
+# V4：组名/分数只存在于事件链的预设里。直接用 ConfigStore(path) 是 0 组，
+# 截图会是一片空白卡片；必须用夹具建好默认预设再挂到 ConfigStore。
+from _v4_fixture import open_store  # noqa: E402
+
 from PySide6.QtCore import QRectF, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -159,7 +163,7 @@ def shot_long_names(app, tmp: str) -> None:
     """超长组名：卡片按宽度省略，tooltip 保留全名（README 只引用英文版）。"""
     if not LANG.startswith("en"):
         return
-    store = ConfigStore(os.path.join(tmp, "long", "config.ini"))
+    store = open_store(os.path.join(tmp, "long", "config.ini"), groups=6)
     for i, name in enumerate(LONG_GROUP_NAMES, 1):
         store.set_group_name(i, name)
     for group, score in ((1, 14), (2, 5), (3, 4), (4, -2)):
@@ -189,7 +193,7 @@ def main() -> int:
     tmp = tempfile.mkdtemp(prefix="cm_shots_")
 
     # 造一份看起来像真实课堂的数据（临时目录，不影响你的真实数据）
-    store = ConfigStore(os.path.join(tmp, "config.ini"))
+    store = open_store(os.path.join(tmp, "config.ini"), groups=6)
     demo_names = (["第一组", "雄鹰组", "第三组", "飞虎组", "第五组", "第六组"]
                   if LANG.startswith("zh")
                   else ["Group 1", "Eagles", "Group 3", "Tigers", "Group 5", "Group 6"])

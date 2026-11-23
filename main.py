@@ -26,6 +26,7 @@ from namepicker import crash_log
 from namepicker import i18n
 from namepicker import macos_window
 from namepicker import restart as restart_service
+from namepicker import legacy_dialog
 from namepicker import startup_log
 from namepicker import win_window
 from namepicker import theme
@@ -495,6 +496,18 @@ def main():
                "file is kept as Data/ledger.esc."),
             0,
         )
+        # 弹一次说明：中英双语、按钮 10 秒后才可点、之后不再弹（QSettings 记住）。
+        # 状态栏那行字太容易被错过，老师会以为数据丢了。
+        if not legacy_dialog.has_shown():
+            legacy_dialog.mark_shown()          # 先记，避免弹窗期间重复触发
+            from namepicker import dialogs as _dialogs
+
+            def _show_legacy_notice():
+                dlg = legacy_dialog.LegacyDataDialog(main_win)
+                _dialogs.center_on_screen(dlg)
+                dlg.exec()
+
+            _dialogs.defer(_show_legacy_notice)
     elif ledger_state.get("foreign"):
         main_win.statusBar().showMessage(
             tr("⚠ 这份数据属于另一个用户或另一台电脑，本机无法解密。"

@@ -15,10 +15,28 @@
 <p align="center">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%2B%20%7C%20macOS%2011%2B-blue">
   <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB">
-  <img alt="version" src="https://img.shields.io/badge/version-3.0-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-4.0-blue">
   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-blue">
   <img alt="PySide6" src="https://img.shields.io/badge/PySide6-LGPLv3-orange">
 </p>
+
+> ## ⚠️ 升级到 4.0 必读：旧数据需要手动重新录入
+>
+> **4.0 的事件链结构与 3.x 不兼容**：3.x 把组名和分数存在全局，4.0 全部搬进了
+> 「课堂预设」。为了不破坏原始数据，程序**不会改写旧链**——检测到 3.x 数据时会提示
+> 「旧版本数据无法读取」，并把原文件原样留在 `Data/ledger.esc`。
+>
+> **你需要做的**：打开「预设」，按旧 `config.ini` 里的组名和分数**手动重新录入一次**。
+> 名单（`.txt`）会正常保留，只有组名与分数需要重录。这是唯一一次性的升级成本。
+> 启动时会弹出**中英双语说明**（关闭按钮 10 秒后才可用），且**只弹一次**，不会反复打扰。
+>
+> ⚠️ **English**: The 4.0 event-chain format is **not compatible with 3.x** (3.x stored
+> group names and scores globally; 4.0 moves everything into classroom profiles). The old
+> chain is **never rewritten** — the app reports "data from an older version (3.x)" and
+> keeps the original file at `Data/ledger.esc`. **You must manually re-enter the group
+> names and scores under Profiles** using the values from your old `config.ini`. The name
+> list (`.txt`) is preserved; only names and scores need re-entering. One-time upgrade cost.
+> On startup a **bilingual notice** appears (Close unlocks after 10 seconds) — **once only**.
 
 <p align="center">
   <img src="docs/images/floating-ball.png" alt="Floating ball" width="620">
@@ -150,6 +168,11 @@
 
 ## 功能特性
 
+> **4.0 主要变动**：① **课堂预设**——一门课一套组数/组名/分数/抽取次数，切换即整套换掉；
+> ② **抽取次数按预设存进事件链**，不再写明文 `stats.ini`；③ **切语言重启改为当场强杀旧进程**，
+> 杜绝托盘里中/英两个实例并存；④ **切预设时积分面板立即刷新分数**（组数相同也会刷新）。
+> 详见下方「课堂预设」「界面语言」两节及顶部升级告警。
+
 ### 课堂操作（不打断讲课）
 
 - 双击悬浮球 → 抽 1 人；右键 → 连抽 2~10 人 / 积分管理 / 打开管理面板。
@@ -159,7 +182,7 @@
 
 ### 学习小组积分
 
-- 默认 6 组，可调 1~24 组；每组一张卡片。
+- 组数由当前预设决定（首次启动默认 6 组，可设 1~24 组）；每组一张卡片。
 - 单击展开 `-1 / +1 / +2 / +3`；双击组名重命名；右键清零本组。
 - 支持 `Ctrl+Z` 撤销；快捷键 `1/2/3/4` 对应 `-1/+1/+2/+3`。
 - 分数以加密签名的事件链（`Data/ledger.esc`）为准，重启不丢；
@@ -168,13 +191,15 @@
   日志每条同时保存中英两版，切换语言后历史记录依然可读。
 - 「彻底重置」会先弹出**选择清空范围**的对话框：组名 / 积分 / 长期公平记录 /
   抽取历史可分别勾选，确认后再二次确认，避免误伤不需要清的数据。
-- 改组数会整段重置组名与分数（换组数就是换了一套分组，旧分数没有可挂靠的组）。
+- 4.0 起改组数**不再清空分数**：`1..N` 的槽位就地保留，新加的组从 0 开始。
+  组数归 0 表示这门课不启用小组制（积分面板会说明原因并拒绝打开）。
 
 ### 公平抽选
 
 - 「加权少抽优先」：历史累计被抽次数越少，权重越高。
 - 最近被抽中的人临时降权，避免连庄。
-- 长期次数存在 `stats.ini`，重启仍生效。
+- 长期次数按预设存进事件链（与分数同一套加密签名），重启仍生效、各门课互不干扰；
+  旧版明文 `stats.ini` 只在首次运行时迁移一次，之后即删除。
 - 课前「清空历史」只清历史与冷却，保留长期次数；只有「彻底重置」才清零长期次数。
 
 ### 管理面板：名单与冷却
@@ -193,7 +218,7 @@
 
 - Windows 10 及以上（主要目标平台）、macOS 11 及以上；Linux 未验证。
 - Python 3.10+、PySide6、cryptography（仅源码运行需要）。
-- **原生模块** `native/cmd_native`（Windows 为 `cmd_native.exe`）：源码运行时必须存在，
+- **原生模块** `native/cmd_sign` 与 `native/cmd_verify`（Windows 加 `.exe`）：源码运行时必须存在，
   否则程序降级为「只读 + 状态栏提示」，不会崩溃。构建方法见「开发注意事项」。
 
 ```bash
@@ -218,7 +243,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 ### 下载可运行版本
 
-当前版本 **3.0**（`namepicker/about_dialog.py` 的 `VERSION = "3.0.0"`）。
+当前版本 **4.0**（`namepicker/about_dialog.py` 的 `VERSION = "4.0.0"`）。
 
 在 **GitHub Releases** 下载（若尚未发布，见 [打包](#打包) 自行构建）。
 
@@ -290,13 +315,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 「隐藏悬浮球」：临时隐藏/显示悬浮球。
 - 「清空历史」：清空抽取历史与冷却，**保留**长期公平计数。
 - 「关于」：版本、版权、不担保声明与 Apache-2.0 许可证全文，并注明原生模块为专有许可、第三方组件（Qt 等）的许可证（托盘菜单与悬浮球右键里也有）。
-  ~~版本号实际写在**三处**，升级时需同步修改（当前三处不一致）：
-  `namepicker/about_dialog.py` 的 `VERSION`（关于窗口显示，现为 `3.0.0`）、
-  `packaging/windows/version_info.txt` 的 `filevers`/`prodvers`（EXE 属性，现为 `1.0.0.0`）、
-  `packaging/macos/ClassManageSystem.spec` 的 `CFBundleShortVersionString`（.app 版本，现为 `1.0.0`）。
-  打包脚本读的是 `version_info.txt`，**不会**从 `about_dialog.py` 读取。~~
-  （删除缘由：2.0.0 起版本号已收敛为**单一来源**，上面的“三处同步”描述不再成立。）
-  现在只改 `namepicker/about_dialog.py` 的 `VERSION` 一处即可：
+  版本号是**单一来源**：只改 `namepicker/about_dialog.py` 的 `VERSION` 一处即可：
   - Windows 打包时 spec 会把 `version_info.txt` 模板里的版本号替换掉，生成
     `version_info.generated.txt` 再交给 PyInstaller（模板不再手改）；
   - macOS 打包时 spec 直接读取 `VERSION`，填进 `CFBundleShortVersionString` / `CFBundleVersion`。
@@ -326,8 +345,10 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - **语言存两份**：`config.dat` 的 `meta.language` 与 `QSettings` 各存一份。启动顺序为
   `CLASSMANAGE_LANG` 环境变量 > `config.dat` > `QSettings` > 系统语言。
   （缘由：Windows 上注册表可能被重定向或受权限限制，只靠 QSettings 会出现“切了没生效”。）
-- **立即重启防竞态**：新进程带 `--restarted` 启动，单实例会最多等 6 秒让旧进程退出；
-  `QProcess.startDetached` 失败时退回 `subprocess`（Windows 带 `DETACHED_PROCESS`）。
+- **立即重启防竞态**：新进程带 `--restarted` 启动，单实例会最多等 6 秒让旧进程交出锁；
+  旧进程确认交接后**当场强退**（`os._exit`），不会在退出保存期间留一个旧语言的
+  悬浮球在新球旁边。`QProcess.startDetached` 失败时退回 `subprocess`
+  （Windows 带 `DETACHED_PROCESS`）。
 - **启动诊断**：配置同目录的 `startup.log` 记录每次启动的版本、是否 frozen/restarted、
   三个来源读到的语言、最终语言、单实例结果与重启结果（最近 40 行，失败静默）。
 
@@ -351,7 +372,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 
 ### 一、事件链（分数）
 
-每次改分、改组名、改组数，都会先经原生模块 `cmd_native`：
+每次改分、改组名、改组数，都会先经原生模块 `cmd_sign` / `cmd_verify`：
 
 ```text
 界面操作
@@ -360,7 +381,8 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
   → 追加到 Data/ledger.esc
 ```
 
-启动时整链验签并重放，用结果覆盖 `config.dat` 里的分数缓存。
+启动时整链验签并重放，直接得到每个预设的组名与分数；`config.dat` 只存界面偏好
+（语言等），不再保存分数。
 
 | 文件 / 位置                                 | 角色                  |
 | --------------------------------------- | ------------------- |
@@ -368,7 +390,7 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 | `Data/anchor.json`                      | 基准：链曾经到过第几条、链头是什么   |
 | `~/.cache/classmanage/<哈希>/anchor.json` | 同一基准的隐藏副本           |
 | `~/.cache/classmanage/<哈希>/ledger.esc`  | 安全副本，用于自动恢复         |
-| `native/cmd_native`（Windows 为 `.exe`）   | 原生模块：密钥、规则、加解密、签名   |
+| `native/cmd_sign` / `native/cmd_verify`（Windows 加 `.exe`） | 原生模块：签名 / 验签 / 加解密 / 链状态 |
 
 **能挡住什么**（均为实测）：
 
@@ -388,9 +410,10 @@ macOS 直接 `python main.py` 即可；想做成双击启动的程序见 [打包
 - 在教室电脑上**循环调用合法接口**加很多分（会留下 N 条带时间戳的签名事件，
   一眼可辨，且删不掉）。
 
-### 二、配置文件（组名 / 组数 / 语言）
+### 二、配置文件（界面偏好 + 分数/组名缓存）
 
-组名、组数、界面语言等仍按四级容灾逐级回退：
+界面语言等偏好按四级容灾逐级回退。组名与分数的**权威来源是第一部分的事件链**，
+这里的 `config.dat` / `config.ini` 只保留一份缓存与查看副本，启动时会被链重放结果覆盖：
 
 | 文件 / 位置          | 角色                                     | 程序行为       |
 | ---------------- | -------------------------------------- | ---------- |
@@ -457,17 +480,20 @@ Linux   : ~/.config/YourOrg/ClassManageSystem.conf
 - 每条记录存 `(时间, 中文, English)` 三元组，旧版纯文本记录也能继续读取
   （英文侧留空，只显示原文）。
 
-### `stats.ini`
+### 抽取次数（4.0 起存进事件链）
 
-长期抽取次数，与配置同目录，明文存储（不含积分）。
+长期抽取次数是公平加权的依据，4.0 起**按预设存在事件链里**（`Data/ledger.esc`），
+与分数同一套签名、加密、单调时间戳——磁盘上不再有明文 `stats.ini`。
+链上按「名单下标 + 累计次数」记录，不存姓名：名单里改个错别字仍然对得上。
 
-```ini
-[counts]
-张三 = 5
-李四 = 3
-```
+- **按预设独立**：化学课抽过谁与语文课无关，切预设就是整套次数换掉。
+- **清空历史不碰它**：课前「清空历史」只清历史与冷却，次数保留，加权不会退化成每节课独立随机；
+  只有「彻底重置」勾选「长期公平记录」才清零。
+- **旧明文只迁移一次**：3.x 的 `stats.ini` 在首次运行时读入链并随即删除，
+  之后程序不再读它，手改它也不会影响结果。
 
-独立成文件的原因：若与积分放在一起，课前「清空历史」会连带清掉长期次数，加权就退化成"每节课各自独立随机"。
+> 迁移期间若链写不进去（名单下标没对齐），程序会**明确报错**而不是静默丢次数——
+> 宁可当场说清楚，也不让老师以为"保存成功"却一条没写。
 
 ### `crash.log`
 
@@ -495,21 +521,38 @@ macOS / Linux  : ~/ClassTerminal2411/
 
 `random.choice` 对「每一次」抽取是均匀的，但对「每个学生一学期」不是。40 人里出现有人被抽两次、有人一次没抽到是很常见的聚集现象，学生看到的就是「老师老抽他」。
 
-因此 `NameEngine` 使用加权少抽优先模型：
+因此 `NameEngine` 使用加权少抽优先模型（4.0 起增加了组权重）：
 
 ```text
-weight = (max_count - count + 1) ** FAIRNESS_STRENGTH
-         * recency_penalty
+deficit = max_count - count
+weight = (deficit + 1) ** FAIRNESS_STRENGTH
+
+# 个人 recency：最近被抽中过则打折，随间隔线性恢复到满值
+ratio = gap / RECENT_GAP                       # gap = 距上次被抽的次数
+weight *= RECENT_PENALTY + (1 - RECENT_PENALTY) * ratio
+
+# 组权重（仅当前预设启用分组时）：落后越多的组权重越高
+weight *= (group_deficit + 1) ** (GROUP_STRENGTH / FAIRNESS_STRENGTH)
+weight *= group_penalty                        # 同组连抽重罚，间隔够远则不罚
+
+weight = max(weight, MIN_WEIGHT)               # 保证仍有被抽机会
 ```
+
+组权重与个人权重相乘，组间优先的实际倍率是 `GROUP_STRENGTH / FAIRNESS_STRENGTH = 2`：
+组间差 1 次约等于组内差 2 次——避免连着几次都落在同一组、那组一口气多拿好几分。
 
 参数位于 `namepicker/name_engine.py` 顶部：
 
-| 参数                  | 默认值    | 说明                        |
-| ------------------- | ------:| ------------------------- |
-| `FAIRNESS_STRENGTH` | `4.0`  | 向最少被抽者倾斜的强度。调到 9 会接近固定轮换。 |
-| `RECENT_GAP`        | `4`    | 最近 N 次内被抽中过则降低权重。         |
-| `RECENT_PENALTY`    | `0.35` | 刚被抽中者的权重下限，避免连庄。          |
-| `MIN_WEIGHT`        | `0.01` | 保证每个有资格的人仍有可能被抽中。         |
+| 参数                       | 默认值   | 说明                                  |
+| ------------------------ | -----:| ----------------------------------- |
+| `FAIRNESS_STRENGTH`      | `4.0` | 向最少被抽者倾斜的强度。调到 9 会接近固定轮换。      |
+| `RECENT_GAP`             | `4`   | 最近 N 次内被抽中过则降低权重。               |
+| `RECENT_PENALTY`         | `0.35`| 刚被抽中者的权重下限，避免连庄。                |
+| `MIN_WEIGHT`             | `0.01`| 保证每个有资格的人仍有可能被抽中。               |
+| `GROUP_STRENGTH`         | `8.0` | 组权重强度，必须大于 `FAIRNESS_STRENGTH`。     |
+| `GROUP_STREAK_LOOKBACK`  | `12`  | 回溯最近多少次单抽来判断「同组连抽」。            |
+| `GROUP_PENALTY_ADJACENT` | `0.05`| 同组连着被抽（间隔 ≤1）的重罚系数。             |
+| `GROUP_PENALTY_GAP`      | `0.35`| 间隔恰好 2 次时的罚系数；>2 不罚。             |
 
 两个语义不同的重置：
 
@@ -551,11 +594,14 @@ python tools/fairness_burnin.py
 > （本机或 Windows runner）。测试已支持无头运行（`QT_QPA_PLATFORM=offscreen`），
 > 不再依赖真实显示器。
 
-### Windows —— 本机打包或自行Fork构建CI
+### Windows —— 本机打包或 CI 出包
 
-> 说明：CI 出包流程目前**未启用**（`.github/workflows` 保留但不再自动触发）。
-> 打包本身仍是 PyInstaller 的一步，在任意一台 Windows 上执行即可；
-> 测试已可在无头环境运行，不再需要真实显示器。
+> CI 出包**已启用**：`.github/workflows/` 下有 3 条流程——
+> `build-windows.yml`（Windows 安装包）、`build-macos.yml`（macOS .app/DMG）、
+> `release.yml`（构建成功后自动发 GitHub Release）。
+> Windows 工作流在 push 到 `main`/`master`、PR、手动触发时运行，另有每日定时构建
+> （10:00 UTC = 18:00 北京时间）。本机打包仍是 PyInstaller 一步，
+> 测试已可在无头环境运行，不需要真实显示器。
 
 请在任意一台 Windows 上打包：
 
@@ -603,8 +649,8 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 ### 产物说明
 
 - 目录形态（`dist/ClassManageSystem/`）＋安装程序，目标机不需要装 Python；
-- **原生模块随包分发**：`_internal/native/cmd_native.exe`（macOS 为
-  `Contents/Frameworks/native/cmd_native`）。缺了它程序只能以只读模式运行，
+- **原生模块随包分发**：`_internal/native/cmd_sign(.exe)` 与 `cmd_verify(.exe)`（macOS 在
+  `Contents/Frameworks/native/`）。缺了它们程序只能以只读模式运行，
   因此打包配置会在缺失时**直接让构建失败**；
 - **Qt 库是独立文件**（`_internal/` 下的 `Qt*.dll` / `.framework`），安装后可被替换，
   满足 LGPL v3 对「用户能替换库」的要求；单文件 EXE 做不到这一点，因此不再使用；
@@ -625,38 +671,47 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 ├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium 等第三方声明
 ├── native/                          # 原生模块（只发布二进制；源码不进仓库）
 │   ├── LICENSE                      # 专有许可：随程序使用，禁止单独分发/逆向
-│   ├── CMakeLists.txt               # 构建定义（源码在 native/src/，已 gitignore）
-│   ├── build_macos.sh               # clang + 静态 libsodium，strip + ad-hoc 签名
-│   ├── build_windows.sh             # zig 交叉编译（无需 MSVC / 管理员）
-│   ├── cmd_native.exe               # Windows 构建产物
-│   └── cmd_native                   # macOS 构建产物
+│   ├── cmd_sign / cmd_verify         # 签名器 / 验证器（macOS 二进制）
+│   ├── cmd_sign.exe / cmd_verify.exe # 对应的 Windows 二进制
+│   └── native_backup/               # 二进制的可恢复备份（gz，见 namepicker/native_backup/）
+│       （构建定义 CMakeLists.txt 与源码 native/src/ 已 gitignore，不在仓库中）
 ├── docs/images/                     # README 截图（由 tools/make_screenshots.py 生成）
 │
 ├── namepicker/                      # 主程序包
-│   ├── _init_.md                    # 包内文件职责说明
-│   ├── config_store.py              # 配置持久化（四级容灾）+ 分数缓存
+│   ├── main_window.py               # 管理面板、托盘、开机自启动、语言切换
+│   ├── points_window.py             # 积分面板 + 操作日志查看器
+│   ├── profile_dialog.py            # 预设管理窗口（一门课一套分组）
+│   ├── profiles.py                  # 课堂预设：组数/组名/分数/次数，存事件链
+│   ├── floating_ball.py             # 悬浮球（含跨平台强制置顶）
+│   ├── draw_popup.py                # 结果弹窗与滚动动画
+│   ├── name_engine.py               # 抽取逻辑：公平加权、冷却、历史
+│   ├── config_store.py              # 配置持久化（四级容灾）+ 积分接口（转发到当前预设）
+│   ├── ledger.py                    # 事件链：追加/锚点/影子备份/native 调用/导入导出
+│   ├── native_bridge.py             # 调 cmd_sign / cmd_verify（指纹/签名/验证/回放）
+│   ├── native_manifest.py           # 二进制哈希清单（防替换）
 │   ├── crypto_utils.py              # AES-256-GCM 与 ~/.classmanage_key 密钥管理
 │   ├── log_store.py                 # points_log.dat：加密操作日志 + 防回滚
 │   ├── backup_store.py              # QSettings 系统级隐蔽备份（跨平台）
-│   ├── stats_store.py               # stats.ini：长期抽取次数
-│   ├── name_engine.py               # 抽取逻辑：公平加权、冷却、历史
-│   ├── floating_ball.py             # 悬浮球（含跨平台强制置顶）
-│   ├── draw_popup.py                # 结果弹窗与滚动动画
-│   ├── points_window.py             # 积分面板 + 操作日志查看器
-│   ├── main_window.py               # 管理面板、托盘、开机自启动、语言切换
+│   ├── stats_store.py               # 抽取次数：按预设存事件链（旧 stats.ini 仅一次性迁移）
+│   ├── export_import.py             # 快照导出/导入（含所有预设的分数与次数）
+│   ├── integrity.py                 # 链完整性/防篡改判定
+│   ├── guard.py                     # 启动时的安全守卫
+│   ├── sntp.py                      # 网络时间校准（防时间回拨）
 │   ├── i18n.py                      # 中英双语：tr() / both() / Qt 翻译装载
 │   ├── atomic.py                    # 原子替换 + Windows 占用重试
 │   ├── dialogs.py                   # 对话框定位：隐藏父窗口、屏幕居中、延后打开
 │   ├── win_window.py                # Windows：对话框置顶（SetWindowPos）
+│   ├── macos_window.py              # macOS 激活策略 + 全屏浮层
 │   ├── startup_log.py               # 启动/重启诊断日志（startup.log）
-│   ├── about_dialog.py              # 关于窗口：版权 / 不担保声明 / GPL 全文
+│   ├── about_dialog.py              # 关于窗口：版权 / 不担保声明 / Apache 全文
 │   ├── widgets.py                   # ElidedLabel：长名字按宽度省略 + tooltip 全名
-│   ├── restart.py                   # 切换语言后的「立即重启」（源码/打包两种参数）
+│   ├── restart.py                   # 切语言后的立即重启 / 交接锁 / 强杀旧进程
+│   ├── legacy_dialog.py             # 旧数据升级提示（双语 / 10 秒门禁 / 只弹一次）
+│   ├── single_instance.py           # 单实例守护（QLocalServer 判活）
 │   ├── wipe_dialog.py               # 彻底重置：勾选清空范围 + 二次确认
 │   ├── wipe_service.py              # 按勾选项逐项清空（可单测）
 │   ├── theme.py                     # 浅/深色配色 token、跨平台字体、托盘图标
-│   ├── macos_window.py              # macOS 激活策略 + 全屏浮层
-│   ├── single_instance.py           # 单实例守护（QLocalServer 判活）
+│   ├── updater.py                   # 版本检查（version.json）
 │   └── crash_log.py                 # 崩溃日志
 │
 ├── packaging/
@@ -665,29 +720,48 @@ Windows 的安装包由 CI 生成（见 `.github/workflows/build-windows.yml`）
 │   └── make_icon.py                 # 生成 Windows 图标（Qt 渲染，无需 Pillow）
 │
 ├── tools/                           # 测试与开发脚本（不随程序分发）
+│   ├── run_all_tests.py             # 一键跑全套测试（自动找解释器 / 限时 / 隔离）
+│   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图（中/英、深/浅）
 │   ├── config_check.py              # 存储往返测试（不依赖 Qt）
 │   ├── config_crypto_check.py       # 加密存储 / 篡改回档 / 迁移 自检
 │   ├── log_crypto_check.py          # 操作日志：自动记录 / 篡改回档 / 防回滚
+│   ├── ledger_check.py              # 事件链：追加 / 重复序号修复 / 时间戳单调
+│   ├── native_check.py              # 原生模块 op 编码 / 回放 / 越界丢弃
+│   ├── profile_check.py             # 预设：切换 / 分数独立 / 导出导入往返
+│   ├── group_check.py               # 分组权重 / 小组分配回归
+│   ├── stats_check.py               # 抽取次数：按预设独立 / 名单对齐 / 旧文件迁移
+│   ├── export_check.py              # 快照导出导入往返
+│   ├── tamper_check.py              # 防篡改：二进制/链/清单哈希
+│   ├── packaging_check.py           # 打包清单与二进制一致性
+│   ├── updater_check.py             # 版本检查逻辑
+│   ├── lint_check.py                # 静态检查
 │   ├── windows_check.py             # Windows 平台自检（注册表 / 置顶 / 编码 / 占用）
 │   ├── macos_check.py               # macOS 平台自检（菜单栏 / 浮层 / 深色 / 全屏覆盖）
 │   ├── _fullscreen_helper.py         # 自检用：进入原生全屏的辅助进程
 │   ├── smoke_test.py                # GUI 冒烟测试
 │   ├── group_count_stress.py        # 组数（预设）功能 + 300 轮压力
-│   ├── make_screenshots.py          # 生成 docs/images 下的 README 截图（中/英、深/浅）
 │   ├── wipe_check.py                # 彻底重置的勾选与逐项清空测试
-│   ├── i18n_check.py                # 双语切换 / 持久化 / 双语日志测试
+│   ├── i18n_check.py                # 双语切换 / 持久化 / 双语日志 / 重启交接测试
 │   ├── fairness_burnin.py           # 1 万次单抽烧机 + χ² 检验
 │   ├── fairness_benchmark.py        # 公平性调参基准
 │   ├── reset_fairness_benchmark.py  # 教师清空历史工作流模拟
 │   ├── weighting_demo.py            # 新旧算法分布对比
 │   ├── repro_quit.py                # 「关闭面板导致退出」最小复现
+│   ├── _v4_fixture.py               # V4 测试夹具：临时链 + 预设 + ConfigStore
 │   ├── _settings_isolation.py       # 测试用的 QSettings 命名空间隔离
 │   ├── _headless.py                 # 无头模式：屏蔽所有模态框，CI 不阻塞
-│   ├── run_all_tests.py             # 一键跑全套测试（自动找解释器 / 限时 / 隔离）
+│   ├── _version.py / _encoding.py   # 版本读取 / 终端编码辅助
+│   ├── bump_version.py              # 版本号递增（major/minor/patch）
+│   ├── make_build_info.py           # 生成 build-info.txt
+│   ├── make_version_json.py         # 生成发布用 version.json
+│   ├── make_native_manifest.py      # 重算原生模块哈希清单与备份
+│   ├── normalize_bundle.py          # 打包产物规范化
+│   ├── obfuscate_source.py          # 原生源码字符串混淆辅助
+│   ├── preflight_check.py           # 发布前预检
 │   ├── run_all_tests.command        # macOS 双击启动器
 │   └── run_all_tests.bat            # Windows 双击启动器
 │
-└── .github/workflows/build-windows.yml   # CI 构建流程（当前未启用，见「打包」）
+└── .github/workflows/         # CI（已启用）：Windows 安装包 / macOS .app / 自动发 Release
 ```
 
 ---
@@ -729,7 +803,8 @@ python tools/ledger_check.py           # 事件链：迁移、C++ 改分、回�
 - `stats_check` 现在覆盖：抽取次数属于**当前预设**（化学课与语文课各算各的）、
   名单没对齐时宁可报错也不静默丢次数、旧 `stats.ini` 只迁移一次。
 - `i18n_check` 现在覆盖：关于窗口非模态时悬浮球仍可抽人、隐藏父窗口下的对话框定位、
-  语言双写、`--restarted` 参数、单实例重试（跨进程）。
+  语言双写、`--restarted` 参数、单实例重试（跨进程）、切语言强退旧实例、旧数据升级
+  弹窗的双语/10 秒门禁/只弹一次。
 - `windows_check` 现在覆盖：对话框置顶（`WS_EX_TOPMOST`）、语言写入 `config.dat`。
 - `config_crypto_check` / `log_crypto_check` 会在临时 HOME 下运行，**不碰你的真实数据**；装了 PySide6 时还会验证真实的 QSettings 隐蔽备份。
 - 冒烟测试构造 `MainWindow` 会读写真实注册表（Windows），脚本会先备份开机自启动项、跑完还原；macOS/Linux 自动跳过。
@@ -792,12 +867,12 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
   立即返回；新增测试请在创建 `QApplication` 前调用它。
 - **业务规则只在 C++ 里**：不要在图界面或 `ConfigStore` 里再判断“组号是否合法 /
   分数是否超限”。新增操作走 `ConfigStore._ledger_apply(op, **kwargs)`，
-  由 `cmd_native apply` 校验；被拒绝时返回 `False`，调用方必须放弃本次改动。
+  由 `cmd_sign apply` 校验；被拒绝时返回 `False`，调用方必须放弃本次改动。
 - **改完 C++ 一定要重编两个平台**：`native/build_macos.sh` 与
   `native/build_windows.sh`（zig 交叉编译，无需 MSVC / 管理员）。
   libsodium 源码放在 `native/third_party/`（已 gitignore）。
 - **事件格式由 C++ 定义**：Python 只把 `record` 当不透明字节追加到
-  `Data/ledger.esc`，不要解析；需要状态就调 `cmd_native state`。
+  `Data/ledger.esc`，不要解析；需要状态就调 `cmd_verify state`。
 - **数值上限要对齐**：C++ 的 `MIN_GROUPS/MAX_GROUPS` 与 `config_store` 的
   `MIN_GROUP_COUNT/MAX_GROUP_COUNT` 必须一致。
 - 打包相关：`config_store._app_dir()` 对 `.app` 有专门处理，避免把数据写进应用包内部；
@@ -820,8 +895,8 @@ CLASSMANAGE_THEME=dark python tools/make_screenshots.py   # 深色，输出 *-da
 `QLocalServer` 判活，被强杀后能正常重启。若仍复现，先确认没有另一个实例在跑：
 
 ```bash
-pgrep -fl ClassManageSystem        # macOS
-tasklist | findstr ClassManage     # Windows
+pgrep -fl 'main.py|ClassManageSystem'  # macOS：源码运行是 python main.py
+tasklist | findstr /I "python ClassManage"  # Windows
 ```
 
 ### 关闭积分面板后程序消失了？
@@ -830,16 +905,17 @@ tasklist | findstr ClassManage     # Windows
 
 ### 分数没有保存？
 
-检查程序所在目录（放 `config.dat` 的那个目录）是否可写；只读时会自动回退到
-`%APPDATA%\ClassTerminal2411\`（macOS/Linux：`~/ClassTerminal2411/`）。
-`python tools/config_crypto_check.py` 可以定位是密钥、密文还是目录权限的问题。
+分数写在加密事件链 `Data/ledger.esc`，不在 config.dat。检查 `Data/` 目录是否可写；
+只读时程序目录会自动回退到 `%APPDATA%\ClassTerminal2411\`（macOS/Linux：
+`~/ClassTerminal2411/`）。`python tools/ledger_check.py` 与
+`python tools/config_crypto_check.py` 可定位是链、密钥还是目录权限的问题。
 
 ### 学生改了 `config.ini` 的分数，为什么没生效？
 
-因为程序从不读取 `config.ini`，它每次保存都会被加密数据覆盖。真正生效的是 `config.dat`
-（外加 `.bak` 与系统级隐蔽备份）。改 `config.dat` 也一样：GCM 认证加密会让解密失败，
-程序自动从备份回档。想删数据也不行 —— 删掉主文件会从 `.bak` 恢复，两个都删会从
-QSettings 隐蔽备份恢复。
+因为程序**从不读取 `config.ini`**——它只是给人看的明文查看副本，每次保存都会被覆盖。
+真正生效的是加密事件链 `Data/ledger.esc`（组名、分数、预设、抽取次数都在里面）。
+改 `config.dat` 也没用：GCM 认证加密会让解密失败，程序自动从备份回档。想删数据也不行 ——
+链文件会从 `.bak` 或隐藏副本恢复；`config.dat` 删了会从 `.bak` / QSettings 隐蔽备份恢复。
 
 ### 操作日志能删吗？
 
@@ -848,7 +924,8 @@ QSettings 隐蔽备份恢复。
 
 ### 「清空历史」后公平性会失效吗？
 
-不会。它只清历史与冷却，长期次数保留在 `stats.ini`；只有「彻底重置」才清零长期次数。
+不会。它只清历史与冷却，长期次数按预设保留在事件链里；只有「彻底重置」勾选
+「长期公平记录」才清零。
 
 ### 为什么连抽人数不足？
 
@@ -956,7 +1033,7 @@ limitations under the License.
 - 不提供任何担保。
 
 **原生模块是另一套许可：** `native/` 下的编译产物
-（`cmd_native.exe` / `cmd_native`）**不属于 Apache-2.0**，而是专有许可：
+（`cmd_sign` / `cmd_verify` 及其 `.exe`）**不属于 Apache-2.0**，而是专有许可：
 只能随本程序使用，禁止单独分发、反向工程或提取其中的算法与密钥。
 详见 [`native/LICENSE`](native/LICENSE)。
 
@@ -1121,6 +1198,14 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 
 ## Features
 
+> **What's new in 4.0**: ① **Classroom profiles** — one profile per subject, each with
+> its own group count, names, scores and draw counts; switching swaps the whole set.
+> ② **Draw counts moved into the event chain**, per profile — no more plain-text
+> `stats.ini`. ③ **Switching language now force-kills the old process** on restart, so
+> two language instances never linger in the tray. ④ **The points panel refreshes scores
+> immediately when switching profiles**, even when both have the same group count.
+> See "Classroom profiles" and "UI language" below, plus the upgrade warning at the top.
+
 ### Classroom actions (without interrupting the lesson)
 
 - Double-click the ball to draw one name; right-click to draw 2–10, open the points
@@ -1132,27 +1217,31 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 
 ### Group scoring
 
-- 6 groups by default, adjustable from 1 to 24; one card per group.
+- The group count comes from the active profile (6 by default on first run, 1–24
+  configurable); one card per group.
 - Click to reveal `-1 / +1 / +2 / +3`; double-click the name to rename; right-click to
   reset that group.
 - `Ctrl+Z` undoes the last change; the keys `1/2/3/4` map to `-1/+1/+2/+3`.
-- Scores are encrypted in `config.dat` and survive restarts; corrupted or deleted files
-  are restored automatically.
+- Scores are signed and encrypted in the event chain (`Data/ledger.esc`) and survive
+  restarts; corrupted, deleted or rolled-back files are detected and restored.
 - Every change is appended to the encrypted operation log, readable through the "Log"
   button. Each entry stores both Chinese and English, so history stays readable after
   switching language.
 - "Full reset" first asks **which parts to clear** — group names, scores, lifetime
   fairness counts and draw history are selectable independently — followed by a second
   confirmation, so data you want to keep is never cleared by accident.
-- Changing the group count resets all names and scores (a different group count is a
-  different set of groups; the old scores have nothing to attach to).
+- Since 4.0, changing the group count **keeps the scores**: slots `1..N` stay as they
+  are and new groups start at 0. A count of 0 means this class does not use groups
+  (the points panel explains why and refuses to open).
 
 ### Fair drawing
 
 - "Weighted least-drawn first": the fewer times a student has been drawn overall, the
   higher their weight.
 - Students drawn recently get a temporary penalty to avoid streaks.
-- Lifetime counts live in `stats.ini` and survive restarts.
+- Lifetime counts are stored per profile in the event chain (same signing and
+  encryption as scores), surviving restarts and staying independent per class; the old
+  plain-text `stats.ini` is migrated once on first run and then deleted.
 - "Clear history" before a lesson only clears history and cooldowns; only a full reset
   zeroes lifetime counts.
 
@@ -1175,7 +1264,7 @@ teacher stays in full-screen slides and interacts with the app like a remote con
 
 - Windows 10 or later (primary target), macOS 11 or later; Linux untested.
 - Python 3.10+, PySide6 and cryptography (only needed when running from source).
-- The **native module** `native/cmd_native` (`.exe` on Windows) must exist when running
+- The **native modules** `native/cmd_sign` and `native/cmd_verify` (`.exe` on Windows) must exist when running
   from source; without it the app degrades to read-only with a status-bar notice and does
   not crash. See Development notes for how to build it.
 
@@ -1203,7 +1292,7 @@ a default list of the numbers 1–99 is generated.
 
 ### Download a ready-to-run build
 
-Current version: **3.0** (`VERSION = "3.0.0"` in `namepicker/about_dialog.py`).
+Current version: **4.0** (`VERSION = "4.0.0"` in `namepicker/about_dialog.py`).
 
 Grab it from **GitHub Releases** (if nothing is published yet, see
 [Packaging](#en-packaging) and build it yourself).
@@ -1284,14 +1373,8 @@ Literature  0 groups   grouping off (the points panel refuses to open and says w
   counts.
 - "About": version, copyright, the no-warranty notice and the full Apache-2.0 text,
   (also available from the tray menu and the ball's right-click menu).
-  ~~The version actually lives in **three** places and must be bumped together (currently
-  out of sync): `VERSION` in `namepicker/about_dialog.py` (shown in the dialog, now
-  `3.0.0`), `filevers`/`prodvers` in `packaging/windows/version_info.txt` (EXE properties,
-  now `1.0.0.0`), and `CFBundleShortVersionString` in
-  `packaging/macos/ClassManageSystem.spec` (app version, now `1.0.0`). The build script
-  reads `version_info.txt`, **not** `about_dialog.py`.~~
-  (Struck out because since 2.0.0 the version is a **single source of truth**.)
-  Only `VERSION` in `namepicker/about_dialog.py` needs editing (currently `3.0.0`):
+  The version has a **single source of truth**: only edit `VERSION` in
+  `namepicker/about_dialog.py` (currently `4.0.0`):
   - the Windows spec substitutes it into the `version_info.txt` template and writes
     `version_info.generated.txt` for PyInstaller (the template is no longer edited by hand);
   - the macOS spec reads it directly for `CFBundleShortVersionString` / `CFBundleVersion`.
@@ -1330,8 +1413,10 @@ The UI, dialogs, tray and ball menus, and the operation log are all bilingual.
   (Reason: on Windows the registry can be redirected or permission-restricted, so
   `QSettings` alone made the switch look ineffective.)
 - **Restart race protection**: the new process starts with `--restarted`, and the
-  single-instance guard waits up to 6 seconds for the old process to exit; if
-  `QProcess.startDetached` fails it falls back to `subprocess` (`DETACHED_PROCESS` on Windows).
+  single-instance guard waits up to 6 seconds for the old process to hand over the lock;
+  once confirmed, the old process **exits immediately** (`os._exit`) so no old-language
+  ball lingers beside the new one during slow exit saves. If `QProcess.startDetached`
+  fails it falls back to `subprocess` (`DETACHED_PROCESS` on Windows).
 - **Startup diagnostics**: `startup.log` next to the config records version, frozen/restarted,
   the language read from all three sources, the effective language, the single-instance
   result and whether a restart was started (last 40 lines, failures silent).
@@ -1358,7 +1443,7 @@ the config file only caches them.
 
 ### 1. Event chain (scores)
 
-Every score / group-name / group-count change goes through the native module `cmd_native`:
+Every score / group-name / group-count change goes through the native modules `cmd_sign` / `cmd_verify`:
 
 ```text
 UI action
@@ -1367,8 +1452,9 @@ UI action
   → append to Data/ledger.esc
 ```
 
-At startup the whole chain is verified and replayed; the result overwrites the cached
-`score_*` values in `config.dat`.
+At startup the whole chain is verified and replayed, yielding each profile's group
+names and scores directly; `config.dat` holds only UI preferences (language etc.), no
+scores.
 
 | File / location                           | Role                                              |
 | ----------------------------------------- | ------------------------------------------------- |
@@ -1376,7 +1462,7 @@ At startup the whole chain is verified and replayed; the result overwrites the c
 | `Data/anchor.json`                        | anchor: how long the chain ever got, and its head |
 | `~/.cache/classmanage/<hash>/anchor.json` | hidden copy of the same anchor                    |
 | `~/.cache/classmanage/<hash>/ledger.esc`  | shadow copy used for automatic restore            |
-| `native/cmd_native` (`.exe` on Windows)   | native module: keys, rules, crypto, chain         |
+| `native/cmd_sign` / `native/cmd_verify` (`.exe` on Windows) | native: sign / verify / crypto / chain |
 
 **What it stops** (all measured):
 
@@ -1397,9 +1483,11 @@ At startup the whole chain is verified and replayed; the result overwrites the c
 - **looping the legitimate API** on the teacher's machine to add many points (it leaves N
   signed, timestamped events that are obvious and cannot be deleted).
 
-### 2. Config file (group names / count / language)
+### 2. Config file (UI preferences + score/name cache)
 
-Group names, group count and UI language still use the four-level fallback:
+UI language and similar preferences use the four-level fallback. Group names and scores
+are **authoritative in the event chain (part 1 above)**; `config.dat` / `config.ini` here
+only keep a cache and view-only copy, overwritten by the chain replay on startup:
 
 | File / location           | Role                                        | Program behaviour          |
 | ------------------------- | ------------------------------------------- | -------------------------- |
@@ -1469,20 +1557,26 @@ affect the main flow.
 - Each entry stores a `(timestamp, Chinese, English)` triple; legacy plain-text entries
   remain readable (the English side is empty and the original text is shown).
 
-### `stats.ini`
+### Draw counts (in the event chain since 4.0)
 
-Lifetime draw counts, in the same directory as the config, stored as plain text (no
-scores).
+Lifetime draw counts drive fair weighting. Since 4.0 they live **per profile in the
+event chain** (`Data/ledger.esc`), with the same signing, encryption and monotonic
+timestamps as scores — there is no plain-text `stats.ini` on disk anymore. On the chain
+they are stored as `(roster index, cumulative count)`, never names, so fixing a typo in
+the roster still matches up.
 
-```ini
-[counts]
-张三 = 5
-李四 = 3
-```
+- **Per profile**: draws in Chemistry have no effect on Literature; switching profiles
+  swaps the whole set of counts.
+- **"Clear history" leaves them alone**: it only clears history and cooldowns, so
+  weighting does not degrade into "independent randomness per lesson". Only a full reset
+  with "Lifetime fairness counts" ticked zeroes them.
+- **Legacy plain text is migrated once**: a 3.x `stats.ini` is read into the chain on
+  first run and then deleted; the app never reads it again, so editing it by hand has no
+  effect.
 
-It is a separate file because if it lived with the scores, the pre-lesson "Clear history"
-would also wipe lifetime counts and the weighting would degrade into "independent
-randomness per lesson".
+> If the chain cannot be written during migration (roster not aligned), the app reports
+> an **explicit error** rather than silently dropping counts — better to say so in class
+> than to show "saved" while nothing was written.
 
 ### `crash.log`
 
@@ -1518,21 +1612,41 @@ macOS / Linux  : ~/ClassTerminal2411/
 40 students, someone being drawn twice while someone else is never drawn is a common
 clustering effect — students perceive it as "the teacher always picks them".
 
-`NameEngine` therefore uses a weighted least-drawn-first model:
+`NameEngine` therefore uses a weighted least-drawn-first model (group weighting was
+added in 4.0):
 
 ```text
-weight = (max_count - count + 1) ** FAIRNESS_STRENGTH
-         * recency_penalty
+deficit = max_count - count
+weight = (deficit + 1) ** FAIRNESS_STRENGTH
+
+# personal recency: recently drawn students are discounted, recovering linearly
+ratio = gap / RECENT_GAP                       # gap = draws since last pick
+weight *= RECENT_PENALTY + (1 - RECENT_PENALTY) * ratio
+
+# group weight (only when the active profile uses groups): behind groups rank higher
+weight *= (group_deficit + 1) ** (GROUP_STRENGTH / FAIRNESS_STRENGTH)
+weight *= group_penalty                        # heavy penalty for back-to-back same group
+
+weight = max(weight, MIN_WEIGHT)               # everyone eligible keeps a chance
 ```
+
+Group and personal weights multiply, so the effective between-groups bias is
+`GROUP_STRENGTH / FAIRNESS_STRENGTH = 2`: a one-draw group deficit counts about twice a
+one-draw personal deficit — this prevents several draws in a row landing in the same
+group and piling up points there.
 
 The parameters live at the top of `namepicker/name_engine.py`:
 
-| Parameter           | Default | Meaning                                                                            |
-| ------------------- | -------:| ---------------------------------------------------------------------------------- |
-| `FAIRNESS_STRENGTH` | `4.0`   | How strongly to favour the least-drawn student. At 9 it approaches fixed rotation. |
-| `RECENT_GAP`        | `4`     | Being drawn within the last N draws lowers the weight.                             |
-| `RECENT_PENALTY`    | `0.35`  | Weight floor for the most recently drawn student, to avoid streaks.                |
-| `MIN_WEIGHT`        | `0.01`  | Every eligible student always keeps a chance.                                      |
+| Parameter                | Default | Meaning                                                                          |
+| ------------------------ | -------:| -------------------------------------------------------------------------------- |
+| `FAIRNESS_STRENGTH`      | `4.0`   | How strongly to favour the least-drawn student. At 9 it approaches fixed rotation.|
+| `RECENT_GAP`             | `4`     | Being drawn within the last N draws lowers the weight.                           |
+| `RECENT_PENALTY`         | `0.35`  | Weight floor for the most recently drawn student, to avoid streaks.              |
+| `MIN_WEIGHT`             | `0.01`  | Every eligible student always keeps a chance.                                    |
+| `GROUP_STRENGTH`         | `8.0`   | Group bias strength; must exceed `FAIRNESS_STRENGTH`.                            |
+| `GROUP_STREAK_LOOKBACK`  | `12`    | How many recent draws to scan for a same-group streak.                           |
+| `GROUP_PENALTY_ADJACENT` | `0.05`  | Penalty for back-to-back draws from the same group (gap ≤ 1).                    |
+| `GROUP_PENALTY_GAP`      | `0.35`  | Penalty when exactly 2 draws apart; no penalty beyond that.                      |
 
 Two resets with different semantics:
 
@@ -1582,11 +1696,14 @@ platform-specific calls in `try/except` with silent degradation, use PySide6's b
 > must be built on Windows (locally or on a Windows runner). The test suite is
 > headless-safe now (`QT_QPA_PLATFORM=offscreen`), so it no longer needs a display.
 
-### Windows — the only working way: build locally
+### Windows — build locally or let CI do it
 
-> Note: the CI build pipeline is **currently disabled** (`.github/workflows` is kept but
-> no longer triggers automatically). Packaging is still a single PyInstaller step on any
-> Windows machine; the test suite is headless-safe, so no display is required.
+> CI builds are **enabled**: `.github/workflows/` has three pipelines —
+> `build-windows.yml` (Windows installer), `build-macos.yml` (macOS .app/DMG) and
+> `release.yml` (publishes a GitHub Release automatically after a successful build).
+> The Windows workflow runs on pushes to `main`/`master`, pull requests, manual dispatch
+> and a daily schedule (10:00 UTC = 18:00 Beijing time). A local build is still a single
+> PyInstaller step, and the test suite is headless-safe, so no display is required.
 
 On any Windows machine, build with:
 
@@ -1595,7 +1712,8 @@ packaging\windows\build.bat
 ```
 
 The script creates a `.venv-build` virtualenv, installs dependencies, runs the self-check
-and packages `dist\ClassManageSystem.exe`.
+and packages a directory `dist\ClassManageSystem\` (containing `ClassManageSystem.exe`
+and `_internal\`), which the installer then turns into a setup program.
 
 **The pip index is auto-selected** — you do not have to figure out which country you are in:
 
@@ -1644,8 +1762,8 @@ tests → PyInstaller onedir → Inno Setup → upload installer and portable zi
 
 - Directory layout (`dist/ClassManageSystem/`) plus an installer; the target machine
   needs no Python.
-- **The native module ships inside the package**: `_internal/native/cmd_native.exe`
-  (macOS: `Contents/Frameworks/native/cmd_native`). Without it the app can only run
+- **The native modules ship inside the package**: `_internal/native/cmd_sign(.exe)` and
+  `cmd_verify(.exe)` (macOS: `Contents/Frameworks/native/`). Without them the app can only run
   read-only, so the packaging config **fails the build** when it is missing.
 - **Qt ships as separate files** (`Qt*.dll` / `.framework` under `_internal/`) and can be
   replaced after installation, which satisfies LGPL v3's "user can replace the library".
@@ -1664,47 +1782,55 @@ tests → PyInstaller onedir → Inno Setup → upload installer and portable zi
 ## Project layout
 
 ```text
-.
 ├── main.py                          # entry point: wire components, connect signals, run
 ├── requirements.txt
 ├── names.txt                        # sample name list
-├── LICENSE                          # full Apache License 2.0 text
-├── NOTICE                           # copyright / attribution (required by Apache-2.0)
-├── THIRD-PARTY-NOTICES.md           # PySide6 / Qt / libsodium and other notices
-├── native/                          # native module (binaries only; source not in repo)
-│   ├── LICENSE                      # proprietary: use with the app, no standalone/RE
-│   ├── cmd_native.exe               # Windows build artifact
-│   └── cmd_native                   # macOS build artifact
+├── LICENSE                          # Apache License 2.0
+├── NOTICE                           # attribution notice (Apache-2.0)
+├── THIRD-PARTY-NOTICES.md           # third-party licences (Qt, libsodium, ...)
+├── native/                          # native modules (binaries only; source not in repo)
+│   ├── LICENSE                      # proprietary licence: use with the app, no redistribution
+│   ├── cmd_sign / cmd_verify         # signer / verifier (macOS binaries)
+│   ├── cmd_sign.exe / cmd_verify.exe # Windows binaries
+│   └── native_backup/               # recoverable gz copies (see namepicker/native_backup/)
+│       (build definition CMakeLists.txt and native/src/ are gitignored, not in the repo)
 ├── docs/images/                     # README screenshots (generated by tools/make_screenshots.py)
 │
 ├── namepicker/                      # main package
-│   ├── __init__.py
-│   ├── _init_.md                    # package file responsibilities
-│   ├── config_store.py              # config persistence (4-level recovery) + score cache
-│   ├── ledger.py                    # event chain: append, anchor, shadow copy, native calls
-│   ├── native_bridge.py             # calls cmd_native (fingerprint/state/apply/verify)
+│   ├── main_window.py               # management panel, tray, autostart, language
+│   ├── points_window.py             # points panel + log viewer
+│   ├── profile_dialog.py            # profile manager (one data set per subject)
+│   ├── profiles.py                  # classroom profiles: counts/names/scores in the chain
+│   ├── floating_ball.py             # floating ball (cross-platform topmost)
+│   ├── draw_popup.py                # result popup and rolling animation
+│   ├── name_engine.py               # drawing: fair weighting, cooldowns, history
+│   ├── config_store.py              # config persistence (4-level recovery) + score API (per profile)
+│   ├── ledger.py                    # event chain: append, anchor, shadow copy, native calls, import/export
+│   ├── native_bridge.py             # calls cmd_sign / cmd_verify (fingerprint/sign/verify/replay)
+│   ├── native_manifest.py           # binary hash manifest (anti-replacement)
 │   ├── crypto_utils.py              # AES-256-GCM and ~/.classmanage_key handling
 │   ├── log_store.py                 # points_log.dat: encrypted log + anti-rollback
 │   ├── backup_store.py              # QSettings system-level hidden backup
-│   ├── stats_store.py               # stats.ini: lifetime draw counts
-│   ├── name_engine.py               # drawing: fair weighting, cooldowns, history
-│   ├── floating_ball.py             # floating ball (cross-platform topmost)
-│   ├── draw_popup.py                # result popup and rolling animation
-│   ├── points_window.py             # points panel + log viewer
-│   ├── main_window.py               # management panel, tray, autostart, language
+│   ├── stats_store.py               # draw counts per profile in the chain (old stats.ini: one-time migration only)
+│   ├── export_import.py             # snapshot export/import (all profiles' scores and counts)
+│   ├── integrity.py                 # chain integrity / tamper judgement
+│   ├── guard.py                     # startup safety guard
+│   ├── sntp.py                      # network time check (anti clock rollback)
 │   ├── i18n.py                      # bilingual: tr() / both() / Qt translators
 │   ├── atomic.py                    # atomic replace + Windows lock retries
 │   ├── dialogs.py                   # dialog placement: hidden parent, screen centring, defer
 │   ├── win_window.py                # Windows: dialogs pinned topmost (SetWindowPos)
+│   ├── macos_window.py              # macOS activation policy, overlay, dialog raising
 │   ├── startup_log.py               # startup/restart diagnostics (startup.log)
-│   ├── about_dialog.py              # About: copyright / no-warranty / GPL text
+│   ├── about_dialog.py              # About: copyright / no-warranty / Apache text
 │   ├── widgets.py                   # ElidedLabel: elide long names + tooltip
-│   ├── restart.py                   # "restart now" after a language change
+│   ├── restart.py                   # restart after a language change / lock handover / kill old process
+│   ├── legacy_dialog.py             # legacy-data notice (bilingual / 10s gate / shown once)
+│   ├── single_instance.py           # single instance guard (QLocalServer)
 │   ├── wipe_dialog.py               # full reset: choose parts + second confirmation
 │   ├── wipe_service.py              # clear the selected parts only
 │   ├── theme.py                     # light/dark tokens, fonts, tray icon
-│   ├── macos_window.py              # macOS activation policy, overlay, dialog raising
-│   ├── single_instance.py           # single instance guard (QLocalServer)
+│   ├── updater.py                   # version check (version.json)
 │   └── crash_log.py                 # crash log
 │
 ├── packaging/
@@ -1713,29 +1839,48 @@ tests → PyInstaller onedir → Inno Setup → upload installer and portable zi
 │   └── make_icon.py                 # generates the Windows icon (Qt, no Pillow)
 │
 ├── tools/                           # test and dev scripts (not shipped)
+│   ├── run_all_tests.py             # one-shot full suite (interpreter / timeout / isolation)
+│   ├── make_screenshots.py          # generate docs/images screenshots (zh/en, light/dark)
 │   ├── config_check.py              # storage round-trip (no Qt)
 │   ├── config_crypto_check.py       # encryption / tamper recovery / migration
-│   ├── log_crypto_check.py          # operation log: recording / recovery / anti-rollback
-│   ├── windows_check.py             # Windows platform self-check
-│   ├── macos_check.py               # macOS self-check (fullscreen + dialog layering)
-│   ├── _fullscreen_helper.py        # helper that enters native full screen
+│   ├── log_crypto_check.py          # operation log: auto record / tamper recovery / anti-rollback
+│   ├── ledger_check.py              # event chain: append / duplicate-seq repair / timestamp monotonicity
+│   ├── native_check.py              # native module: op encoding / replay / out-of-range drop
+│   ├── profile_check.py             # profiles: switching / score independence / export-import round trip
+│   ├── group_check.py               # group weighting / assignment regression
+│   ├── stats_check.py               # draw counts: per-profile / roster alignment / legacy migration
+│   ├── export_check.py              # snapshot export/import round trip
+│   ├── tamper_check.py              # tamper: binary / chain / manifest hashes
+│   ├── packaging_check.py           # packaging manifest and binary consistency
+│   ├── updater_check.py             # version-check logic
+│   ├── lint_check.py                # static checks
+│   ├── windows_check.py             # Windows checks (registry / topmost / encoding / locks)
+│   ├── macos_check.py               # macOS checks (menu bar / overlay / dark / fullscreen)
+│   ├── _fullscreen_helper.py         # helper process that enters native fullscreen
 │   ├── smoke_test.py                # GUI smoke test
-│   ├── group_count_stress.py        # group count + 300-round stress test
-│   ├── make_screenshots.py          # generate README screenshots (zh/en, light/dark)
-│   ├── wipe_check.py                # full reset selection and per-part clearing
-│   ├── i18n_check.py                # bilingual switching / persistence / bilingual log tests
+│   ├── group_count_stress.py        # group count (profiles) + 300-round stress
+│   ├── wipe_check.py                # full reset: selection and per-part clearing
+│   ├── i18n_check.py                # bilingual / persistence / log / restart handover
 │   ├── fairness_burnin.py           # 10k single draws + chi-square test
-│   ├── fairness_benchmark.py        # fairness parameter benchmark
-│   ├── reset_fairness_benchmark.py  # pre-lesson "clear history" workflow
-│   ├── weighting_demo.py            # old vs new distribution
-│   ├── repro_quit.py                # minimal repro for "closing the panel quits"
-│   ├── _settings_isolation.py       # isolated QSettings namespace for tests
-│   ├── _headless.py                 # headless: stub out every modal dialog (CI-safe)
-│   ├── run_all_tests.py             # one-click suite runner (interpreter / timeout / isolation)
+│   ├── fairness_benchmark.py        # fairness tuning benchmark
+│   ├── reset_fairness_benchmark.py  # teacher clear-history workflow simulation
+│   ├── weighting_demo.py            # old vs new algorithm distribution
+│   ├── repro_quit.py                # minimal repro of "closing panel quits app"
+│   ├── _v4_fixture.py               # V4 fixture: temp chain + profile + ConfigStore
+│   ├── _settings_isolation.py       # QSettings namespace isolation for tests
+│   ├── _headless.py                 # headless mode: suppress all modals for CI
+│   ├── _version.py / _encoding.py   # version read / terminal encoding helpers
+│   ├── bump_version.py              # bump version (major/minor/patch)
+│   ├── make_build_info.py           # generate build-info.txt
+│   ├── make_version_json.py         # generate release version.json
+│   ├── make_native_manifest.py      # recompute native hashes and backups
+│   ├── normalize_bundle.py          # normalise packaged bundle
+│   ├── obfuscate_source.py          # native source string obfuscation helper
+│   ├── preflight_check.py           # pre-release checks
 │   ├── run_all_tests.command        # macOS double-click launcher
 │   └── run_all_tests.bat            # Windows double-click launcher
 │
-└── .github/workflows/build-windows.yml   # CI: x64 Windows build # deprecated: CI cannot build GUI projects online
+└── .github/workflows/         # CI (enabled): Windows installer / macOS app / auto Release
 ```
 
 ---
@@ -1779,8 +1924,9 @@ python tools/ledger_check.py           # event chain: migration, C++ scoring, ro
   the UI falls back to the on-disk data, and `os.replace` retries transient Windows locks
   before failing.
 - `i18n_check` now also covers: drawing works while About is open, dialog placement with a
-  hidden parent, language dual persistence, the `--restarted` argument, and cross-process
-  single-instance retries.
+  hidden parent, language dual persistence, the `--restarted` argument, cross-process
+  single-instance retries, force-killing the old instance on a language switch, and the
+  legacy-data notice (bilingual, 10-second gate, shown once only).
 - `windows_check` now also covers: dialogs pinned topmost (`WS_EX_TOPMOST`) and the language
   persisted in `config.dat`.
 - `config_crypto_check` / `log_crypto_check` run under a temporary HOME, so your **real
@@ -1845,13 +1991,13 @@ desktop, and it uses a temporary directory instead of your real config.
   immediate returns; call it before creating `QApplication` in new tests.
 - **Business rules live only in C++**: do not re-check "group in range / score limit" in
   the UI or in `ConfigStore`. New operations go through
-  `ConfigStore._ledger_apply(op, **kwargs)`, validated by `cmd_native apply`; a rejection
+  `ConfigStore._ledger_apply(op, **kwargs)`, validated by `cmd_sign apply`; a rejection
   returns `False` and the caller must drop the change.
 - **Rebuild both native binaries after touching the C++**: `native/build_macos.sh` and
   `native/build_windows.sh` (zig cross-compile, no MSVC or admin rights needed). The
   libsodium sources live in `native/third_party/` (git-ignored).
 - **The event format is defined in C++**: Python treats `record` as opaque bytes and
-  appends them to `Data/ledger.esc`; ask `cmd_native state` for the state instead of
+  appends them to `Data/ledger.esc`; ask `cmd_verify state` for the state instead of
   parsing events.
 - **Keep the limits in sync**: `MIN_GROUPS`/`MAX_GROUPS` in C++ and
   `MIN_GROUP_COUNT`/`MAX_GROUP_COUNT` in `config_store` must match.
@@ -1894,8 +2040,8 @@ development notes above). The current version uses `QLocalServer` liveness detec
 restarts fine after being killed. If it still happens, check for another running instance:
 
 ```bash
-pgrep -fl ClassManageSystem        # macOS
-tasklist | findstr ClassManage     # Windows
+pgrep -fl 'main.py|ClassManageSystem'  # macOS：源码运行是 python main.py
+tasklist | findstr /I "python ClassManage"  # Windows
 ```
 
 ### The app disappears after closing the points panel?
@@ -1905,18 +2051,20 @@ Fixed: `main.py` calls `app.setQuitOnLastWindowClosed(False)`. Repro:
 
 ### Scores are not saved?
 
-Check that the program directory (the one holding `config.dat`) is writable; a read-only
-directory falls back to `%APPDATA%\ClassTerminal2411\` (macOS/Linux:
-`~/ClassTerminal2411/`). `python tools/config_crypto_check.py` tells you whether the key,
-the ciphertext or the directory permissions are the problem.
+Scores live in the encrypted event chain `Data/ledger.esc`, not in config.dat. Check that
+the `Data/` directory is writable; for a read-only program directory it falls back to
+`%APPDATA%\ClassTerminal2411\` (macOS/Linux: `~/ClassTerminal2411/`).
+`python tools/ledger_check.py` and `python tools/config_crypto_check.py` help pinpoint
+whether the chain, the key or the directory permissions are at fault.
 
 ### A student edited the scores in `config.ini` — why has nothing changed?
 
-Because the program never reads `config.ini`; it is overwritten with encrypted data on
-every save. What counts is `config.dat` (plus `.bak` and the system-level hidden backup).
-Editing `config.dat` does not help either: GCM authenticated encryption makes decryption
-fail and the program restores from a backup. Deleting does not help either — deleting the
-main file restores from `.bak`, deleting both restores from the QSettings hidden backup.
+Because the program **never reads `config.ini`** — it is a plain-text view-only copy,
+overwritten on every save. What actually counts is the encrypted event chain
+`Data/ledger.esc`, which holds all group names, scores, profiles and draw counts. Editing
+`config.dat` does not help either: GCM authenticated encryption makes decryption fail and
+the app restores from a backup. Deleting does not help either — the chain is restored from
+`.bak` or the hidden copy, and config.dat from `.bak` / the QSettings hidden backup.
 
 ### Can the operation log be deleted?
 
@@ -1925,8 +2073,8 @@ screenshot it or copy the text from the viewer.
 
 ### Does "Clear history" break fairness?
 
-No. It only clears history and cooldowns; lifetime counts stay in `stats.ini`. Only a
-full reset zeroes lifetime counts.
+No. It only clears history and cooldowns; lifetime counts stay per profile in the
+event chain. Only a full reset with "Lifetime fairness counts" ticked zeroes them.
 
 ### Why does a multi-draw return fewer names than requested?
 
@@ -2058,7 +2206,7 @@ limitations under the License.
 - There is no warranty.
 
 **The native module uses a different license:** the compiled artifacts under `native/`
-(`cmd_native.exe` / `cmd_native`) are **not** Apache-2.0. They are proprietary and may
+(`cmd_sign` / `cmd_verify` and their `.exe` builds) are **not** Apache-2.0. They are proprietary and may
 only be used together with this application; standalone distribution, reverse
 engineering and extracting their algorithms or keys are prohibited. See
 [`native/LICENSE`](native/LICENSE).
