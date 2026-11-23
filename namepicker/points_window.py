@@ -570,16 +570,26 @@ class PointsWindow(QWidget):
         self._schedule_save()
 
     def apply_profile(self, profile: dict | None) -> bool:
-        """跟随预设：组数只从预设来，面板不能自己改。
+        """跟随预设：组数、组名、分数全都从当前预设重新读。
 
         返回 False 表示当前预设没启用小组制（组数 0），调用方应当拒绝打开面板。
+
+        关键：**每次切换都要重建卡片**，不只是组数变化的时候。分数的读取
+        发生在 _build_cards() 里（get_group_name / get_score 现在都按当前预设
+        取）。以前只在组数不同才重建，于是两个组数相同的预设互相切换时，
+        卡片还显示上一个预设的分数 —— 数据层其实已经独立了，只是界面没刷新，
+        看起来就像「积分没有随预设独立」。重建会一并清掉撤销栈：旧的
+        (组下标, 增量) 指向的是另一门课，撤销它会改错分数。
         """
         count = int(profile.get("group_count", 0)) if profile else 0
         if count <= 0:
             return False
-        if count != len(self._cards):
-            self._rebuild_cards()
+        # 切换前取消上一预设未决的防抖保存，避免定时器在新预设上写旧状态。
+        if self._save_timer is not None:
+            self._save_timer.stop()
+        self._rebuild_cards()                 # 读当前预设的组数/组名/分数
         self._set_profile_label(profile)
+        self._set_status(tr("已就绪", "Ready"), ok=True)
         return True
 
     def _set_profile_label(self, profile: dict | None) -> None:

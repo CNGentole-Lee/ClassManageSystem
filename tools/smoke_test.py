@@ -93,6 +93,49 @@ def _write_autostart(value):
         winreg.CloseKey(key)
 
 
+def test_scores_per_profile_ui():
+    """切换组数相同的预设，积分面板的卡片分数必须跟着换。
+
+    回归：以前 apply_profile 只在组数变化时重建卡片，两个 6 组预设互切
+    时卡片还显示上一个预设的分数 —— 数据层独立了，界面却没刷新。
+    """
+    print("--- Scores follow the active profile (UI) ---")
+    from namepicker.ledger import Ledger
+    from namepicker.profiles import ProfileStore
+
+    tmp = tempfile.mkdtemp(prefix="cm_ui_profile_")
+    cfg = os.path.join(tmp, "config.ini")
+    store = open_store(cfg, groups=6)
+    ps = ProfileStore(chain=store._ledger)
+    pid_a = ps.active_id()
+
+    # 预设 A：6 组，第一组 7 分
+    store.set_score(1, 7)
+    # 预设 B：同样 6 组，第一组 3 分
+    pid_b = ps.create("语文课")
+    ps.set_rule(pid_b, 6, 0)
+    ps.use(pid_b)
+    store.set_score(1, 3)
+
+    points = PointsWindow(store)
+    check("panel shows the active profile's score",
+          points._cards[0].score() == 3, f"actual {points._cards[0].score()}")
+
+    # 切回预设 A —— 组数没变，但分数必须刷新成 7
+    ps.use(pid_a)
+    points.apply_profile(ps.active())
+    check("switching same-size profiles refreshes the card score",
+          points._cards[0].score() == 7,
+          f"actual {points._cards[0].score()} (expected 7)")
+
+    # 再切到 B，应为 3
+    ps.use(pid_b)
+    points.apply_profile(ps.active())
+    check("switching back refreshes the score again",
+          points._cards[0].score() == 3,
+          f"actual {points._cards[0].score()} (expected 3)")
+
+
 def test_points_window(store, config_path):
     print("--- Points panel ---")
     points = PointsWindow(store)
@@ -524,6 +567,7 @@ def main():
     store.reset_scores()
 
     test_crash_log()
+    test_scores_per_profile_ui()
     test_points_window(store, config_path)
     engine = test_engine_single(stats_path)
     test_wipe(store, config_path, stats_path)
