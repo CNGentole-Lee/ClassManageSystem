@@ -200,12 +200,8 @@ cython_debug/
 #   Learn more at https://abstra.io/docs
 .abstra/
 
-# Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#   you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+# Visual Studio Code：本地编辑器设置，不入库（含绝对路径的 cmake.sourceDirectory）
+.vscode/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
@@ -235,6 +231,12 @@ crash.log
 startup.log
 *.tmp
 .~write_probe
+# 任何加密数据 / 本地运行产物（与代码、tools 无关，一律不入库）
+*.dat
+# 临时名单 / 导出快照（老师现场导入用的一次性数据）
+2411.txt
+# 工作区本地记忆（.workbuddy 目录本身保留在本地，只是不进仓库）
+.workbuddy/
 
 # --- 打包配置必须入库 ---
 # 上面的 *.spec 只用于忽略临时试打产生的 spec；Windows 打包配置是项目文件，要提交。
