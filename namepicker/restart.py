@@ -108,6 +108,33 @@ def hide_all_windows() -> int:
     return count
 
 
+#: 真正执行强退的函数。测试里替换它即可断言 quit_now 被调用，而不杀死测试进程。
+_exit = os._exit
+
+
+def quit_now(code: int = 0) -> None:
+    """立即杀死本进程——切语言重启时用来结束「另一个语言」的旧实例。
+
+    为什么不用 app.quit()：
+        它只是请求退出事件循环，随后 main.py 退出路径上的 save_settings /
+        points_win.save_now / save_stats 可能较慢甚至卡住（写事件链、调原生
+        模块），旧进程窗口（悬浮球）就一直挂在屏幕上；托盘里同时出现两个
+        语言的实例。用户明确要求激进：交接一完成就当场杀死旧实例，绝不
+        留给慢速收尾的机会。
+
+        切语言时数据不会丢：
+          · 语言在 language_saved 信号里已同步写入 config.dat + QSettings；
+          · 分数 / 抽取次数每次操作立即写事件链，不依赖退出时保存；
+          · 单实例锁在本函数之前已经 release 并由新进程接管；
+          · startup_log 每次 record 都是 open/write/os.replace 同步落盘。
+        所以跳过正常退出路径是安全的。
+
+    正常退出（用户主动退出）仍走 app.quit()，只有「切语言重启」这一条路径
+    用它。测试可通过替换 restart._exit 来观测调用而不真的退出。
+    """
+    _exit(code)
+
+
 def wait_handover(timeout: float = RETRY_SECONDS) -> bool:
     """等新进程把单实例套接字接过去；True = 超时前交接成功。
 

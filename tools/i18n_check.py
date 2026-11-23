@@ -317,6 +317,20 @@ def main() -> int:
           _hidden >= len(_wins) and not any(w.isVisible() for w in _wins),
           f"hidden={_hidden} visible={[w.isVisible() for w in _wins]}")
 
+    print("\n--- 8a4. Quit is aggressive: kill the old-language instance ---")
+    # 用户要的是「激进：杀死另一个语言」。app.quit() 会被慢速退出保存拖住，
+    # 所以切语言这条路改用 restart.quit_now() -> os._exit(0) 当场强退旧进程。
+    # 替换 _exit 观测调用，而不真的杀死测试进程。
+    _orig_exit = restart._exit
+    _exits = []
+    restart._exit = lambda code: _exits.append(code)
+    try:
+        restart.quit_now(0)
+        check("quit_now calls os._exit to kill the old instance immediately",
+              _exits == [0], f"exits={_exits}")
+    finally:
+        restart._exit = _orig_exit
+
     print("\n--- 8b. Dialogs must not block the ball (issue: license freezes drawing) ---")
     from PySide6.QtTest import QTest
     from namepicker import win_window

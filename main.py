@@ -572,15 +572,17 @@ def main():
             )
             return
         if not handover:
-            # 新进程没在超时内接管：仍旧退出旧进程 —— 宁可短暂没有窗口，
+            # 新进程没在超时内接管：仍旧杀死旧进程 —— 宁可短暂没有窗口，
             # 也不要中/英两个实例长期并存。排查线索留在 startup.log。
-            startup_log.record(["restart: handover timeout; quitting anyway"])
+            startup_log.record(["restart: handover timeout; force quitting anyway"])
 
-        # 先摘掉本进程所有窗口（含悬浮球）再退出：app.quit() 不会当场销毁
-        # 窗口，退出路径的保存又较慢，旧球会和新球并存好一会儿（详见
-        # restart.hide_all_windows 的说明）。语言已提前落盘，隐藏不丢数据。
+        # 激进退出：交接完成（或超时）后当场杀死本进程，也就是「另一个语言」
+        # 的旧实例。app.quit() 会让退出路径的保存拖住进程，悬浮球一直挂在
+        # 托盘/屏幕上，用户看到两个语言实例并存。语言与数据都已提前落盘，
+        # 强退不会丢东西（详见 restart.quit_now 的说明）。
+        startup_log.record(["restart: force quit old instance (os._exit)"])
         restart_service.hide_all_windows()
-        app.quit()
+        restart_service.quit_now()
 
     def save_language(code: str) -> None:
         """语言写入 config.dat（QSettings 之外的第二份保险）。"""
