@@ -18,6 +18,13 @@
     保存界面时用 ``assign_bulk`` 一次性提交，避免误点产生几十条事件。
 """
 
+from __future__ import annotations
+
+# 必须有上面这行：ProfileStore 有个方法叫 list()，类体内的注解如 `-> list[int]`
+# 在 Python 3.12 及更早会先查类命名空间，把 list 解析成那个方法而不是内置类型，
+# 导入时直接抛 "TypeError: 'function' object is not subscriptable"（CI 上真实踩到）。
+# 延迟注解求值后注解变成字符串，不再触发。
+
 from .i18n import tr
 
 #: 预设名称长度上限（与 C++ 侧的 64 字节保持一致，按 UTF-8 计）
